@@ -778,11 +778,15 @@ public class JpaUserProvider implements UserProvider, UserCredentialStore {
 
     @Override
     public Stream<UserModel> searchForUserStream(RealmModel realm, Map<String, String> attributes, Integer firstResult, Integer maxResults) {
-        return getBaseQuery(realm, attributes, firstResult, maxResults);
+        return getUserRoleModels(realm, attributes, firstResult, maxResults);
     }
 
     public Stream<UserRoleModel> searchForUserRoleStream(RealmModel realm, UserRolesBodyRepresentation userRolesBodyRepresentation) {
-        return getBaseQuery(realm, userRolesBodyRepresentation);
+        return getUserRoleModels(realm, userRolesBodyRepresentation);
+    }
+
+    public Long searchForUserRoleStreamCount(RealmModel realm, UserRolesBodyRepresentation userRolesBodyRepresentation) {
+        return getUserRoleModelsCount(realm, userRolesBodyRepresentation);
     }
 
     @Override
@@ -1068,21 +1072,84 @@ public class JpaUserProvider implements UserProvider, UserCredentialStore {
         return predicates;
     }
 
-    private Stream<UserModel> getBaseQuery(RealmModel realm, Map<String, String> attributes, Integer firstResult, Integer maxResults) {
+    private Stream<UserModel> getUserRoleModels(RealmModel realm, Map<String, String> attributes, Integer firstResult, Integer maxResults) {
         UserRolesBodyRepresentation userRolesBodyRepresentation = new UserRolesBodyRepresentation();
         userRolesBodyRepresentation.setFilterAttributes(attributesMapToRepresentation(attributes));
         userRolesBodyRepresentation.setFirst(firstResult);
         userRolesBodyRepresentation.setMax(maxResults);
-        return getBaseQuery(realm, userRolesBodyRepresentation).map(UserRoleModel::getUser);
+        return getUserRoleModels(realm, userRolesBodyRepresentation).map(UserRoleModel::getUser);
     }
 
-    @SuppressWarnings("unchecked")
-    private Stream<UserRoleModel> getBaseQuery(RealmModel realm, UserRolesBodyRepresentation representation) {
+    private Stream<UserRoleModel> getUserRoleModels(RealmModel realm, UserRolesBodyRepresentation representation) {
         CriteriaBuilder builder = em.getCriteriaBuilder();
         CriteriaQuery<UserEntity> queryBuilder = builder.createQuery(UserEntity.class);
-        From<?, UserEntity> from;
+        GetQuery result = getQuery(realm, representation, builder, queryBuilder);
+        final From<?, UserEntity> from = result.from();
+        final Map<String, List<String>> customLongValueSearchAttributes = result.customLongValueSearchAttributes();
+        final Map<String, List<RoleModel>> rolesByUserId = result.rolesByUserId();
 
+        queryBuilder.select(from)
+            // Add all predicates within the CriteriaQuery.
+            .where(result.predicates().toArray(Predicate[]::new))
+            // Create ordering based on orderByField (If it starts with -, its descending based field).
+            .orderBy(representation.getSortBy()
+                .stream()
+                .map(orderByField -> orderByField.startsWith("-") ? builder.desc(from.get(orderByField.substring(1))) :
+                    builder.asc(from.get(orderByField)))
+                .toList());
+
+        TypedQuery<UserEntity> query = em.createQuery(queryBuilder);
+        UserProvider users = session.users();
+        Stream<UserEntity> entityStream = closing(paginateQuery(query, representation.getFirst(), representation.getMax()).getResultStream());
+
+        if (!customLongValueSearchAttributes.isEmpty()) {
+            entityStream = entityStream
+                // the following check verifies that there are no collisions with hashes
+                .filter(predicateForMultiFilteringUsersByAttributes(customLongValueSearchAttributes, JpaHashUtils::compareSourceValueLowerCase));
+        }
+
+        return entityStream
+            .map(userEntity -> {
+                UserModel user = users.getUserById(realm, userEntity.getId());
+                if (user == null) return null;
+
+                UserRoleModel userRoleModel = new UserRoleModel(user);
+                if (!rolesByUserId.isEmpty()) {
+                    // Separated client roles from builder for clarity-sake.
+                    Map<String, List<RoleModel>> userRoles = rolesByUserId.getOrDefault(user.getId(), Collections.emptyList())
+                        .stream()
+                        .collect(Collectors.groupingBy(role -> role.isClientRole() ? ((ClientModel) role.getContainer()).getClientId() : "",
+                            Collectors.mapping(role -> role, Collectors.toList())));
+                    userRoleModel.setRoles(userRoles);
+                }
+                return userRoleModel;
+            }).filter(Objects::nonNull);
+    }
+
+    private Long getUserRoleModelsCount(RealmModel realm, UserRolesBodyRepresentation representation) {
+        CriteriaBuilder builder = em.getCriteriaBuilder();
+        CriteriaQuery<Long> queryBuilder = builder.createQuery(Long.class);
+        GetQuery result = getQuery(realm, representation, builder, queryBuilder);
+        // CustomLongValueSearchAttributes is not supported at the moment.
+        if (!result.customLongValueSearchAttributes().isEmpty()) {
+            return -1L;
+        }
+
+        queryBuilder.select(builder.count(result.from())).where(result.predicates().toArray(Predicate[]::new));
+        return em.createQuery(queryBuilder).getSingleResult();
+    }
+
+    private record GetQuery (From<?, UserEntity> from,
+                             List<Predicate> predicates,
+                             Map<String, List<String>> customLongValueSearchAttributes,
+                             Map<String, List<RoleModel>> rolesByUserId
+    ) {}
+
+    @SuppressWarnings("unchecked")
+    private GetQuery getQuery (RealmModel realm, UserRolesBodyRepresentation representation, CriteriaBuilder builder,
+                               CriteriaQuery<?> queryBuilder) {
         List<Predicate> predicates = new ArrayList<>();
+        From<?, UserEntity> from;
 
         // Handle Table Base
         // Setup Organizations if any.
@@ -1139,37 +1206,7 @@ public class JpaUserProvider implements UserProvider, UserCredentialStore {
             groupsWithPermissionsSubquery(queryBuilder, userGroups, from, predicates);
         }
         // End of Group Permission
-
-        queryBuilder.select(from)
-            // Add all predicates within the CriteriaQuery.
-            .where(predicates.toArray(Predicate[]::new))
-            // Create ordering based on orderByField (If it starts with -, its descending based field).
-            .orderBy(representation.getSortBy()
-                .stream()
-                .map(orderByField -> orderByField.startsWith("-") ? builder.desc(from.get(orderByField.substring(1))) :
-                    builder.asc(from.get(orderByField)))
-                .toList());
-
-        TypedQuery<UserEntity> query = em.createQuery(queryBuilder);
-        UserProvider users = session.users();
-        return closing(paginateQuery(query, representation.getFirst(), representation.getMax()).getResultStream())
-            // the following check verifies that there are no collisions with hashes
-            .filter(predicateForMultiFilteringUsersByAttributes(customLongValueSearchAttributes, JpaHashUtils::compareSourceValueLowerCase))
-            .map(userEntity -> {
-                UserModel user = users.getUserById(realm, userEntity.getId());
-                if (user == null) return null;
-
-                UserRoleModel userRoleModel = new UserRoleModel(user);
-                if (!rolesByUserId.isEmpty()) {
-                    // Separated client roles from builder for clarity-sake.
-                    Map<String, List<RoleModel>> userRoles = rolesByUserId.getOrDefault(user.getId(), Collections.emptyList())
-                        .stream()
-                        .collect(Collectors.groupingBy(role -> role.isClientRole() ? ((ClientModel) role.getContainer()).getClientId() : "",
-                            Collectors.mapping(role -> role, Collectors.toList())));
-                    userRoleModel.setRoles(userRoles);
-                }
-                return userRoleModel;
-            }).filter(Objects::nonNull);
+        return new GetQuery(from, predicates, customLongValueSearchAttributes, rolesByUserId);
     }
 
     @SuppressWarnings("unchecked")

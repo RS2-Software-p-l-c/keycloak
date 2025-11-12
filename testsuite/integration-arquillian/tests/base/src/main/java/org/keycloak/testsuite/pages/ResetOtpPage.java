@@ -1,5 +1,6 @@
 package org.keycloak.testsuite.pages;
 
+import org.keycloak.testsuite.util.UIUtils;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
@@ -23,10 +24,10 @@ public class ResetOtpPage extends AbstractPage {
     }
 
     public void selectOtp(int index) {
-        driver.findElement(By.id("kc-otp-credential-" + index)).click();
+        UIUtils.switchCheckbox(driver.findElement(By.id("kc-otp-credential-" + index)), true);
     }
 
     public void submitOtpReset() {
-        submitButton.click();
+        UIUtils.clickLink(submitButton);
     }
 }

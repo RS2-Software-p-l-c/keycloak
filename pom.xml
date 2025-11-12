@@ -31,7 +31,7 @@
     </description>
     <groupId>org.keycloak</groupId>
     <artifactId>keycloak-parent</artifactId>
-    <version>26.1.4</version>
+    <version>26.1.5</version>
     <packaging>pom</packaging>
 
     <properties>
@@ -41,7 +41,7 @@
         <maven.compiler.target>17</maven.compiler.target>
         <maven.compiler.release>17</maven.compiler.release>
 
-        <project.version.npm>26.1.4</project.version.npm>
+        <project.version.npm>26.1.5</project.version.npm>
 
         <asciidoctor.plugin.version>1.5.8</asciidoctor.plugin.version>
 
@@ -52,8 +52,8 @@
         <jboss.snapshots.repo.id>jboss-snapshots-repository</jboss.snapshots.repo.id>
         <jboss.snapshots.repo.url>https://s01.oss.sonatype.org/content/repositories/snapshots/</jboss.snapshots.repo.url>
 
-        <quarkus.version>3.15.3.1</quarkus.version>
-        <quarkus.build.version>3.15.3.1</quarkus.build.version>
+        <quarkus.version>3.15.4</quarkus.version>
+        <quarkus.build.version>3.15.4</quarkus.build.version>
 
         <project.build-time>${timestamp}</project.build-time>
 

@@ -205,12 +205,7 @@ public class FlowOverrideTest extends AbstractFlowTest {
     @Test
     public void testWithClientBrowserOverride() throws Exception {
         oauth.clientId(TEST_APP_FLOW);
-        String loginFormUrl = oauth.getLoginFormUrl();
-        log.info("loginFormUrl: " + loginFormUrl);
-
-        //Thread.sleep(10000000);
-
-        driver.navigate().to(loginFormUrl);
+        oauth.openLoginForm();
 
         Assert.assertEquals("PushTheButton", driver.getTitle());
 
@@ -248,12 +243,7 @@ public class FlowOverrideTest extends AbstractFlowTest {
 
     private void testNoOverrideBrowser(String clientId) {
         oauth.clientId(clientId);
-        String loginFormUrl = oauth.getLoginFormUrl();
-        log.info("loginFormUrl: " + loginFormUrl);
-
-        //Thread.sleep(10000000);
-
-        driver.navigate().to(loginFormUrl);
+        oauth.openLoginForm();
 
         loginPage.assertCurrent();
 
@@ -276,7 +266,7 @@ public class FlowOverrideTest extends AbstractFlowTest {
 
     private void testDirectGrantNoOverride(String clientId) {
         Client httpClient = AdminClientUtil.createResteasyClient();
-        String grantUri = oauth.getResourceOwnerPasswordCredentialGrantUrl();
+        String grantUri = oauth.getEndpoints().getToken();
         WebTarget grantTarget = httpClient.target(grantUri);
 
         {   // test no password
@@ -326,7 +316,7 @@ public class FlowOverrideTest extends AbstractFlowTest {
     public void testGrantAccessTokenWithClientOverride() throws Exception {
         String clientId = TEST_APP_DIRECT_OVERRIDE;
         Client httpClient = AdminClientUtil.createResteasyClient();
-        String grantUri = oauth.getResourceOwnerPasswordCredentialGrantUrl();
+        String grantUri = oauth.getEndpoints().getToken();
         WebTarget grantTarget = httpClient.target(grantUri);
 
         {   // test no password

@@ -18,11 +18,6 @@ public class ResetOtpPage extends AbstractPage {
         return description.getText().equals("Which OTP configuration should be removed?");
     }
 
-    @Override
-    public void open() throws Exception {
-        // This page is part of the reset credentials flow, so you shouldn't be able to open it by itself.
-    }
-
     public void selectOtp(int index) {
         UIUtils.switchCheckbox(driver.findElement(By.id("kc-otp-credential-" + index)), true);
     }

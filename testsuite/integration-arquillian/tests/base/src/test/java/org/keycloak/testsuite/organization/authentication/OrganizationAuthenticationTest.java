@@ -34,7 +34,6 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel.RequiredAction;
 import org.keycloak.models.utils.DefaultAuthenticationFlows;
 import org.keycloak.organization.authentication.authenticators.browser.OrganizationAuthenticatorFactory;
-import org.keycloak.protocol.oidc.OIDCLoginProtocol;
 import org.keycloak.representations.idm.OrganizationRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.testsuite.Assert;
@@ -129,9 +128,8 @@ public class OrganizationAuthenticationTest extends AbstractOrganizationTest {
 
         try {
             setTimeOffset(10);
-            oauth.maxAge("1");
-            oauth.kcAction(RequiredAction.UPDATE_PASSWORD.name());
-            loginPage.open(bc.consumerRealmName());
+            oauth.realm(bc.consumerRealmName());
+            oauth.loginForm().maxAge(1).kcAction(RequiredAction.UPDATE_PASSWORD.name()).open();
             loginPage.assertCurrent();
             Matcher<String> expectedInfo = is("Please re-authenticate to continue");
             assertThat(loginPage.getInfoMessage(), expectedInfo);
@@ -140,8 +138,6 @@ public class OrganizationAuthenticationTest extends AbstractOrganizationTest {
             appPage.assertCurrent();
         } finally {
             resetTimeOffset();
-            oauth.kcAction(null);
-            oauth.maxAge(null);
         }
     }
 
@@ -204,7 +200,7 @@ public class OrganizationAuthenticationTest extends AbstractOrganizationTest {
         oauth.clientId("broker-app");
         String expectedUsername = URLEncoder.encode(member.getEmail(), StandardCharsets.UTF_8);
         oauth.realm(bc.consumerRealmName());
-        driver.navigate().to(oauth.getLoginFormUrl() + "&" + OIDCLoginProtocol.LOGIN_HINT_PARAM + "=" + expectedUsername);
+        oauth.loginForm().loginHint(expectedUsername).open();
         assertThat(loginPage.getUsername(), Matchers.equalTo(URLDecoder.decode(expectedUsername, StandardCharsets.UTF_8)));
 
         // continue authenticating without setting the username

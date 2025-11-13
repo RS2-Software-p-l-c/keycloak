@@ -67,7 +67,7 @@ import org.keycloak.testsuite.util.GreenMailRule;
 import org.keycloak.testsuite.util.InfinispanTestTimeServiceRule;
 import org.keycloak.testsuite.util.KerberosUtils;
 import org.keycloak.testsuite.util.MailUtils;
-import org.keycloak.testsuite.util.OAuthClient;
+import org.keycloak.testsuite.util.oauth.AccessTokenResponse;
 import org.keycloak.testsuite.util.RealmBuilder;
 import org.keycloak.testsuite.util.SecondBrowser;
 import org.keycloak.testsuite.util.UIUtils;
@@ -425,8 +425,8 @@ public class ResetPasswordTest extends AbstractTestRealmKeycloakTest {
 
         EventRepresentation loginEvent = events.expectLogin().user(userId).detail(Details.USERNAME, "login@test.com").assertEvent();
 
-        String code = oauth.getCurrentQuery().get("code");
-        OAuthClient.AccessTokenResponse tokenResponse = oauth.doAccessTokenRequest(code, "password");
+        String code = oauth.parseLoginResponse().getCode();
+        AccessTokenResponse tokenResponse = oauth.doAccessTokenRequest(code);
 
         assertEquals(200, tokenResponse.getStatusCode());
         assertEquals(userId, oauth.verifyToken(tokenResponse.getAccessToken()).getSubject());
@@ -513,8 +513,8 @@ public class ResetPasswordTest extends AbstractTestRealmKeycloakTest {
             EventRepresentation loginEvent = events.expectLogin().user(userId).detail(Details.USERNAME, username.trim()).assertEvent();
             String sessionId = loginEvent.getSessionId();
 
-            OAuthClient.AccessTokenResponse tokenResponse = sendTokenRequestAndGetResponse(loginEvent);
-            oauth.idTokenHint(tokenResponse.getIdToken()).openLogout();
+            AccessTokenResponse tokenResponse = sendTokenRequestAndGetResponse(loginEvent);
+            oauth.logoutForm().idTokenHint(tokenResponse.getIdToken()).withRedirect().open();
 
             events.expectLogout(sessionId).user(userId).session(sessionId).assertEvent();
 
@@ -528,7 +528,7 @@ public class ResetPasswordTest extends AbstractTestRealmKeycloakTest {
             assertEquals(RequestType.AUTH_RESPONSE, appPage.getRequestType());
 
             tokenResponse = sendTokenRequestAndGetResponse(loginEvent);
-            oauth.idTokenHint(tokenResponse.getIdToken()).openLogout();
+            oauth.logoutForm().idTokenHint(tokenResponse.getIdToken()).withRedirect().open();
 
             events.expectLogout(sessionId).user(userId).session(sessionId).assertEvent();
         }
@@ -893,7 +893,7 @@ public class ResetPasswordTest extends AbstractTestRealmKeycloakTest {
 
         try {
             // Redirect directly to KC "forgot password" endpoint instead of "authenticate" endpoint
-            String loginUrl = oauth.getLoginFormUrl();
+            String loginUrl = oauth.loginForm().build();
             String forgotPasswordUrl = loginUrl.replace("/auth?", "/forgot-credentials?"); // Workaround, but works
 
             driver.navigate().to(forgotPasswordUrl);
@@ -941,7 +941,7 @@ public class ResetPasswordTest extends AbstractTestRealmKeycloakTest {
 
         try {
             // Redirect directly to KC "forgot password" endpoint instead of "authenticate" endpoint
-            String loginUrl = oauth.getLoginFormUrl();
+            String loginUrl = oauth.loginForm().build();
             String forgotPasswordUrl = loginUrl.replace("/auth?", "/forgot-credentials?"); // Workaround, but works
 
             driver.navigate().to(forgotPasswordUrl);
@@ -990,7 +990,7 @@ public class ResetPasswordTest extends AbstractTestRealmKeycloakTest {
 
         try {
             // Redirect directly to KC "forgot password" endpoint instead of "authenticate" endpoint
-            String loginUrl = oauth.getLoginFormUrl();
+            String loginUrl = oauth.loginForm().build();
             String forgotPasswordUrl = loginUrl.replace("/auth?", "/forgot-credentials?"); // Workaround, but works
 
             driver.navigate().to(forgotPasswordUrl);
@@ -1148,8 +1148,8 @@ public class ResetPasswordTest extends AbstractTestRealmKeycloakTest {
         EventRepresentation loginEvent = events.expectLogin().user(userId).detail(Details.USERNAME, "login-test").assertEvent();
         String sessionId = loginEvent.getSessionId();
 
-        OAuthClient.AccessTokenResponse tokenResponse = sendTokenRequestAndGetResponse(loginEvent);
-        oauth.idTokenHint(tokenResponse.getIdToken()).openLogout();
+        AccessTokenResponse tokenResponse = sendTokenRequestAndGetResponse(loginEvent);
+        oauth.logoutForm().idTokenHint(tokenResponse.getIdToken()).withRedirect().open();
 
         events.expectLogout(sessionId).user(userId).session(sessionId).assertEvent();
 
@@ -1367,8 +1367,7 @@ public class ResetPasswordTest extends AbstractTestRealmKeycloakTest {
             resetPasswordInNewTab(defaultUser, CLIENT_ID, REDIRECT_URI);
             assertThat(driver.getCurrentUrl(), Matchers.containsString(REDIRECT_URI));
 
-            String logoutUrl = oauth.getLogoutUrl().build();
-            driver.navigate().to(logoutUrl);
+            oauth.openLogoutForm();
             logoutConfirmPage.assertCurrent();
             logoutConfirmPage.confirmLogout();
 
@@ -1433,7 +1432,7 @@ public class ResetPasswordTest extends AbstractTestRealmKeycloakTest {
     @Test
     public void resetPasswordWithLoginHint() throws IOException {
         // Redirect directly to KC "forgot password" endpoint instead of "authenticate" endpoint
-        String loginUrl = oauth.getLoginFormUrl();
+        String loginUrl = oauth.loginForm().build();
         String forgotPasswordUrl = loginUrl.replace("/auth?", "/forgot-credentials?"); // Workaround, but works
 
         driver.navigate().to(forgotPasswordUrl + "&login_hint=test");

@@ -41,7 +41,7 @@ import org.keycloak.testsuite.pages.LoginUsernameOnlyPage;
 import org.keycloak.testsuite.pages.PasswordPage;
 import org.keycloak.testsuite.updaters.RealmAttributeUpdater;
 import org.keycloak.testsuite.util.FlowUtil;
-import org.keycloak.testsuite.util.OAuthClient;
+import org.keycloak.testsuite.util.oauth.OAuthClient;
 import org.keycloak.testsuite.util.SecondBrowser;
 import org.keycloak.testsuite.webauthn.authenticators.DefaultVirtualAuthOptions;
 import org.keycloak.testsuite.webauthn.authenticators.UseVirtualAuthenticators;
@@ -188,8 +188,7 @@ public class AppInitiatedActionWebAuthnTest extends AbstractAppInitiatedActionTe
         try (RealmAttributeUpdater rau = new RealmAttributeUpdater(testRealm())
                 .setBrowserFlow("browser")
                 .update()) {
-            OAuthClient oauth2 = new OAuthClient();
-            oauth2.init(driver2);
+            OAuthClient oauth2 = oauth.newConfig().driver(driver2);
             oauth2.doLogin(DEFAULT_USERNAME, DEFAULT_PASSWORD);
             event1 = events.expectLogin().assertEvent();
             assertEquals(1, testUser.getUserSessions().size());
@@ -240,8 +239,7 @@ public class AppInitiatedActionWebAuthnTest extends AbstractAppInitiatedActionTe
 
         appPage.assertCurrent();
         assertThat(appPage.getRequestType(), is(AppPage.RequestType.AUTH_RESPONSE));
-        OAuthClient.AuthorizationEndpointResponse response = new OAuthClient.AuthorizationEndpointResponse(oauth);
-        assertNotNull(response.getCode());
+        assertNotNull(oauth.parseLoginResponse().getCode());
 
         return events.expectLogin()
                 .detail(Details.USERNAME, DEFAULT_USERNAME)

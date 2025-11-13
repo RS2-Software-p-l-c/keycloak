@@ -17,19 +17,28 @@
 
 package org.keycloak.quarkus.runtime.configuration.test;
 
-import io.smallrye.config.SmallRyeConfig;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.keycloak.config.LoggingOptions.DEFAULT_LOG_FORMAT;
+import static org.keycloak.config.LoggingOptions.DEFAULT_SYSLOG_OUTPUT;
+
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
+
 import org.hamcrest.CoreMatchers;
 import org.junit.Test;
 import org.keycloak.config.LoggingOptions;
+import org.keycloak.quarkus.runtime.Environment;
+import org.keycloak.quarkus.runtime.cli.PropertyException;
 import org.keycloak.quarkus.runtime.configuration.ConfigArgsConfigSource;
 import org.keycloak.quarkus.runtime.configuration.Configuration;
 
-import java.util.Map;
-
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.Assert.assertEquals;
-import static org.keycloak.config.LoggingOptions.DEFAULT_LOG_FORMAT;
-import static org.keycloak.config.LoggingOptions.DEFAULT_SYSLOG_OUTPUT;
+import io.smallrye.config.SmallRyeConfig;
 
 public class LoggingConfigurationTest extends AbstractConfigurationTest {
 
@@ -88,7 +97,7 @@ public class LoggingConfigurationTest extends AbstractConfigurationTest {
                 "quarkus.log.syslog.app-name", "keycloak",
                 "quarkus.log.syslog.protocol", "tcp",
                 "quarkus.log.syslog.format", DEFAULT_LOG_FORMAT,
-                "quarkus.log.syslog.json", "false"
+                "quarkus.log.syslog.json.enabled", "false"
         ));
 
         // The default max-length attribute is set in the org.jboss.logmanager.handlers.SyslogHandler if not specified in config
@@ -129,7 +138,7 @@ public class LoggingConfigurationTest extends AbstractConfigurationTest {
                 "quarkus.log.syslog.app-name", "keycloak2",
                 "quarkus.log.syslog.protocol", "udp",
                 "quarkus.log.syslog.format", "some format",
-                "quarkus.log.syslog.json", "true"
+                "quarkus.log.syslog.json.enabled", "true"
         ));
     }
 
@@ -192,6 +201,7 @@ public class LoggingConfigurationTest extends AbstractConfigurationTest {
         assertEquals("INFO", config.getConfigValue("quarkus.log.level").getValue());
         assertEquals("ERROR", config.getConfigValue("quarkus.log.category.\"org.keycloak\".level").getValue());
 
+        onAfter();
         ConfigArgsConfigSource.setCliArgs("--log-level=org.keycloak:error", "--log-level-org.keycloak=trace");
         config = createConfig();
         assertEquals("INFO", config.getConfigValue("quarkus.log.level").getValue());
@@ -204,7 +214,56 @@ public class LoggingConfigurationTest extends AbstractConfigurationTest {
         SmallRyeConfig config = createConfig();
         assertEquals("WARN", config.getConfigValue("quarkus.log.level").getValue());
         assertEquals("TRACE", config.getConfigValue("quarkus.log.category.\"org.keycloak\".level").getValue());
-        assertEquals("WARN", config.getConfigValue("quarkus.log.category.\"foo.bar\".level").getValue());
+        assertNull(config.getConfigValue("quarkus.log.category.\"foo.bar\".level").getValue());
+    }
+
+    @Test
+    public void jsonDefaultFormat() {
+        initConfig();
+
+        assertConfig(Map.of(
+                "log-console-json-format", "default",
+                "log-file-json-format", "default",
+                "log-syslog-json-format", "default"
+        ));
+
+        assertExternalConfig(Map.of(
+                "quarkus.log.console.json.log-format", "default",
+                "quarkus.log.file.json.log-format", "default",
+                "quarkus.log.syslog.json.log-format", "default"
+        ));
+    }
+
+    @Test
+    public void jsonEcsFormat() {
+        putEnvVars(Map.of(
+                "KC_LOG_CONSOLE_OUTPUT", "json",
+                "KC_LOG_CONSOLE_JSON_FORMAT", "ecs",
+                "KC_LOG_FILE_OUTPUT", "json",
+                "KC_LOG_FILE_JSON_FORMAT", "ecs",
+                "KC_LOG_SYSLOG_OUTPUT", "json",
+                "KC_LOG_SYSLOG_JSON_FORMAT", "ecs"
+        ));
+
+        initConfig();
+
+        assertConfig(Map.of(
+                "log-console-output", "json",
+                "log-console-json-format", "ecs",
+                "log-file-output", "json",
+                "log-file-json-format", "ecs",
+                "log-syslog-output", "json",
+                "log-syslog-json-format", "ecs"
+        ));
+
+        assertExternalConfig(Map.of(
+                "quarkus.log.console.json.enabled", "true",
+                "quarkus.log.console.json.log-format", "ecs",
+                "quarkus.log.file.json.enabled", "true",
+                "quarkus.log.file.json.log-format", "ecs",
+                "quarkus.log.syslog.json.enabled", "true",
+                "quarkus.log.syslog.json.log-format", "ecs"
+        ));
     }
 
     @Test
@@ -212,17 +271,23 @@ public class LoggingConfigurationTest extends AbstractConfigurationTest {
         ConfigArgsConfigSource.setCliArgs("--log-level-org.keycloak=trace");
         SmallRyeConfig config = createConfig();
         assertEquals("TRACE", config.getConfigValue("quarkus.log.category.\"org.keycloak\".level").getValue());
-        assertEquals("INFO", config.getConfigValue("quarkus.log.category.\"io.quarkus\".level").getValue());
-        assertEquals("INFO", config.getConfigValue("quarkus.log.category.\"foo.bar\".level").getValue());
+        assertNull(config.getConfigValue("quarkus.log.category.\"io.quarkus\".level").getValue());
+        assertNull(config.getConfigValue("quarkus.log.category.\"foo.bar\".level").getValue());
     }
 
     @Test
     public void testWildcardEnvVarOptionCanBeMappedToQuarkusOption() {
         putEnvVar("KC_LOG_LEVEL_IO_QUARKUS", "trace");
         SmallRyeConfig config = createConfig();
-        assertEquals("INFO", config.getConfigValue("quarkus.log.category.\"org.keycloak\".level").getValue());
+        // the default quarkus kc mapping should not be present
+        Set<String> keys = StreamSupport.stream(config.getPropertyNames().spliterator(), false).collect(Collectors.toSet());
+        assertFalse(keys.contains("kc.log.level.\"io.quarkus"));
+        assertFalse(keys.contains("kc.log.level.io-quarkus"));
+        // the default quarkus mapping should be
+        assertNull(config.getConfigValue("quarkus.log.category.\"org.keycloak\".level").getValue());
         assertEquals("TRACE", config.getConfigValue("quarkus.log.category.\"io.quarkus\".level").getValue());
-        assertEquals("INFO", config.getConfigValue("quarkus.log.category.\"foo.bar\".level").getValue());
+        assertTrue(keys.contains("kc.log-level-io.quarkus"));
+        assertNull(config.getConfigValue("quarkus.log.category.\"foo.bar\".level").getValue());
     }
 
     @Test
@@ -233,8 +298,25 @@ public class LoggingConfigurationTest extends AbstractConfigurationTest {
     }
 
     @Test
-    public void testWildcardPropertiesDontMatchEnvVarsFormat() {
+    public void testLogLevelWithUnderscore() {
+        ConfigArgsConfigSource.setCliArgs("--log-level=error,reproducer.not_ok:debug");
         SmallRyeConfig config = createConfig();
-        assertEquals("INFO", config.getConfigValue("quarkus.log.category.\"io.quarkus\".level").getValue());
+        assertEquals("DEBUG", config.getConfigValue("quarkus.log.category.\"reproducer.not_ok\".level").getValue());
+        Set<String> keys = StreamSupport.stream(config.getPropertyNames().spliterator(), false).collect(Collectors.toSet());
+        assertTrue(keys.contains("quarkus.log.category.\"reproducer.not_ok\".level"));
     }
+
+    @Test(expected = PropertyException.class)
+    public void testInvalidLogLevel() {
+        ConfigArgsConfigSource.setCliArgs("--log-level=reproducer.not^ok:debug");
+        createConfig();
+    }
+
+    @Test
+    public void testNestedBuildTimeLogging() {
+        Environment.setRebuildCheck(); // will be reset by the system properties logic
+        ConfigArgsConfigSource.setCliArgs("");
+        assertEquals("true", createConfig().getConfigValue("quarkus.log.console.enable").getValue());
+    }
+
 }

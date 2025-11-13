@@ -77,6 +77,8 @@ import org.keycloak.protocol.oidc.BackchannelLogoutResponse;
 import org.keycloak.protocol.oidc.OIDCAdvancedConfigWrapper;
 import org.keycloak.protocol.oidc.OIDCLoginProtocol;
 import org.keycloak.protocol.oidc.TokenManager;
+import org.keycloak.protocol.oidc.encode.AccessTokenContext;
+import org.keycloak.protocol.oidc.encode.TokenContextEncoderProvider;
 import org.keycloak.rar.AuthorizationDetails;
 import org.keycloak.representations.AccessToken;
 import org.keycloak.services.ErrorResponseException;
@@ -116,6 +118,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -558,7 +561,7 @@ public class AuthenticationManager {
 
     private static Response frontchannelLogoutClientSession(KeycloakSession session, RealmModel realm,
       AuthenticatedClientSessionModel clientSession, AuthenticationSessionModel logoutAuthSession,
-      UriInfo uriInfo, HttpHeaders headers) {
+      UriInfo uriInfo, HttpHeaders headers, EventBuilder event) {
         UserSessionModel userSession = clientSession.getUserSession();
         ClientModel client = clientSession.getClient();
 
@@ -575,6 +578,11 @@ public class AuthenticationManager {
         try {
             session.clientPolicy().triggerOnEvent(new LogoutRequestContext());
         } catch (ClientPolicyException cpe) {
+            event.event(EventType.LOGOUT);
+            event.detail(Details.REASON, Details.CLIENT_POLICY_ERROR);
+            event.detail(Details.CLIENT_POLICY_ERROR, cpe.getError());
+            event.detail(Details.CLIENT_POLICY_ERROR_DETAIL, cpe.getErrorDetail());
+            event.error(cpe.getError());
             throw new ErrorResponseException(cpe.getError(), cpe.getErrorDetail(), cpe.getErrorStatus());
         }
 
@@ -689,7 +697,7 @@ public class AuthenticationManager {
         return finishBrowserLogout(session, realm, userSession, uriInfo, connection, headers);
     }
 
-    private static Response browserLogoutAllClients(UserSessionModel userSession, KeycloakSession session, RealmModel realm, HttpHeaders headers, UriInfo uriInfo, AuthenticationSessionModel logoutAuthSession) {
+    private static Response browserLogoutAllClients(UserSessionModel userSession, KeycloakSession session, RealmModel realm, HttpHeaders headers, UriInfo uriInfo, AuthenticationSessionModel logoutAuthSession, EventBuilder event) {
         Map<Boolean, List<AuthenticatedClientSessionModel>> acss = userSession.getAuthenticatedClientSessions().values().stream()
           .filter(clientSession -> !Objects.equals(AuthenticationSessionModel.Action.LOGGED_OUT.name(), clientSession.getAction())
                                 && !Objects.equals(AuthenticationSessionModel.Action.LOGGING_OUT.name(), clientSession.getAction()))
@@ -701,7 +709,7 @@ public class AuthenticationManager {
 
         final List<AuthenticatedClientSessionModel> redirectClients = acss.get(true) == null ? Collections.emptyList() : acss.get(true);
         for (AuthenticatedClientSessionModel nextRedirectClient : redirectClients) {
-            Response response = frontchannelLogoutClientSession(session, realm, nextRedirectClient, logoutAuthSession, uriInfo, headers);
+            Response response = frontchannelLogoutClientSession(session, realm, nextRedirectClient, logoutAuthSession, uriInfo, headers, event);
             if (response != null) {
                 return response;
             }
@@ -713,8 +721,8 @@ public class AuthenticationManager {
     public static Response finishBrowserLogout(KeycloakSession session, RealmModel realm, UserSessionModel userSession, UriInfo uriInfo, ClientConnection connection, HttpHeaders headers) {
         final AuthenticationSessionManager asm = new AuthenticationSessionManager(session);
         AuthenticationSessionModel logoutAuthSession = createOrJoinLogoutSession(session, realm, asm, userSession, true, false);
-
-        Response response = browserLogoutAllClients(userSession, session, realm, headers, uriInfo, logoutAuthSession);
+        EventBuilder event = new EventBuilder(realm, session, connection);
+        Response response = browserLogoutAllClients(userSession, session, realm, headers, uriInfo, logoutAuthSession, event);
         if (response != null) {
             return response;
         }
@@ -726,13 +734,11 @@ public class AuthenticationManager {
         expireRememberMeCookie(session);
 
         String method = userSession.getNote(KEYCLOAK_LOGOUT_PROTOCOL);
-        EventBuilder event = new EventBuilder(realm, session, connection);
         LoginProtocol protocol = session.getProvider(LoginProtocol.class, method);
         protocol.setRealm(realm)
                 .setHttpHeaders(headers)
                 .setUriInfo(uriInfo)
                 .setEventBuilder(event);
-
 
         response = protocol.finishBrowserLogout(userSession, logoutAuthSession);
 
@@ -1511,72 +1517,56 @@ public class AuthenticationManager {
                 }
             }
 
-            UserSessionModel userSession = null;
-            UserModel user = null;
-            if (token.getSessionState() == null) {
-                user = TokenManager.lookupUserFromStatelessToken(session, realm, token);
-                if (!TokenManager.isUserValid(session, realm, token, user)) {
-                    return null;
-                }
-            } else {
-                userSession = session.sessions().getUserSession(realm, token.getSessionState());
-                if (userSession != null) {
-                    user = userSession.getUser();
-                    if (!TokenManager.isUserValid(session, realm, token, user)) {
-                        return null;
-                    }
-                }
-            }
-
             KeycloakContext context = session.getContext();
+            Consumer<UserSessionModel> invalidUserSessionCallback = (userSession) -> {
+                // Ignored for offline session for now?
+                if (userSession.isOffline()) return;
 
-            if (token.getSessionState() != null && !isSessionValid(realm, userSession)) {
-                // Check if accessToken was for the offline session.
-                if (!isCookie) {
-                    UserSessionModel offlineUserSession = session.sessions().getOfflineUserSession(realm, token.getSessionState());
-                    if (isSessionValid(realm, offlineUserSession)) {
-                        user = offlineUserSession.getUser();
-                        ClientModel client = realm.getClientByClientId(token.getIssuedFor());
-                        if (!isClientValid(offlineUserSession, client, token)) {
-                            return null;
-                        }
-                        context.setUserSession(offlineUserSession);
-                        context.setClient(client);
-                        context.setBearerToken(token);
-                        return new AuthResult(user, offlineUserSession, token, client);
-                    }
-                }
+                String userSessionId = userSession.getId();
+                KeycloakModelUtils.runJobInTransaction(session.getKeycloakSessionFactory(), context, newSession -> {
+                    RealmModel realmModel = newSession.realms().getRealm(realm.getId());
+                    UserSessionModel userSessionModel = newSession.sessions().getUserSession(realmModel, userSessionId);
+                    backchannelLogout(newSession, realmModel, userSessionModel, uriInfo, connection, headers, true);
+                });
+                // remove the user session here so that the external persistent session tx becomes aware of the removal that happened
+                // during the backchannel logout.
+                session.sessions().removeUserSession(realm, userSession);
+            };
 
-
-                if (userSession != null) {
-                    String userSessionId = userSession.getId();
-                    KeycloakModelUtils.runJobInTransaction(session.getKeycloakSessionFactory(), context, newSession -> {
-                        RealmModel realmModel = newSession.realms().getRealm(realm.getId());
-                        UserSessionModel userSessionModel = newSession.sessions().getUserSession(realmModel, userSessionId);
-                        backchannelLogout(newSession, realmModel, userSessionModel, uriInfo, connection, headers, true);
-                    });
-                    // remove the user session here so that the external persistent session tx becomes aware of the removal that happened
-                    // during the backchannel logout.
-                    session.sessions().removeUserSession(realm, userSession);
-                }
-                logger.debug("User session not active");
-                return null;
-            }
-
+            UserSessionModel userSession = null;
+            ClientModel client = null;
             session.setAttribute("state_checker", token.getOtherClaims().get("state_checker"));
 
-            ClientModel client;
             if (isCookie) {
-                client = null;
+                UserSessionUtil.UserSessionValidationResult validationResult = UserSessionUtil.findValidSessionForIdentityCookie(session, realm, token, invalidUserSessionCallback);
+                if (validationResult.getError() != null) {
+                    return null;
+                }
+                userSession = validationResult.getUserSession();
             } else {
                 client = realm.getClientByClientId(token.getIssuedFor());
+                if (client == null) {
+                    return null;
+                }
+                UserSessionUtil.UserSessionValidationResult validationResult = UserSessionUtil.findValidSessionForAccessToken(session, realm, token, client, invalidUserSessionCallback);
+                if (validationResult.getError() != null) {
+                    return null;
+                }
+                userSession = validationResult.getUserSession();
                 if (!isClientValid(userSession, client, token)) {
                     return null;
                 }
+            }
+
+            UserModel user = userSession.getUser();
+            if (!TokenManager.isUserValid(session, realm, token, user)) {
+                return null;
+            }
+
+            if (!isCookie) {
                 context.setClient(client);
                 context.setBearerToken(token);
             }
-
             context.setUserSession(userSession);
 
             return new AuthResult(user, userSession, token, client);
@@ -1615,12 +1605,13 @@ public class AuthenticationManager {
         if(client == null) {
             return;
         }
-        boolean isAlwaysUseLightweightAccessToken = Boolean.parseBoolean(client.getAttribute(Constants.USE_LIGHTWEIGHT_ACCESS_TOKEN_ENABLED));
-        if (isAlwaysUseLightweightAccessToken || accessToken.getSubject() == null || (accessToken.getSessionId() == null && accessToken.getResourceAccess().isEmpty() && accessToken.getRealmAccess() == null)) {
+
+        TokenContextEncoderProvider encoder = session.getProvider(TokenContextEncoderProvider.class);
+        AccessTokenContext subjectTokenContext = encoder.getTokenContextFromTokenId(accessToken.getId());
+        boolean isAccessTokenLightweight = AccessTokenContext.TokenType.LIGHTWEIGHT.equals(subjectTokenContext.getTokenType());
+        if (isAccessTokenLightweight || accessToken.getSubject() == null || (accessToken.getSessionId() == null && accessToken.getResourceAccess().isEmpty() && accessToken.getRealmAccess() == null)) {
             //get user session
-            EventBuilder event = new EventBuilder(realm, session);
-            event.event(EventType.INTROSPECT_TOKEN);
-            UserSessionModel userSession = UserSessionUtil.findValidSession(session,realm, accessToken, event, client);
+            UserSessionModel userSession = UserSessionUtil.findValidSessionForAccessToken(session,realm, accessToken, client, (invalidUserSession -> {})).getUserSession();
 
             if (userSession != null) {
                 //get client session

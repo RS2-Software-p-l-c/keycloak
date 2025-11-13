@@ -858,6 +858,7 @@ public class RealmAdminResource {
      * @param dateFrom From date
      * @param firstResult Paging offset
      * @param maxResults Maximum results size (defaults to 100)
+     * @param direction The direction to sort events by (asc or desc)
      * @return
      */
     @Path("events")
@@ -874,8 +875,8 @@ public class RealmAdminResource {
     public Stream<EventRepresentation> getEvents(@Parameter(description = "The types of events to return") @QueryParam("type") List<String> types,
                                                  @Parameter(description = "App or oauth client name") @QueryParam("client") String client,
                                                  @Parameter(description = "User id") @QueryParam("user") String user,
-                                                 @Parameter(description = "From (inclusive) date (yyyy-MM-dd) or time in Epoch timestamp") @QueryParam("dateFrom") String dateFrom,
-                                                 @Parameter(description = "To (inclusive) date (yyyy-MM-dd) or time in Epoch timestamp") @QueryParam("dateTo") String dateTo,
+                                                 @Parameter(description = "From (inclusive) date (yyyy-MM-dd) or time in Epoch timestamp millis (number of milliseconds since January 1, 1970, 00:00:00 GMT)") @QueryParam("dateFrom") String dateFrom,
+                                                 @Parameter(description = "To (inclusive) date (yyyy-MM-dd) or time in Epoch timestamp millis (number of milliseconds since January 1, 1970, 00:00:00 GMT)") @QueryParam("dateTo") String dateTo,
                                                  @Parameter(description = "IP Address") @QueryParam("ipAddress") String ipAddress,
                                                  @Parameter(description = "Paging offset") @QueryParam("first") Integer firstResult,
                                                  @Parameter(description = "Maximum results size (defaults to 100)") @QueryParam("max") Integer maxResults,
@@ -958,6 +959,8 @@ public class RealmAdminResource {
      * @param dateFrom
      * @param firstResult
      * @param maxResults Maximum results size (defaults to 100)
+     * @param resourceTypes
+     * @param direction The direction to sort events by (asc or desc)
      * @return
      */
     @Path("admin-events")
@@ -974,8 +977,8 @@ public class RealmAdminResource {
     public Stream<AdminEventRepresentation> getEvents(@QueryParam("operationTypes") List<String> operationTypes, @QueryParam("authRealm") String authRealm, @QueryParam("authClient") String authClient,
                                                     @Parameter(description = "user id") @QueryParam("authUser") String authUser, @QueryParam("authIpAddress") String authIpAddress,
                                                     @QueryParam("resourcePath") String resourcePath,
-                                                    @Parameter(description = "From (inclusive) date (yyyy-MM-dd) or time in Epoch timestamp") @QueryParam("dateFrom") String dateFrom,
-                                                    @Parameter(description = "To (inclusive) date (yyyy-MM-dd) or time in Epoch timestamp") @QueryParam("dateTo") String dateTo,
+                                                    @Parameter(description = "From (inclusive) date (yyyy-MM-dd) or time in Epoch timestamp millis (number of milliseconds since January 1, 1970, 00:00:00 GMT)") @QueryParam("dateFrom") String dateFrom,
+                                                    @Parameter(description = "To (inclusive) date (yyyy-MM-dd) or time in Epoch timestamp millis (number of milliseconds since January 1, 1970, 00:00:00 GMT)") @QueryParam("dateTo") String dateTo,
                                                     @QueryParam("first") Integer firstResult,
                                                     @Parameter(description = "Maximum results size (defaults to 100)") @QueryParam("max") Integer maxResults,
                                                     @QueryParam("resourceTypes") List<String> resourceTypes,

@@ -659,7 +659,7 @@ public class JpaUserProvider implements UserProvider, UserCredentialStore, JpaUs
         CriteriaQuery<Long> queryBuilder = builder.createQuery(Long.class);
         Root<UserEntity> root = queryBuilder.from(UserEntity.class);
 
-        queryBuilder.select(builder.count(root));
+        queryBuilder.select(builder.countDistinct(root));
 
         List<Predicate> predicates = new ArrayList<>();
 
@@ -688,7 +688,7 @@ public class JpaUserProvider implements UserProvider, UserCredentialStore, JpaUs
         Root<UserGroupMembershipEntity> groupMembership = queryBuilder.from(UserGroupMembershipEntity.class);
         Join<UserGroupMembershipEntity, UserEntity> userJoin = groupMembership.join("user");
 
-        queryBuilder.select(builder.count(userJoin));
+        queryBuilder.select(builder.countDistinct(userJoin));
 
         List<Predicate> predicates = new ArrayList<>();
 
@@ -710,7 +710,7 @@ public class JpaUserProvider implements UserProvider, UserCredentialStore, JpaUs
         CriteriaBuilder qb = em.getCriteriaBuilder();
         CriteriaQuery<Long> userQuery = qb.createQuery(Long.class);
         Root<UserEntity> from = userQuery.from(UserEntity.class);
-        Expression<Long> count = qb.count(from);
+        Expression<Long> count = qb.countDistinct(from);
 
         userQuery = userQuery.select(count);
         List<FilterAttributeRepresentation> attributeRepresentations = attributesMapToRepresentation(params);
@@ -736,7 +736,7 @@ public class JpaUserProvider implements UserProvider, UserCredentialStore, JpaUs
 
         CriteriaQuery<Long> countQuery = cb.createQuery(Long.class);
         Root<UserEntity> root = countQuery.from(UserEntity.class);
-        countQuery.select(cb.count(root));
+        countQuery.select(cb.countDistinct(root));
 
         List<FilterAttributeRepresentation> attributeRepresentations = attributesMapToRepresentation(params);
         List<Predicate> restrictions = predicates(attributeRepresentations, root, Map.of());

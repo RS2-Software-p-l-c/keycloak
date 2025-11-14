@@ -16,6 +16,7 @@
  */
 package org.keycloak.services.resources.admin;
 
+import java.util.Arrays;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
 import org.eclipse.microprofile.openapi.annotations.extensions.Extension;
@@ -27,7 +28,7 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 import org.eclipse.microprofile.openapi.annotations.tags.Tag;
 import org.jboss.logging.Logger;
 import org.jboss.resteasy.reactive.NoCache;
-import org.keycloak.authorization.AdminPermissionsSchema;
+import org.keycloak.authorization.fgap.AdminPermissionsSchema;
 import org.keycloak.common.ClientConnection;
 import org.keycloak.common.Profile;
 import org.keycloak.events.admin.OperationType;
@@ -50,9 +51,10 @@ import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.services.ErrorResponse;
 import org.keycloak.services.ErrorResponseException;
 import org.keycloak.services.resources.KeycloakOpenAPI;
-import org.keycloak.services.resources.admin.permissions.AdminPermissionEvaluator;
-import org.keycloak.services.resources.admin.permissions.UserPermissionEvaluator;
+import org.keycloak.services.resources.admin.fgap.AdminPermissionEvaluator;
+import org.keycloak.services.resources.admin.fgap.UserPermissionEvaluator;
 import org.keycloak.userprofile.UserProfile;
+import org.keycloak.userprofile.UserProfileContext;
 import org.keycloak.userprofile.UserProfileProvider;
 import org.keycloak.utils.SearchQueryUtils;
 
@@ -299,13 +301,10 @@ public class UsersResource {
         Stream<UserModel> userModels = Stream.empty();
         if (search != null) {
             if (search.startsWith(SEARCH_ID_PARAMETER)) {
-                UserModel userModel =
-                        session.users().getUserById(realm, search.substring(SEARCH_ID_PARAMETER.length()).trim());
-                if (userModel != null) {
-                    userModels = Stream.of(userModel);
-                    if (AdminPermissionsSchema.SCHEMA.isAdminPermissionsEnabled(realm)) {
-                        userModels = userModels.filter(userPermissionEvaluator::canView);
-                    }
+                String[] userIds = search.substring(SEARCH_ID_PARAMETER.length()).trim().split("\\s+");
+                userModels = Arrays.stream(userIds).map(id -> session.users().getUserById(realm, id)).filter(Objects::nonNull);
+                if (AdminPermissionsSchema.SCHEMA.isAdminPermissionsEnabled(realm)) {
+                    userModels = userModels.filter(userPermissionEvaluator::canView);
                 }
             } else {
                 Map<String, String> attributes = new HashMap<>();
@@ -500,11 +499,15 @@ public class UsersResource {
             usersEvaluator.grantIfNoPermission(session.getAttribute(UserModel.GROUPS) != null);
         }
 
+        UserProfileProvider provider = session.getProvider(UserProfileProvider.class);
+
         return userModels
                 .map(user -> {
-                    UserRepresentation userRep = briefRepresentationB
-                            ? ModelToRepresentation.toBriefRepresentation(user)
-                            : ModelToRepresentation.toRepresentation(session, realm, user);
+                    UserProfile profile = provider.create(UserProfileContext.USER_API, user);
+                    UserRepresentation rep = profile.toRepresentation();
+                    UserRepresentation userRep = briefRepresentationB ?
+                            ModelToRepresentation.toBriefRepresentation(user, rep, false) :
+                            ModelToRepresentation.toRepresentation(session, realm, user, rep, false);
                     userRep.setAccess(usersEvaluator.getAccessForListing(user));
                     return userRep;
                 });

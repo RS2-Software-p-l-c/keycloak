@@ -102,11 +102,6 @@
           "type" : "string",
           "optional" : true
         }, {
-          "id" : 3,
-          "name" : "resendingEvent",
-          "type" : "bool",
-          "optional" : true
-        }, {
           "id" : 4,
           "name" : "siteId",
           "type" : "string",
@@ -116,7 +111,9 @@
           "name" : "nodeId",
           "type" : "string",
           "optional" : true
-        } ]
+        } ],
+        "reserved_ids" : [ 3 ],
+        "reserved_names" : [ "resendingEvent" ]
       }, {
         "name" : "ResourceServerUpdatedEvent",
         "type_id" : 65550,
@@ -124,25 +121,6 @@
           "id" : 1,
           "name" : "id",
           "type" : "string",
-          "optional" : true
-        } ]
-      }, {
-        "name" : "InitializerState",
-        "type_id" : 65554,
-        "fields" : [ {
-          "id" : 1,
-          "name" : "realmId",
-          "type" : "string",
-          "optional" : true
-        }, {
-          "id" : 2,
-          "name" : "segmentsCount",
-          "type" : "int32",
-          "optional" : true
-        }, {
-          "id" : 3,
-          "name" : "segments",
-          "type" : "org.infinispan.protostream.commons.BitSet",
           "optional" : true
         } ]
       }, {
@@ -216,11 +194,6 @@
           "type" : "string",
           "optional" : true
         }, {
-          "id" : 3,
-          "name" : "resendingEvent",
-          "type" : "bool",
-          "optional" : true
-        }, {
           "id" : 4,
           "name" : "siteId",
           "type" : "string",
@@ -230,7 +203,9 @@
           "name" : "nodeId",
           "type" : "string",
           "optional" : true
-        } ]
+        } ],
+        "reserved_ids" : [ 3 ],
+        "reserved_names" : [ "resendingEvent" ]
       }, {
         "name" : "SessionData",
         "type_id" : 65558,
@@ -798,11 +773,6 @@
           "type" : "string",
           "optional" : true
         }, {
-          "id" : 3,
-          "name" : "resendingEvent",
-          "type" : "bool",
-          "optional" : true
-        }, {
           "id" : 4,
           "name" : "siteId",
           "type" : "string",
@@ -812,19 +782,9 @@
           "name" : "nodeId",
           "type" : "string",
           "optional" : true
-        } ]
-      }, {
-        "name" : "LastSessionRefreshEvent",
-        "type_id" : 65557,
-        "fields" : [ ],
-        "maps" : [ {
-          "key_type" : "string",
-          "field" : {
-            "id" : 1,
-            "name" : "lastSessionRefreshes",
-            "type" : "SessionData"
-          }
-        } ]
+        } ],
+        "reserved_ids" : [ 3 ],
+        "reserved_names" : [ "resendingEvent" ]
       }, {
         "name" : "ResourceUpdatedEvent",
         "type_id" : 65548,
@@ -886,6 +846,10 @@
             "type" : "string"
           }
         } ]
+      }, {
+        "name" : "ReloadCertificateFunction",
+        "type_id" : 65615,
+        "fields" : [ ]
       }, {
         "name" : "GroupMovedEvent",
         "type_id" : 65581,

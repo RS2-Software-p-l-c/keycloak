@@ -169,6 +169,7 @@ export const TypeaheadSelectControl = <
 
   return (
     <FormLabel
+      id={id}
       name={name}
       label={label}
       isRequired={required}
@@ -198,7 +199,7 @@ export const TypeaheadSelectControl = <
             toggle={(ref) => (
               <MenuToggle
                 ref={ref}
-                id={id || name.slice(name.lastIndexOf(".") + 1)}
+                id={id || name}
                 variant="typeahead"
                 onClick={() => {
                   setOpen(!open);

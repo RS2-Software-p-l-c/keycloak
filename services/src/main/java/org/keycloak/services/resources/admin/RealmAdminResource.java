@@ -101,9 +101,9 @@ import org.keycloak.services.managers.RealmManager;
 import org.keycloak.services.managers.ResourceAdminManager;
 import org.keycloak.services.resources.KeycloakOpenAPI;
 import org.keycloak.services.resources.admin.ext.AdminRealmResourceProvider;
-import org.keycloak.services.resources.admin.permissions.AdminPermissionEvaluator;
-import org.keycloak.services.resources.admin.permissions.AdminPermissionManagement;
-import org.keycloak.services.resources.admin.permissions.AdminPermissions;
+import org.keycloak.services.resources.admin.fgap.AdminPermissionEvaluator;
+import org.keycloak.services.resources.admin.fgap.AdminPermissionManagement;
+import org.keycloak.services.resources.admin.fgap.AdminPermissions;
 import org.keycloak.services.util.DateUtil;
 import org.keycloak.storage.DatastoreProvider;
 import org.keycloak.storage.ExportImportManager;
@@ -1293,7 +1293,7 @@ public class RealmAdminResource {
                         AdminEventBuilder adminEventClone = adminEvent.clone(kcSession);
                         // calling a static method to avoid using the wrong instances
                         return getPartialImportResults(requestBody, kcSession, realmClone, adminEventClone);
-                    }, false, "Partial import in realm " + realm.getName())
+                    }, "Partial import in realm " + realm.getName())
             ).build();
         } catch (ModelDuplicateException e) {
             throw ErrorResponse.exists(e.getLocalizedMessage());

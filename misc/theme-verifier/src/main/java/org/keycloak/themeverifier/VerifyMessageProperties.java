@@ -58,6 +58,7 @@ public class VerifyMessageProperties {
                 verifyNotMessageFormatQuotes();
                 verifyNotMessageFormatPlaceholders();
             }
+            verifyUnbalancedCurlyBraces();
         } catch (IOException e) {
             throw new MojoExecutionException("Can not read file " + file, e);
         }
@@ -134,6 +135,25 @@ public class VerifyMessageProperties {
         });
     }
 
+    private static final Pattern UNBALANCED_ONE = Pattern.compile("\\{\\{[^{}]*}[^}]");
+    private static final Pattern UNBALANCED_ONE_END = Pattern.compile("\\{\\{[^{}]*}$");
+    private static final Pattern UNBALANCED_TWO = Pattern.compile("[^{]\\{[^{}]*}}");
+    private static final Pattern UNBALANCED_TWO_START = Pattern.compile("^\\{[^{}]*}}");
+
+    private void verifyUnbalancedCurlyBraces() {
+        PropertyResourceBundle bundle = getPropertyResourceBundle();
+
+        bundle.getKeys().asIterator().forEachRemaining(key -> {
+            String value = bundle.getString(key);
+
+            if (UNBALANCED_ONE.matcher(value).find() || UNBALANCED_ONE_END.matcher(value).find()
+                || UNBALANCED_TWO.matcher(value).find() || UNBALANCED_TWO_START.matcher(value).find()) {
+                messages.add("Unbalanced curly braces in key '" + key + "' for file " + file + ": " + value);
+            }
+
+        });
+    }
+
     private PropertyResourceBundle getPropertyResourceBundle() {
         PropertyResourceBundle bundle;
         try (FileInputStream fis = new FileInputStream(file)) {
@@ -188,7 +208,7 @@ public class VerifyMessageProperties {
                     start++;
                 }
                 int end = 0;
-                while (end < sanitized.length() && end < value.length() && value.charAt(value.length() - end - 1) == sanitized.charAt(sanitized.length() - end - 1)) {
+                while (end < sanitized.length() - start && end < value.length() - start && value.charAt(value.length() - end - 1) == sanitized.charAt(sanitized.length() - end - 1)) {
                     end++;
                 }
 

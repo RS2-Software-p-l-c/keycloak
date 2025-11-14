@@ -50,6 +50,8 @@ import org.keycloak.services.resources.KeycloakOpenAPI;
 import org.keycloak.services.resources.admin.AdminEventBuilder;
 import org.keycloak.services.resources.admin.permissions.AdminPermissionEvaluator;
 
+import java.util.Objects;
+
 @Extension(name = KeycloakOpenAPI.Profiles.ADMIN, value = "")
 public class OrganizationResource {
 
@@ -104,10 +106,17 @@ public class OrganizationResource {
     @Operation(summary = "Updates the organization")
     @APIResponses(value = {
         @APIResponse(responseCode = "204", description = "No Content"),
-        @APIResponse(responseCode = "400", description = "Bad Request")
+        @APIResponse(responseCode = "400", description = "Bad Request"),
+        @APIResponse(responseCode = "409", description = "Conflict")
     })
     public Response update(OrganizationRepresentation organizationRep) {
         auth.realm().requireManageRealm();
+
+        // attempt to change organization name to an existing organization name
+        if (!Objects.equals(organization.getName(), organizationRep.getName()) &&
+                provider.getAllStream(organizationRep.getName(), true, -1, -1).findAny().isPresent()) {
+            throw ErrorResponse.error("A organization with the same name already exists.", Status.CONFLICT);
+        }
 
         try {
             OrganizationsValidation.validateUrl(organizationRep.getRedirectUrl());

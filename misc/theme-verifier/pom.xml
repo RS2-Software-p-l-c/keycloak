@@ -32,6 +32,7 @@
     <version>26.3.0</version>
 
     <name>Keycloak Theme verifier</name>
+    <description>Keycloak Theme verifier</description>
 
     <packaging>maven-plugin</packaging>
 
@@ -91,7 +92,6 @@
         </dependency>
     </dependencies>
 
-
     <build>
         <plugins>
             <plugin>
@@ -107,26 +107,5 @@
             </plugin>
         </plugins>
     </build>
-
-    <profiles>
-        <profile>
-            <id>nexus3-staging</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.sonatype.plugins</groupId>
-                        <artifactId>nxrm3-maven-plugin</artifactId>
-                        <version>${nexus3.staging.plugin.version}</version>
-                        <extensions>true</extensions>
-                        <configuration>
-                            <serverId>${jboss.releases.repo.id}</serverId>
-                            <nexusUrl>${jboss.repo.nexusUrl}</nexusUrl>
-                            <repository>${jboss.releases.repo.name}</repository>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-    </profiles>
 
 </project>

@@ -534,9 +534,12 @@ public class OIDCLoginProtocol implements LoginProtocol {
         if (userSession != null && authSession.getClientNote(Constants.KC_ACTION) != null) {
             String providerId = authSession.getClientNote(Constants.KC_ACTION);
             RequiredActionProvider requiredActionProvider = this.session.getProvider(RequiredActionProvider.class, providerId);
+            if (requiredActionProvider == null) {
+                return false;
+            }
             String authTime = userSession.getNote(AuthenticationManager.AUTH_TIME);
             int authTimeInt = authTime == null ? 0 : Integer.parseInt(authTime);
-            int maxAgeInt = requiredActionProvider.getMaxAuthAge();
+            int maxAgeInt = requiredActionProvider.getMaxAuthAge(session);
             return authTimeInt + maxAgeInt < Time.currentTime();
         } else {
             return false;

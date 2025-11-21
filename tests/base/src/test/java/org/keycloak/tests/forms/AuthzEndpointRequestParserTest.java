@@ -4,8 +4,6 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
-import org.keycloak.admin.client.resource.RealmResource;
-import org.keycloak.admin.client.resource.UserResource;
 import org.keycloak.common.util.SecretGenerator;
 import org.keycloak.testframework.annotations.InjectRealm;
 import org.keycloak.testframework.annotations.InjectUser;
@@ -19,7 +17,7 @@ import org.keycloak.testframework.realm.UserConfigBuilder;
 import org.keycloak.testframework.ui.annotations.InjectPage;
 import org.keycloak.testframework.ui.annotations.InjectWebDriver;
 import org.keycloak.testframework.ui.page.LoginPage;
-import org.keycloak.tests.utils.admin.ApiUtil;
+import org.keycloak.testsuite.util.AccountHelper;
 import org.openqa.selenium.WebDriver;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -57,7 +55,7 @@ public class AuthzEndpointRequestParserTest {
                 .param("paramkey4", "paramvalue4")
                 .param("paramkey5", "paramvalue5")
                 .param("paramkey6_too_many", "paramvalue6").open();
-        Assertions.assertTrue(loginPage.isActivePage());
+        loginPage.assertCurrent();
 
     }
 
@@ -90,7 +88,7 @@ public class AuthzEndpointRequestParserTest {
     }
 
     protected void assertLogin(String loginHintExpected, String stateExpected) {
-        Assertions.assertTrue(loginPage.isActivePage());
+        loginPage.assertCurrent();
         Assertions.assertEquals(loginHintExpected, loginPage.getUsername());
         loginPage.clearUsernameInput();
         loginPage.fillLogin("test-user", "password");
@@ -101,12 +99,7 @@ public class AuthzEndpointRequestParserTest {
         String state = oauth.parseLoginResponse().getState();
         Assertions.assertEquals(stateExpected, state);
 
-        UserResource user = ApiUtil.findUserByUsernameId(realm.admin(), "test-user");
-        user.logout();
-    }
-
-    private UserResource getUserResource(RealmResource realm, String username) {
-        return ApiUtil.findUserByUsernameId(realm, username);
+        AccountHelper.logout(realm.admin(), "test-user");
     }
 
 
@@ -118,7 +111,7 @@ public class AuthzEndpointRequestParserTest {
             user.password("password");
             user.name("My", "Test");
             user.email("test@email.org");
-            user.emailVerified();
+            user.emailVerified(true);
 
             return user;
         }

@@ -45,6 +45,12 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-arc-deployment</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>io.quarkus</groupId>
+                    <artifactId>quarkus-arc-dev</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
@@ -53,6 +59,10 @@
                 <exclusion>
                     <groupId>io.quarkus</groupId>
                     <artifactId>quarkus-vertx-http-dev-ui-resources</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.quarkus</groupId>
+                    <artifactId>quarkus-assistant-dev</artifactId>
                 </exclusion>
                 <exclusion>
                     <groupId>io.mvnpm</groupId>
@@ -117,6 +127,12 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-rest-deployment</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>io.quarkus</groupId>
+                    <artifactId>quarkus-rest-dev</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
@@ -136,7 +152,19 @@
                 </exclusion>
                 <exclusion>
                     <groupId>io.quarkus</groupId>
+                    <artifactId>quarkus-datasource-dev</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.quarkus</groupId>
                     <artifactId>quarkus-agroal-dev</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.quarkus</groupId>
+                    <artifactId>quarkus-assistant-dev</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.quarkus</groupId>
+                    <artifactId>quarkus-hibernate-orm-dev</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
@@ -280,6 +308,8 @@
                 <configuration>
                     <systemPropertyVariables>
                         <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
+                        <!-- We want to avoid any other artifacts fetches done via surefire and @QuarkusTest - see https://github.com/keycloak/keycloak/issues/41466 -->
+                        <maven.settings>void</maven.settings>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

@@ -21,7 +21,6 @@ import static org.keycloak.exportimport.ExportImportConfig.ACTION_EXPORT;
 
 import org.keycloak.config.OptionCategory;
 import org.keycloak.exportimport.ExportImportConfig;
-import org.keycloak.quarkus.runtime.configuration.mappers.ExportPropertyMappers;
 import picocli.CommandLine.Command;
 
 import java.util.EnumSet;
@@ -29,19 +28,13 @@ import java.util.EnumSet;
 @Command(name = Export.NAME,
         header = "Export data from realms to a file or directory.",
         description = "%nExport data from realms to a file or directory.")
-public final class Export extends AbstractNonServerCommand implements Runnable {
+public final class Export extends AbstractNonServerCommand {
 
     public static final String NAME = "export";
 
     @Override
     protected void doBeforeRun() {
         System.setProperty(ExportImportConfig.ACTION, ACTION_EXPORT);
-    }
-
-    @Override
-    public void validateConfig() {
-        ExportPropertyMappers.validateConfig();
-        super.validateConfig();
     }
 
     @Override

@@ -79,7 +79,6 @@ export const UserForm = ({
   const isManager = hasAccess("manage-users");
   const canViewFederationLink = hasAccess("view-realm");
   const { whoAmI } = useWhoAmI();
-  const currentLocale = whoAmI.getLocale();
 
   const { handleSubmit, setValue, control, reset, formState } = form;
   const { errors } = formState;
@@ -168,11 +167,11 @@ export const UserForm = ({
               ok: "join",
             }}
             canBrowse={isManager}
-            onConfirm={(groups) => {
+            onConfirm={async (groups) => {
               if (user?.id) {
-                addGroups(groups || []);
+                await addGroups(groups || []);
               } else {
-                addChips(groups || []);
+                await addChips(groups || []);
               }
 
               setOpen(false);
@@ -246,7 +245,7 @@ export const UserForm = ({
               userProfileMetadata={userProfileMetadata}
               hideReadOnly={!user}
               supportedLocales={realm.supportedLocales || []}
-              currentLocale={currentLocale}
+              currentLocale={whoAmI.locale}
               t={
                 ((key: unknown, params) =>
                   t(key as string, params as any)) as TFunction
@@ -305,8 +304,8 @@ export const UserForm = ({
             <Switch
               data-testid="user-locked-switch"
               id="temporaryLocked"
-              onChange={(_event, value) => {
-                unLockUser();
+              onChange={async (_event, value) => {
+                await unLockUser();
                 setLocked(value);
               }}
               isChecked={locked}

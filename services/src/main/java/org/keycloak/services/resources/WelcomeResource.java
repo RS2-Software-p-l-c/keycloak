@@ -130,9 +130,10 @@ public class WelcomeResource {
                 return createWelcomePage(null, "Password and confirmation doesn't match");
             }
 
+
             try {
                 ApplianceBootstrap applianceBootstrap = new ApplianceBootstrap(session);
-                applianceBootstrap.createMasterRealmUser(username, password);
+                applianceBootstrap.createMasterRealmUser(username, password, false);
             } catch (ModelException e) {
                 session.getTransactionManager().rollback();
                 logger.error("Error creating the administrative user", e);
@@ -142,7 +143,6 @@ public class WelcomeResource {
             expireCsrfCookie();
 
             shouldBootstrap = false;
-            ServicesLogger.LOGGER.createdTemporaryAdminUser(username);
             return createWelcomePage("User created", null);
         }
     }
@@ -298,5 +298,4 @@ public class WelcomeResource {
             throw new ForbiddenException();
         }
     }
-
 }

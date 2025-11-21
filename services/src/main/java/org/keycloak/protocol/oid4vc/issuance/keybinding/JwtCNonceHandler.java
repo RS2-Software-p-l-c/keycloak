@@ -32,7 +32,7 @@ import org.keycloak.jose.jws.JWSBuilder;
 import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
-import org.keycloak.oid4vci.Oid4VciConstants;
+import org.keycloak.constants.Oid4VciConstants;
 import org.keycloak.protocol.oid4vc.issuance.OID4VCIssuerWellKnownProvider;
 import org.keycloak.protocol.oid4vc.model.JwtCNonce;
 import org.keycloak.representations.JsonWebToken;
@@ -56,7 +56,7 @@ import java.util.Random;
  */
 public class JwtCNonceHandler implements CNonceHandler {
 
-    public static final String SOURCE_ENDPOINT = "source_endpoint";
+    public static final String SOURCE_ENDPOINT = Oid4VciConstants.SOURCE_ENDPOINT;
 
     public static final int NONCE_DEFAULT_LENGTH = 50;
 

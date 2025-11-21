@@ -33,12 +33,12 @@ import io.smallrye.config.SmallRyeConfig;
 
 import org.keycloak.common.Profile;
 import org.keycloak.common.util.NetworkUtils;
-import org.keycloak.quarkus.runtime.cli.command.AbstractCommand;
 import org.keycloak.quarkus.runtime.configuration.Configuration;
-import org.keycloak.quarkus.runtime.configuration.PersistedConfigSource;
 
 public final class Environment {
 
+    public static final String KC_CONFIG_REBUILD_CHECK = "kc.config.rebuild-check";
+    public static final String KC_CONFIG_BUILT = "kc.config.built";
     private static final String KC_HOME_DIR = "kc.home.dir";
     public static final String NON_SERVER_MODE = "nonserver";
     public static final String PROFILE ="kc.profile";
@@ -48,16 +48,10 @@ public final class Environment {
     public static final String PROD_PROFILE_VALUE = "prod";
     public static final String LAUNCH_MODE = "kc.launch.mode";
 
-    private static volatile AbstractCommand parsedCommand;
-
     private Environment() {}
 
     public static Boolean isRebuild() {
         return Boolean.getBoolean("quarkus.launch.rebuild");
-    }
-
-    public static Boolean isRuntimeMode() {
-        return !isRebuild();
     }
 
     public static String getHomeDir() {
@@ -107,21 +101,6 @@ public final class Environment {
         if (isTestLaunchMode()) {
             System.setProperty("mp.config.profile", profile);
         }
-    }
-
-    /**
-     * Update the profile settings based upon what was set in the system, environment, or optionally persistent values
-     */
-    public static String updateProfile(boolean usePersistent) {
-        String profile = org.keycloak.common.util.Environment.getProfile();
-        if(profile == null && usePersistent) {
-            profile = PersistedConfigSource.getInstance().getValue(org.keycloak.common.util.Environment.PROFILE);
-        }
-        if (profile == null) {
-            profile = Environment.PROD_PROFILE_VALUE;
-        }
-        setProfile(profile);
-        return profile;
     }
 
     public static boolean isDevMode() {
@@ -215,15 +194,15 @@ public final class Environment {
     }
 
     public static boolean isRebuildCheck() {
-        return Boolean.getBoolean("kc.config.build-and-exit");
+        return Boolean.getBoolean(KC_CONFIG_REBUILD_CHECK);
     }
 
     public static void setRebuildCheck() {
-        System.setProperty("kc.config.build-and-exit", "true");
+        System.setProperty(KC_CONFIG_REBUILD_CHECK, "true");
     }
 
     public static boolean isRebuilt() {
-        return Boolean.getBoolean("kc.config.built");
+        return Boolean.getBoolean(KC_CONFIG_BUILT);
     }
 
     public static void setHomeDir(Path path) {
@@ -245,21 +224,6 @@ public final class Environment {
         }
 
         return profile;
-    }
-
-    /**
-     * Get parsed AbstractCommand we obtained from the CLI
-     */
-    public static Optional<AbstractCommand> getParsedCommand() {
-        return Optional.ofNullable(parsedCommand);
-    }
-
-    public static boolean isParsedCommand(String commandName) {
-        return getParsedCommand().filter(f -> f.getName().equals(commandName)).isPresent();
-    }
-
-    public static void setParsedCommand(AbstractCommand command) {
-        Environment.parsedCommand = command;
     }
 
     public static void removeHomeDir() {

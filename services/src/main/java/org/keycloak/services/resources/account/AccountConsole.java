@@ -7,6 +7,7 @@ import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import org.jboss.resteasy.reactive.NoCache;
 import org.keycloak.authentication.requiredactions.DeleteAccount;
+import org.keycloak.authentication.requiredactions.UpdateEmail;
 import org.keycloak.common.Profile;
 import org.keycloak.common.Version;
 import org.keycloak.common.util.Environment;
@@ -20,7 +21,6 @@ import org.keycloak.models.ClientModel;
 import org.keycloak.models.Constants;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
-import org.keycloak.models.RequiredActionProviderModel;
 import org.keycloak.models.RoleModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.protocol.oidc.utils.RedirectUtils;
@@ -104,7 +104,7 @@ public class AccountConsole implements AccountResourceProvider {
         return renderAccountConsole();
     }
 
-    private Response renderAccountConsole() throws IOException, FreeMarkerException {
+    protected Response renderAccountConsole() throws IOException, FreeMarkerException {
         final var serverUriInfo = session.getContext().getUri(UrlType.FRONTEND);
         final var serverBaseUri = serverUriInfo.getBaseUri();
         // Strip any trailing slashes from the URL.
@@ -190,8 +190,7 @@ public class AccountConsole implements AccountResourceProvider {
         map.put("isOid4VciEnabled", realm.isVerifiableCredentialsEnabled());
 
         map.put("updateEmailFeatureEnabled", Profile.isFeatureEnabled(Profile.Feature.UPDATE_EMAIL));
-        RequiredActionProviderModel updateEmailActionProvider = realm.getRequiredActionProviderByAlias(UserModel.RequiredAction.UPDATE_EMAIL.name());
-        map.put("updateEmailActionEnabled", updateEmailActionProvider != null && updateEmailActionProvider.isEnabled());
+        map.put("updateEmailActionEnabled", UpdateEmail.isEnabled(realm));
 
         final var devServerUrl = Environment.isDevMode() ? System.getenv(ViteManifest.ACCOUNT_VITE_URL) : null;
 
@@ -214,17 +213,21 @@ public class AccountConsole implements AccountResourceProvider {
         }
 
         FreeMarkerProvider freeMarkerUtil = session.getProvider(FreeMarkerProvider.class);
-        String result = freeMarkerUtil.processTemplate(map, "index.ftl", theme);
+        String result = renderAccountConsole(freeMarkerUtil, map);
         Response.ResponseBuilder builder = Response.status(Response.Status.OK).type(MediaType.TEXT_HTML_UTF_8).language(Locale.ENGLISH).entity(result);
         return builder.build();
     }
 
-    private Map<String, String> supportedLocales(Properties messages) {
+    protected String renderAccountConsole(FreeMarkerProvider freeMarkerUtil, Map<String, Object> map) throws FreeMarkerException {
+        return freeMarkerUtil.processTemplate(map, "index.ftl", theme);
+    }
+
+    protected Map<String, String> supportedLocales(Properties messages) {
         return realm.getSupportedLocalesStream()
                 .collect(Collectors.toMap(Function.identity(), l -> messages.getProperty("locale_" + l, l)));
     }
 
-    private String messagesToJsonString(Properties props) {
+    protected String messagesToJsonString(Properties props) {
         if (props == null) return "";
         Properties newProps = new Properties();
         for (String prop : props.stringPropertyNames()) {
@@ -301,7 +304,7 @@ public class AccountConsole implements AccountResourceProvider {
         return new String[]{referrer, referrerName, referrerUri};
     }
 
-    private boolean isLinkedAccountsEnabled(UserModel user) {
+    protected boolean isLinkedAccountsEnabled(UserModel user) {
         if (user == null) {
             return false;
         }

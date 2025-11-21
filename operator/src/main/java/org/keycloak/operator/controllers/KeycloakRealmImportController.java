@@ -30,6 +30,7 @@ import io.quarkus.logging.Log;
 import jakarta.inject.Inject;
 import org.keycloak.operator.Config;
 import org.keycloak.operator.ContextUtils;
+import org.keycloak.operator.crds.v2alpha1.deployment.Keycloak;
 import org.keycloak.operator.crds.v2alpha1.realmimport.KeycloakRealmImport;
 import org.keycloak.operator.crds.v2alpha1.realmimport.KeycloakRealmImportStatus;
 import org.keycloak.operator.crds.v2alpha1.realmimport.KeycloakRealmImportStatusBuilder;
@@ -57,13 +58,17 @@ public class KeycloakRealmImportController implements Reconciler<KeycloakRealmIm
 
         var statusBuilder = new KeycloakRealmImportStatusBuilder();
 
-        Job existingJob = context.getSecondaryResource(Job.class).orElse(null);
+        Job existingJob = context.getSecondaryResource(Job.class).filter(job -> job.hasOwnerReferenceFor(realm)).orElse(null);
         StatefulSet existingDeployment = context.getClient().resources(StatefulSet.class).inNamespace(realm.getMetadata().getNamespace())
                 .withName(realm.getSpec().getKeycloakCRName()).get();
+
+        Keycloak existingKeycloak = context.getClient().resources(Keycloak.class).inNamespace(realm.getMetadata().getNamespace())
+                .withName(realm.getSpec().getKeycloakCRName()).require();
 
         if (existingDeployment != null) {
             ContextUtils.storeOperatorConfig(context, config);
             ContextUtils.storeCurrentStatefulSet(context, existingDeployment);
+            ContextUtils.storeKeycloak(context, existingKeycloak);
             if (getReadyReplicas(existingDeployment) > 0) {
                 context.managedWorkflowAndDependentResourceContext().reconcileManagedWorkflow();
             }

@@ -22,7 +22,7 @@ import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.keycloak.quarkus.runtime.cli.command.AbstractStartCommand.OPTIMIZED_BUILD_OPTION_LONG;
+import static org.keycloak.quarkus.runtime.cli.command.AbstractAutoBuildCommand.OPTIMIZED_BUILD_OPTION_LONG;
 import static org.keycloak.quarkus.runtime.cli.command.Main.CONFIG_FILE_LONG_NAME;
 
 import org.junit.jupiter.api.MethodOrderer;
@@ -96,7 +96,7 @@ public class StartCommandDistTest {
     @Test
     @Launch({ "--profile=dev", "start",  "--db=dev-file" })
     void failUsingDevProfile(CLIResult cliResult) {
-        assertTrue(cliResult.getErrorOutput().contains("ERROR: You can not 'start' the server in development mode. Please re-build the server first, using 'kc.sh build' for the default production mode."),
+        assertTrue(cliResult.getErrorOutput().contains("You can not 'start' the server in development mode. Please re-build the server first, using 'kc.sh build' for the default production mode."),
                 () -> "The Output:\n" + cliResult.getErrorOutput() + "doesn't contains the expected string.");
     }
 

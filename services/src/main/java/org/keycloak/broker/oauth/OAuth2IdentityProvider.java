@@ -25,8 +25,11 @@ import org.keycloak.broker.oidc.OAuth2IdentityProviderConfig;
 import org.keycloak.broker.oidc.mappers.AbstractJsonUserAttributeMapper;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.broker.provider.IdentityBrokerException;
-import org.keycloak.broker.provider.util.SimpleHttp;
+import org.keycloak.http.simple.SimpleHttp;
+import org.keycloak.http.simple.SimpleHttpRequest;
+import org.keycloak.http.simple.SimpleHttpResponse;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.protocol.oidc.TokenExchangeContext;
 
 import java.io.IOException;
 
@@ -91,10 +94,18 @@ public class OAuth2IdentityProvider extends AbstractOAuth2IdentityProvider<OAuth
         return identity;
     }
 
+    @Override
+    protected BrokeredIdentityContext exchangeExternalTokenV2Impl(TokenExchangeContext tokenExchangeContext) {
+        // Supporting only introspection-endpoint validation for now
+        validateExternalTokenWithIntrospectionEndpoint(tokenExchangeContext);
+
+        return exchangeExternalUserInfoValidationOnly(tokenExchangeContext.getEvent(), tokenExchangeContext.getFormParams());
+    }
+
     private JsonNode fetchUserProfile(String accessToken) {
         String userInfoUrl = getConfig().getUserInfoUrl();
 
-        try (SimpleHttp.Response response = executeRequest(userInfoUrl, SimpleHttp.doGet(userInfoUrl, session)
+        try (SimpleHttpResponse response = executeRequest(userInfoUrl, SimpleHttp.create(session).doGet(userInfoUrl)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                 .header(HttpHeaders.ACCEPT, MediaType.APPLICATION_JSON))) {
             String contentType = response.getFirstHeader(HttpHeaders.CONTENT_TYPE);
@@ -120,8 +131,8 @@ public class OAuth2IdentityProvider extends AbstractOAuth2IdentityProvider<OAuth
         }
     }
 
-    private SimpleHttp.Response executeRequest(String url, SimpleHttp request) throws IOException {
-        SimpleHttp.Response response = request.asResponse();
+    private SimpleHttpResponse executeRequest(String url, SimpleHttpRequest request) throws IOException {
+        SimpleHttpResponse response = request.asResponse();
         int status = response.getStatus();
 
         if (Response.Status.fromStatusCode(status).getFamily() != Response.Status.Family.SUCCESSFUL) {

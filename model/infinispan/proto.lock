@@ -713,9 +713,14 @@
           "type" : "string",
           "optional" : true
         }, {
-          "id" : 7,
-          "name" : "id",
-          "type" : "org.infinispan.protostream.commons.UUID",
+          "id" : 8,
+          "name" : "userSessionId",
+          "type" : "string",
+          "optional" : true
+        }, {
+          "id" : 9,
+          "name" : "clientId",
+          "type" : "string",
           "optional" : true
         } ],
         "maps" : [ {
@@ -725,7 +730,9 @@
             "name" : "notes",
             "type" : "string"
           }
-        } ]
+        } ],
+        "reserved_ids" : [ 7 ],
+        "reserved_names" : [ "id" ]
       }, {
         "name" : "LoginFailureKey",
         "type_id" : 65599,
@@ -926,10 +933,6 @@
           "optional" : true
         } ]
       }, {
-        "name" : "ReloadCertificateFunction",
-        "type_id" : 65615,
-        "fields" : [ ]
-      }, {
         "name" : "UserConsentsUpdatedEvent",
         "type_id" : 65590,
         "fields" : [ {
@@ -942,6 +945,20 @@
         "name" : "MapEntryToKeyMapper",
         "type_id" : 65611,
         "fields" : [ ]
+      }, {
+        "name" : "EmbeddedClientSessionKey",
+        "type_id" : 65616,
+        "fields" : [ {
+          "id" : 1,
+          "name" : "userSessionId",
+          "type" : "string",
+          "optional" : true
+        }, {
+          "id" : 2,
+          "name" : "clientId",
+          "type" : "string",
+          "optional" : true
+        } ]
       }, {
         "name" : "ClientScopeRemovedEvent",
         "type_id" : 65579,
@@ -1232,11 +1249,6 @@
           "type" : "int32",
           "optional" : true
         }, {
-          "id" : 11,
-          "name" : "authenticatedClientSessions",
-          "type" : "AuthenticatedClientSessionStore",
-          "optional" : true
-        }, {
           "id" : 12,
           "name" : "state",
           "type" : "State",
@@ -1251,6 +1263,11 @@
           "name" : "brokerUserId",
           "type" : "string",
           "optional" : true
+        }, {
+          "id" : 15,
+          "name" : "clientSessions",
+          "type" : "string",
+          "is_repeated" : true
         } ],
         "maps" : [ {
           "key_type" : "string",
@@ -1259,7 +1276,9 @@
             "name" : "notes",
             "type" : "string"
           }
-        } ]
+        } ],
+        "reserved_ids" : [ 11 ],
+        "reserved_names" : [ "authenticatedClientSessions" ]
       }, {
         "name" : "RealmRemovedEvent",
         "type_id" : 65585,

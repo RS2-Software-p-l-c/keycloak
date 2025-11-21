@@ -122,7 +122,8 @@ public class StandardTokenExchangeProvider extends AbstractTokenExchangeProvider
 
         event.detail(Details.REQUESTED_TOKEN_TYPE, context.getParams().getRequestedTokenType());
 
-        AuthenticationManager.AuthResult authResult = AuthenticationManager.verifyIdentityToken(session, realm, session.getContext().getUri(), clientConnection, true, true, null, false, subjectToken, context.getHeaders());
+        AuthenticationManager.AuthResult authResult = AuthenticationManager.verifyIdentityToken(session, realm, session.getContext().getUri(), clientConnection, true, true, null,
+                false, subjectToken, context.getHeaders(), verifier -> {});
         if (authResult == null) {
             event.detail(Details.REASON, "subject_token validation failure");
             event.error(Errors.INVALID_TOKEN);
@@ -248,23 +249,26 @@ public class StandardTokenExchangeProvider extends AbstractTokenExchangeProvider
             clientSessionCtx.setAttribute(Constants.GRANT_TYPE, OAuth2Constants.TOKEN_EXCHANGE_GRANT_TYPE);
 
             TokenContextEncoderProvider encoder = session.getProvider(TokenContextEncoderProvider.class);
-            AccessTokenContext subjectTokenContext = encoder.getTokenContextFromTokenId(subjectToken.getId());
 
-            //copy subject client from the client session notes if the subject token used has already been exchanged
-            if (OAuth2Constants.TOKEN_EXCHANGE_GRANT_TYPE.equals(subjectTokenContext.getGrantType())) {
-                ClientModel subjectClient = session.clients().getClientByClientId(realm, subjectToken.getIssuedFor());
-                if (subjectClient != null) {
-                    AuthenticatedClientSessionModel subjectClientSession = targetUserSession.getAuthenticatedClientSessionByClient(subjectClient.getId());
-                    if (subjectClientSession != null) {
-                        subjectClientSession.getNotes().entrySet().stream()
-                                .filter(note -> note.getKey().startsWith(Constants.TOKEN_EXCHANGE_SUBJECT_CLIENT))
-                                .forEach(note -> clientSessionCtx.getClientSession().setNote(note.getKey(), note.getValue()));
+            if (subjectToken != null) {
+                AccessTokenContext subjectTokenContext = encoder.getTokenContextFromTokenId(subjectToken.getId());
+
+                //copy subject client from the client session notes if the subject token used has already been exchanged
+                if (OAuth2Constants.TOKEN_EXCHANGE_GRANT_TYPE.equals(subjectTokenContext.getGrantType())) {
+                    ClientModel subjectClient = session.clients().getClientByClientId(realm, subjectToken.getIssuedFor());
+                    if (subjectClient != null) {
+                        AuthenticatedClientSessionModel subjectClientSession = targetUserSession.getAuthenticatedClientSessionByClient(subjectClient.getId());
+                        if (subjectClientSession != null) {
+                            subjectClientSession.getNotes().entrySet().stream()
+                                    .filter(note -> note.getKey().startsWith(Constants.TOKEN_EXCHANGE_SUBJECT_CLIENT))
+                                    .forEach(note -> clientSessionCtx.getClientSession().setNote(note.getKey(), note.getValue()));
+                        }
                     }
                 }
-            }
 
-            //store client id of the subject token
-            clientSessionCtx.getClientSession().setNote(Constants.TOKEN_EXCHANGE_SUBJECT_CLIENT + subjectToken.getIssuedFor(), subjectToken.getId());
+                //store client id of the subject token
+                clientSessionCtx.getClientSession().setNote(Constants.TOKEN_EXCHANGE_SUBJECT_CLIENT + subjectToken.getIssuedFor(), subjectToken.getId());
+            }
 
             TokenManager.AccessTokenResponseBuilder responseBuilder = tokenManager.responseBuilder(realm, client, event, session,
                     clientSessionCtx.getClientSession().getUserSession(), clientSessionCtx).generateAccessToken();

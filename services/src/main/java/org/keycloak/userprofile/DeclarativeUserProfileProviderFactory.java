@@ -27,6 +27,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -35,6 +36,7 @@ import java.util.stream.Collectors;
 import org.keycloak.Config;
 import org.keycloak.Config.Scope;
 import org.keycloak.authentication.requiredactions.TermsAndConditions;
+import org.keycloak.authentication.requiredactions.UpdateEmail;
 import org.keycloak.common.Profile;
 import org.keycloak.common.Profile.Feature;
 import org.keycloak.component.AmphibianProviderFactory;
@@ -91,7 +93,7 @@ public class DeclarativeUserProfileProviderFactory implements UserProfileProvide
      * There are the declarations for creating the built-in validations for read-only attributes. Regardless of the context where
      * user profiles are used. They are related to internal attributes with hard conditions on them in terms of management.
      */
-    private static final String[] DEFAULT_READ_ONLY_ATTRIBUTES = { "KERBEROS_PRINCIPAL", "LDAP_ID", "LDAP_ENTRY_DN", "CREATED_TIMESTAMP", "createTimestamp", "modifyTimestamp", "userCertificate", "saml.persistent.name.id.for.*", "ENABLED", "EMAIL_VERIFIED", "disabledReason" };
+    private static final String[] DEFAULT_READ_ONLY_ATTRIBUTES = { "KERBEROS_PRINCIPAL", "LDAP_ID", "LDAP_ENTRY_DN", "CREATED_TIMESTAMP", "createTimestamp", "modifyTimestamp", "userCertificate", "saml.persistent.name.id.for.*", "ENABLED", "EMAIL_VERIFIED", "disabledReason", UserModel.EMAIL_PENDING };
     private static final String[] DEFAULT_ADMIN_READ_ONLY_ATTRIBUTES = { "KERBEROS_PRINCIPAL", "LDAP_ID", "LDAP_ENTRY_DN", "CREATED_TIMESTAMP", "createTimestamp", "modifyTimestamp" };
     private static final Pattern readOnlyAttributesPattern = getRegexPatternString(DEFAULT_READ_ONLY_ATTRIBUTES);
     private static final Pattern adminReadOnlyAttributesPattern = getRegexPatternString(DEFAULT_ADMIN_READ_ONLY_ATTRIBUTES);
@@ -151,7 +153,17 @@ public class DeclarativeUserProfileProviderFactory implements UserProfileProvide
             return true;
         }
 
-        if (Profile.isFeatureEnabled(Profile.Feature.UPDATE_EMAIL)) {
+        if (UpdateEmail.isEnabled(realm)) {
+            if (UPDATE_PROFILE.equals(c.getContext())) {
+                if (!isNewUser(c)) {
+                    if (c.getUser().getEmail() == null || c.getUser().getEmail().isEmpty()) {
+                        // allow to set email via UPDATE_PROFILE if the email is not set for the user
+                        return true;
+                    }
+                } else if (UserModel.EMAIL.equals(c.getAttribute().getKey()) && c.getAttribute().getValue().isEmpty()) {
+                    return true;
+                }
+            }
             return !(UPDATE_PROFILE.equals(c.getContext()) || ACCOUNT.equals(c.getContext()));
         }
 
@@ -169,12 +181,24 @@ public class DeclarativeUserProfileProviderFactory implements UserProfileProvide
             return true;
         }
 
-        if (Profile.isFeatureEnabled(Profile.Feature.UPDATE_EMAIL)) {
+        KeycloakSession session = c.getSession();
+
+        if (UpdateEmail.isEnabled(session.getContext().getRealm())) {
+            if (UPDATE_PROFILE.equals(c.getContext())) {
+                if (!isNewUser(c)) {
+                    if (c.getUser().getEmail() == null || c.getUser().getEmail().isEmpty()) {
+                        // show email field in UPDATE_PROFILE page if the email is not set for the user
+                        return true;
+                    }
+                } else if (UserModel.EMAIL.equals(c.getAttribute().getKey()) && c.getAttribute().getValue().isEmpty()) {
+                    return true;
+                }
+            }
             return !UPDATE_PROFILE.equals(context);
         }
 
         if (UPDATE_PROFILE.equals(context)) {
-            RealmModel realm = c.getSession().getContext().getRealm();
+            RealmModel realm = session.getContext().getRealm();
 
             if (realm.isRegistrationEmailAsUsername()) {
                 return realm.isEditUsernameAllowed();
@@ -456,6 +480,9 @@ public class DeclarativeUserProfileProviderFactory implements UserProfileProvide
 
         metadata.addAttribute(UserModel.LOCALE, -1, DeclarativeUserProfileProviderFactory::isInternationalizationEnabled, DeclarativeUserProfileProviderFactory::isInternationalizationEnabled)
                 .setRequired(AttributeMetadata.ALWAYS_FALSE);
+        metadata.addAttribute(UserModel.EMAIL_PENDING, -1, this::isUpdateEmailFeatureEnabled, this::isUpdateEmailFeatureEnabled)
+                .setAttributeDisplayName("${emailPendingVerification}")
+                .setRequired(AttributeMetadata.ALWAYS_FALSE);
 
         metadata.addAttribute(TermsAndConditions.USER_ATTRIBUTE, -1, AttributeMetadata.ALWAYS_FALSE,
                 DeclarativeUserProfileProviderFactory::isTermAndConditionsEnabled)
@@ -506,8 +533,11 @@ public class DeclarativeUserProfileProviderFactory implements UserProfileProvide
         AttributeMetadata m = c.getMetadata();
         Map<String, Object> rawAnnotations = Optional.ofNullable(m.getAnnotations()).orElse(Map.of());
 
-        if (Profile.isFeatureEnabled(Feature.UPDATE_EMAIL)) {
-            UserProfileProvider provider = c.getSession().getProvider(UserProfileProvider.class);
+        KeycloakSession session = c.getSession();
+        KeycloakContext context = session.getContext();
+
+        if (UpdateEmail.isEnabled(context.getRealm())) {
+            UserProfileProvider provider = session.getProvider(UserProfileProvider.class);
             UPConfig upConfig = provider.getConfiguration();
             UPAttribute attribute = upConfig.getAttribute(UserModel.EMAIL);
             UPAttributePermissions permissions = attribute.getPermissions();
@@ -518,7 +548,7 @@ public class DeclarativeUserProfileProviderFactory implements UserProfileProvide
 
             Set<String> writePermissions = permissions.getEdit();
             boolean isWritable = writePermissions.contains(UPConfigUtils.ROLE_USER);
-            RealmModel realm = c.getSession().getContext().getRealm();
+            RealmModel realm = context.getRealm();
 
             if ((realm.isRegistrationEmailAsUsername() && !realm.isEditUsernameAllowed()) || !isWritable) {
                 return rawAnnotations;
@@ -532,5 +562,19 @@ public class DeclarativeUserProfileProviderFactory implements UserProfileProvide
         }
 
         return rawAnnotations;
+    }
+
+    private boolean isUpdateEmailFeatureEnabled(AttributeContext context) {
+        Entry<String, List<String>> attribute = context.getAttribute();
+
+        if (attribute.getValue().isEmpty()) {
+            return false;
+        }
+
+        KeycloakSession session = context.getSession();
+        KeycloakContext context1 = session.getContext();
+        RealmModel realm = context1.getRealm();
+
+        return UpdateEmail.isEnabled(realm);
     }
 }

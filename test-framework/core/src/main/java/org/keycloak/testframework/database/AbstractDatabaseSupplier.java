@@ -6,6 +6,7 @@ import org.keycloak.testframework.injection.InstanceContext;
 import org.keycloak.testframework.injection.LifeCycle;
 import org.keycloak.testframework.injection.RequestedInstance;
 import org.keycloak.testframework.injection.Supplier;
+import org.keycloak.testframework.injection.SupplierHelpers;
 import org.keycloak.testframework.injection.SupplierOrder;
 import org.keycloak.testframework.server.KeycloakServer;
 import org.keycloak.testframework.server.KeycloakServerConfigBuilder;
@@ -15,14 +16,21 @@ public abstract class AbstractDatabaseSupplier implements Supplier<TestDatabase,
 
     @Override
     public TestDatabase getValue(InstanceContext<TestDatabase, InjectTestDatabase> instanceContext) {
+        DatabaseConfigBuilder builder = DatabaseConfigBuilder
+              .create()
+              .preventReuse(instanceContext.getLifeCycle() != LifeCycle.GLOBAL);
+
+        DatabaseConfig config = SupplierHelpers.getInstance(instanceContext.getAnnotation().config());
+        builder = config.configure(builder);
+
         TestDatabase testDatabase = getTestDatabase();
-        testDatabase.start();
+        testDatabase.start(builder.build());
         return testDatabase;
     }
 
     @Override
     public boolean compatible(InstanceContext<TestDatabase, InjectTestDatabase> a, RequestedInstance<TestDatabase, InjectTestDatabase> b) {
-        return true;
+        return a.getAnnotation().config().equals(b.getAnnotation().config());
     }
 
     @Override

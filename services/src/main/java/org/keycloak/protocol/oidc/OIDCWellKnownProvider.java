@@ -25,6 +25,7 @@ import org.keycloak.common.Profile;
 import org.keycloak.crypto.CekManagementProvider;
 import org.keycloak.crypto.ClientSignatureVerifierProvider;
 import org.keycloak.crypto.ContentEncryptionProvider;
+import org.keycloak.crypto.CryptoUtils;
 import org.keycloak.crypto.SignatureProvider;
 import org.keycloak.jose.jws.Algorithm;
 import org.keycloak.models.CibaConfig;
@@ -57,7 +58,6 @@ import jakarta.ws.rs.core.UriBuilder;
 import jakarta.ws.rs.core.UriInfo;
 
 import java.net.URI;
-import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -81,7 +81,7 @@ public class OIDCWellKnownProvider implements WellKnownProvider {
     public static final List<String> DEFAULT_CLIENT_AUTH_SIGNING_ALG_VALUES_SUPPORTED = list(Algorithm.RS256.toString());
 
     // The exact list depends on protocolMappers
-    public static final List<String> DEFAULT_CLAIMS_SUPPORTED = list("aud", "sub", "iss", IDToken.AUTH_TIME, IDToken.NAME, IDToken.GIVEN_NAME, IDToken.FAMILY_NAME, IDToken.PREFERRED_USERNAME, IDToken.EMAIL, IDToken.ACR);
+    public static final List<String> DEFAULT_CLAIMS_SUPPORTED = list( "iss", IDToken.SUBJECT, IDToken.AUD, "exp", "iat", IDToken.AUTH_TIME, IDToken.NAME, IDToken.GIVEN_NAME, IDToken.FAMILY_NAME, IDToken.PREFERRED_USERNAME, IDToken.EMAIL, IDToken.ACR, IDToken.AZP, "nonce");
 
     public static final List<String> DEFAULT_CLAIM_TYPES_SUPPORTED = list("normal");
 
@@ -188,7 +188,7 @@ public class OIDCWellKnownProvider implements WellKnownProvider {
         config.setTlsClientCertificateBoundAccessTokens(true);
 
         if (Profile.isFeatureEnabled(Profile.Feature.DPOP)) {
-            config.setDpopSigningAlgValuesSupported(new ArrayList<>(DPoPUtil.DPOP_SUPPORTED_ALGS));
+            config.setDpopSigningAlgValuesSupported(new ArrayList<>(DPoPUtil.getDPoPSupportedAlgorithms(session)));
         }
 
         URI revocationEndpoint = frontendUriBuilder.clone().path(OIDCLoginProtocolService.class, "revoke")
@@ -254,12 +254,7 @@ public class OIDCWellKnownProvider implements WellKnownProvider {
     }
 
     private List<String> getSupportedAsymmetricAlgorithms() {
-        return getSupportedAlgorithms(SignatureProvider.class, false).stream()
-                .map(algorithm -> new AbstractMap.SimpleEntry<>(algorithm, session.getProvider(SignatureProvider.class, algorithm)))
-                .filter(entry -> entry.getValue() != null)
-                .filter(entry -> entry.getValue().isAsymmetricAlgorithm())
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toList());
+        return CryptoUtils.getSupportedAsymmetricSignatureAlgorithms(session);
     }
 
     private List<String> getSupportedSigningAlgorithms(boolean includeNone) {

@@ -2,7 +2,11 @@ package org.keycloak.test.examples;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.keycloak.admin.client.Keycloak;
+import org.keycloak.testframework.annotations.InjectAdminClient;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
+import org.keycloak.testframework.remote.runonserver.InjectRunOnServer;
+import org.keycloak.testframework.remote.runonserver.RunOnServerClient;
 import org.keycloak.testframework.ui.annotations.InjectPage;
 import org.keycloak.testframework.ui.annotations.InjectWebDriver;
 import org.keycloak.testframework.ui.page.LoginPage;
@@ -13,6 +17,12 @@ import org.openqa.selenium.htmlunit.HtmlUnitDriver;
 
 @KeycloakIntegrationTest
 public class PagesTest {
+
+    @InjectAdminClient
+    Keycloak adminClient;
+
+    @InjectRunOnServer
+    RunOnServerClient runOnServer;
 
     @InjectWebDriver
     WebDriver webDriver;
@@ -27,12 +37,6 @@ public class PagesTest {
     public void testLoginFromWelcome() {
         welcomePage.navigateTo();
 
-        if (welcomePage.isActivePage()) {
-            welcomePage.fillRegistration("admin", "admin");
-            welcomePage.submit();
-            welcomePage.clickOpenAdminConsole();
-        }
-
         if (webDriver instanceof HtmlUnitDriver) {
             String pageId = webDriver.findElement(By.xpath("//body")).getAttribute("data-page-id");
             Assertions.assertEquals("admin", pageId);
@@ -40,11 +44,12 @@ public class PagesTest {
         } else {
             loginPage.waitForPage();
 
-            Assertions.assertTrue(loginPage.isActivePage());
+            loginPage.assertCurrent();
 
             loginPage.fillLogin("admin", "admin");
             loginPage.submit();
         }
+
     }
 
 }

@@ -1,6 +1,7 @@
 import RealmRepresentation from "@keycloak/keycloak-admin-client/lib/defs/realmRepresentation";
 import {
   createNamedContext,
+  KeycloakSpinner,
   useEnvironment,
   useFetch,
   useRequiredContext,
@@ -34,7 +35,7 @@ export const RealmContextProvider = ({ children }: PropsWithChildren) => {
 
   // Configure admin client to use selected realm when it changes.
   useEffect(() => {
-    (async () => {
+    void (async () => {
       adminClient.setConfig({ realmName: realm });
       const namespace = encodeURIComponent(realm);
       await i18n.loadNamespaces(namespace);
@@ -46,6 +47,10 @@ export const RealmContextProvider = ({ children }: PropsWithChildren) => {
     setRealmRepresentation,
     [realm, key],
   );
+
+  if (!realmRepresentation) {
+    return <KeycloakSpinner />;
+  }
 
   return (
     <RealmContext.Provider value={{ realm, realmRepresentation, refresh }}>

@@ -48,8 +48,4 @@ public abstract class SimpleHttpDefault {
         return SimpleHttp.create(client).doHead(url);
     }
 
-    public static SimpleHttp doHead(String url, HttpClient client) {
-        return SimpleHttp.doHead(url, client, HttpClientProvider.DEFAULT_MAX_CONSUMED_RESPONSE_SIZE);
-    }
-
 }

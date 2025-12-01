@@ -21,7 +21,7 @@
     <parent>
         <artifactId>keycloak-quarkus-parent</artifactId>
         <groupId>org.keycloak</groupId>
-        <version>26.4.5</version>
+        <version>26.4.6</version>
     </parent>
 
     <artifactId>keycloak-quarkus-dist</artifactId>

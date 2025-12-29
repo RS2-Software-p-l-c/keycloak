@@ -69,7 +69,9 @@ export default function GroupsSection() {
     hasAccess("manage-authorization", "manage-users", "manage-clients");
   const canManageGroup =
     hasAccess("manage-users") || currentGroup()?.access?.manage;
-  const canManageRoles = hasAccess("manage-users");
+
+  const canViewRoleMappings =
+    hasAccess("manage-users") || hasAccess("view-users");
   const canViewDetails =
     hasAccess("query-groups", "view-users") ||
     hasAccess("manage-users", "query-groups");
@@ -222,7 +224,7 @@ export default function GroupsSection() {
                   >
                     <GroupAttributes />
                   </Tab>
-                  {canManageRoles && (
+                  {canViewRoleMappings && (
                     <Tab
                       eventKey={3}
                       data-testid="role-mapping-tab"

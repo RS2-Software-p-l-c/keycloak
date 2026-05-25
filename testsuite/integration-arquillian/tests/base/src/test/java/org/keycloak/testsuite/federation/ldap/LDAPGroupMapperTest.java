@@ -599,6 +599,89 @@ public class LDAPGroupMapperTest extends AbstractLDAPTest {
         testRealm().components().component(groupMapperRep.getId()).update(groupMapperRep);
     }
 
+    @Test
+    public void test05_DoNotResolveGroupsIfMemberOfNotChildOfGroupBaseDN() {
+        ComponentRepresentation groupMapperRep = findMapperRepByName("groupsMapper");
+
+        testingClient.server().run(session -> {
+            LDAPTestContext ctx = LDAPTestContext.init(session);
+            RealmModel appRealm = ctx.getRealm();
+            LDAPTestUtils.addUserAttributeMapper(appRealm, ctx.getLdapModel(), "streetMapper", "street", LDAPConstants.STREET);
+            ComponentModel mapperModel = LDAPTestUtils.getSubcomponentByName(appRealm, ctx.getLdapModel(), "groupsMapper");
+            GroupLDAPStorageMapper groupMapper = LDAPTestUtils.getGroupMapper(mapperModel, ctx.getLdapProvider(), appRealm);
+            String baseGroupDN = groupMapper.getConfig().getLDAPGroupsDn();
+            String invalidBaseGroupDN = baseGroupDN.replace("ou=Groups", "ou=OtherGroupBaseDN");
+            LDAPObject carlos = LDAPTestUtils.addLDAPUser(ctx.getLdapProvider(), appRealm, "alice", "Alice", "Jack", "alice@email.org", "cn=mygroup," + invalidBaseGroupDN, "1234");
+
+            LDAPTestUtils.updateLDAPPassword(ctx.getLdapProvider(), carlos, "Password1");
+            LDAPTestUtils.updateConfigOptions(mapperModel,
+                    GroupMapperConfig.USER_ROLES_RETRIEVE_STRATEGY, GroupMapperConfig.GET_GROUPS_FROM_USER_MEMBEROF_ATTRIBUTE,
+                    GroupMapperConfig.MEMBEROF_LDAP_ATTRIBUTE, LDAPConstants.STREET);
+            appRealm.updateComponent(mapperModel);
+        });
+
+        ComponentRepresentation streetMapperRep = findMapperRepByName("streetMapper");
+
+        testingClient.server().run(session -> {
+            LDAPTestContext ctx = LDAPTestContext.init(session);
+            RealmModel appRealm = ctx.getRealm();
+            UserModel user = session.users().getUserByUsername(appRealm, "alice");
+            Set<GroupModel> groups = user.getGroupsStream().collect(Collectors.toSet());
+
+            Assert.assertTrue(groups.isEmpty());
+        });
+
+        testRealm().components().component(streetMapperRep.getId()).remove();
+        groupMapperRep.getConfig().putSingle(GroupMapperConfig.USER_ROLES_RETRIEVE_STRATEGY, GroupMapperConfig.LOAD_GROUPS_BY_MEMBER_ATTRIBUTE);
+        testRealm().components().component(groupMapperRep.getId()).update(groupMapperRep);
+
+        testingClient.server().run(session -> {
+            LDAPTestContext ctx = LDAPTestContext.init(session);
+            LDAPStorageProvider ldapFedProvider = LDAPTestUtils.getLdapProvider(session, ctx.getLdapModel());
+            LDAPTestUtils.removeLDAPUserByUsername(ctx.getLdapProvider(), ctx.getRealm(), ldapFedProvider.getLdapIdentityStore().getConfig(), "alice");
+        });
+    }
+
+    @Test
+    public void test05_DoNotResolveGroupsIfMemberOfHasEmptyValue() {
+        ComponentRepresentation groupMapperRep = findMapperRepByName("groupsMapper");
+
+        testingClient.server().run(session -> {
+            LDAPTestContext ctx = LDAPTestContext.init(session);
+            RealmModel appRealm = ctx.getRealm();
+            LDAPTestUtils.addUserAttributeMapper(appRealm, ctx.getLdapModel(), "streetMapper", "street", LDAPConstants.STREET);
+            ComponentModel mapperModel = LDAPTestUtils.getSubcomponentByName(appRealm, ctx.getLdapModel(), "groupsMapper");
+            LDAPObject carlos = LDAPTestUtils.addLDAPUser(ctx.getLdapProvider(), appRealm, "alice", "Alice", "Jack", "alice@email.org", "", "1234");
+
+            LDAPTestUtils.updateLDAPPassword(ctx.getLdapProvider(), carlos, "Password1");
+            LDAPTestUtils.updateConfigOptions(mapperModel,
+                    GroupMapperConfig.USER_ROLES_RETRIEVE_STRATEGY, GroupMapperConfig.GET_GROUPS_FROM_USER_MEMBEROF_ATTRIBUTE,
+                    GroupMapperConfig.MEMBEROF_LDAP_ATTRIBUTE, LDAPConstants.STREET);
+            appRealm.updateComponent(mapperModel);
+        });
+
+        ComponentRepresentation streetMapperRep = findMapperRepByName("streetMapper");
+
+        testingClient.server().run(session -> {
+            LDAPTestContext ctx = LDAPTestContext.init(session);
+            RealmModel appRealm = ctx.getRealm();
+
+            UserModel user = session.users().getUserByUsername(appRealm, "alice");
+            Set<GroupModel> groups = user.getGroupsStream().collect(Collectors.toSet());
+
+            Assert.assertTrue(groups.isEmpty());
+        });
+
+        testRealm().components().component(streetMapperRep.getId()).remove();
+        groupMapperRep.getConfig().putSingle(GroupMapperConfig.USER_ROLES_RETRIEVE_STRATEGY, GroupMapperConfig.LOAD_GROUPS_BY_MEMBER_ATTRIBUTE);
+        testRealm().components().component(groupMapperRep.getId()).update(groupMapperRep);
+
+        testingClient.server().run(session -> {
+            LDAPTestContext ctx = LDAPTestContext.init(session);
+            LDAPStorageProvider ldapFedProvider = LDAPTestUtils.getLdapProvider(session, ctx.getLdapModel());
+            LDAPTestUtils.removeLDAPUserByUsername(ctx.getLdapProvider(), ctx.getRealm(), ldapFedProvider.getLdapIdentityStore().getConfig(), "alice");
+        });
+    }
 
     // KEYCLOAK-5017
     @Test
@@ -950,6 +1033,40 @@ public class LDAPGroupMapperTest extends AbstractLDAPTest {
                     .map(UserModel::getUsername).toList();
             Assert.assertEquals(1, localGroupMembers.size());
             Assert.assertEquals("localuser", localGroupMembers.get(0));
+        });
+    }
+
+    @Test
+    public void test11_fetchUsersGroupsWithPaginationAndInvalidBatchSize() {
+        testingClient.server().run(session -> {
+            LDAPTestContext ctx = LDAPTestContext.init(session);
+            RealmModel appRealm = ctx.getRealm();
+
+            // batch size 0 effectively disables pagination, code must fall back to non-paginated search
+            ComponentModel mapperModel = LDAPTestUtils.getLdapProviderModel(appRealm);
+            LDAPTestUtils.updateConfigOptions(mapperModel, LDAPConstants.BATCH_SIZE_FOR_SYNC, "0");
+            appRealm.updateComponent(mapperModel);
+        });
+
+        testingClient.server().run(session -> {
+            LDAPTestContext ctx = LDAPTestContext.init(session);
+            RealmModel appRealm = ctx.getRealm();
+
+            // verify that getting the user's groups still works
+            UserModel john = session.users().getUserByUsername(appRealm, "johnkeycloak");
+            Set<GroupModel> johnGroups = john.getGroupsStream().collect(Collectors.toSet());
+            Assert.assertEquals(4, johnGroups.size());
+        });
+
+        String configuredBatchSize = ldapRule.getConfig().get(LDAPConstants.BATCH_SIZE_FOR_SYNC);
+        testingClient.server().run(session -> {
+            LDAPTestContext ctx = LDAPTestContext.init(session);
+            RealmModel appRealm = ctx.getRealm();
+
+            // revert batch size change
+            ComponentModel mapperModel = LDAPTestUtils.getLdapProviderModel(appRealm);
+            LDAPTestUtils.updateConfigOptions(mapperModel, LDAPConstants.BATCH_SIZE_FOR_SYNC, configuredBatchSize);
+            appRealm.updateComponent(mapperModel);
         });
     }
 }

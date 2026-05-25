@@ -21,13 +21,13 @@
     <parent>
         <artifactId>keycloak-distribution-parent</artifactId>
         <groupId>org.keycloak</groupId>
-        <version>26.1.4</version>
+        <version>26.4.7</version>
     </parent>
 
     <artifactId>keycloak-api-docs-dist</artifactId>
     <packaging>pom</packaging>
     <name>Keycloak Docs Distribution</name>
-    <description/>
+    <description>Keycloak Docs Distribution</description>
 
     <properties>
         <javadoc.branding>Keycloak ${project.version}</javadoc.branding>
@@ -75,6 +75,14 @@
         <dependency>
             <groupId>com.fasterxml.jackson.datatype</groupId>
             <artifactId>jackson-datatype-jsr310</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.infinispan</groupId>
+            <artifactId>infinispan-component-annotations</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.antlr</groupId>
+            <artifactId>antlr4-runtime</artifactId>
         </dependency>
     </dependencies>
 

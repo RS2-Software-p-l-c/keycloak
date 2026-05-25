@@ -60,12 +60,16 @@ import { AdvancedSettings } from "./AdvancedSettings";
 import { DescriptorSettings } from "./DescriptorSettings";
 import { DiscoverySettings } from "./DiscoverySettings";
 import { ExtendedNonDiscoverySettings } from "./ExtendedNonDiscoverySettings";
+import { ExtendedOAuth2Settings } from "./ExtendedOAuth2Settings";
 import { GeneralSettings } from "./GeneralSettings";
 import { OIDCAuthentication } from "./OIDCAuthentication";
 import { OIDCGeneralSettings } from "./OIDCGeneralSettings";
 import { ReqAuthnConstraints } from "./ReqAuthnConstraintsSettings";
 import { SamlGeneralSettings } from "./SamlGeneralSettings";
+import { SpiffeSettings } from "./SpiffeSettings";
 import { AdminEvents } from "../../events/AdminEvents";
+import { UserProfileClaimsSettings } from "./OAuth2UserProfileClaimsSettings";
+import { KubernetesSettings } from "./KubernetesSettings";
 
 type HeaderProps = {
   onChange: (value: boolean) => void;
@@ -409,7 +413,10 @@ export default function DetailSettings() {
 
   const isOIDC = provider.providerId!.includes("oidc");
   const isSAML = provider.providerId!.includes("saml");
-  const isSocial = !isOIDC && !isSAML;
+  const isOAuth2 = provider.providerId!.includes("oauth2");
+  const isSPIFFE = provider.providerId!.includes("spiffe");
+  const isKubernetes = provider.providerId!.includes("kubernetes");
+  const isSocial = !isOIDC && !isSAML && !isOAuth2;
 
   const loader = async () => {
     const [loaderMappers, loaderMapperTypes] = await Promise.all([
@@ -439,6 +446,7 @@ export default function DetailSettings() {
   const sections = [
     {
       title: t("generalSettings"),
+      isHidden: isSPIFFE || isKubernetes,
       panel: (
         <FormAccess
           role="manage-identity-providers"
@@ -446,7 +454,7 @@ export default function DetailSettings() {
           onSubmit={handleSubmit(save)}
         >
           {isSocial && <GeneralSettings create={false} id={providerId} />}
-          {isOIDC && <OIDCGeneralSettings />}
+          {(isOIDC || isOAuth2) && <OIDCGeneralSettings />}
           {isSAML && <SamlGeneralSettings isAliasReadonly />}
           {providerInfo && (
             <DynamicComponents stringify properties={providerInfo.properties} />
@@ -459,13 +467,56 @@ export default function DetailSettings() {
       isHidden: !isOIDC,
       panel: (
         <>
-          <DiscoverySettings readOnly={false} />
+          <DiscoverySettings readOnly={false} isOIDC={isOIDC} />
           <Form isHorizontal className="pf-v5-u-py-lg">
             <Divider />
             <OIDCAuthentication create={false} />
           </Form>
           <ExtendedNonDiscoverySettings />
         </>
+      ),
+    },
+    {
+      title: t("oAuthSettings"),
+      isHidden: !isOAuth2,
+      panel: (
+        <>
+          <DiscoverySettings readOnly={false} isOIDC={isOIDC} />
+          <Form isHorizontal className="pf-v5-u-py-lg">
+            <Divider />
+            <OIDCAuthentication create={false} />
+          </Form>
+          <UserProfileClaimsSettings />
+          <ExtendedOAuth2Settings />
+        </>
+      ),
+    },
+    {
+      title: t("generalSettings"),
+      isHidden: !isSPIFFE,
+      panel: (
+        <Form
+          isHorizontal
+          className="pf-v5-u-py-lg"
+          onSubmit={handleSubmit(save)}
+        >
+          <SpiffeSettings />
+          <FixedButtonsGroup name="idp-details" isSubmit reset={reset} />
+        </Form>
+      ),
+    },
+    {
+      title: t("generalSettings"),
+      isHidden: !isKubernetes,
+      panel: (
+        <Form
+          isHorizontal
+          className="pf-v5-u-py-lg"
+          onSubmit={handleSubmit(save)}
+        >
+          <KubernetesSettings />
+          <FixedButtonsGroup name="idp-details" isSubmit reset={reset} />
+        </Form>
       ),
     },
     {
@@ -488,13 +539,18 @@ export default function DetailSettings() {
     },
     {
       title: t("advancedSettings"),
+      isHidden: isSPIFFE || isKubernetes,
       panel: (
         <FormAccess
           role="manage-identity-providers"
           isHorizontal
           onSubmit={handleSubmit(save)}
         >
-          <AdvancedSettings isOIDC={isOIDC!} isSAML={isSAML!} />
+          <AdvancedSettings
+            isOIDC={isOIDC!}
+            isSAML={isSAML!}
+            isOAuth2={isOAuth2!}
+          />
 
           <FixedButtonsGroup name="idp-details" isSubmit reset={reset} />
         </FormAccess>
@@ -535,6 +591,7 @@ export default function DetailSettings() {
           </Tab>
           <Tab
             id="mappers"
+            isHidden={isSPIFFE || isKubernetes}
             data-testid="mappers-tab"
             title={<TabTitleText>{t("mappers")}</TabTitleText>}
             {...mappersTab}

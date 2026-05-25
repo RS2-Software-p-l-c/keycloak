@@ -21,15 +21,15 @@
     <parent>
         <artifactId>keycloak-parent</artifactId>
         <groupId>org.keycloak</groupId>
-        <version>26.1.4</version>
+        <version>26.4.7</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>keycloak-core</artifactId>
     <name>Keycloak Core</name>
+    <description>Keycloak Core</description>
     <packaging>jar</packaging>
-    <description/>
 
     <properties>
         <maven.compiler.source>8</maven.compiler.source>
@@ -93,10 +93,11 @@
                                     <goal>compile</goal>
                                 </goals>
                                 <configuration>
+                                    <includes>
+                                        <include>org/keycloak/jose/jwk/EdECUtilsImpl.java</include>
+                                    </includes>
+                                    <excludes combine.self="override" />
                                     <release>15</release>
-                                    <compileSourceRoots>
-                                        <compileSourceRoot>${project.basedir}/src/main/java15</compileSourceRoot>
-                                    </compileSourceRoots>
                                 </configuration>
                             </execution>
                         </executions>
@@ -123,6 +124,15 @@
                         </goals>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>org/keycloak/jose/jwk/EdECUtilsImpl.java</exclude>
+                    </excludes>
+                </configuration>
             </plugin>
         </plugins>
     </build>

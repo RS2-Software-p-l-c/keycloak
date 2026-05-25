@@ -110,7 +110,7 @@ public interface GroupModel extends RoleMapperModel {
     }
 
     interface GroupMemberJoinEvent extends GroupEvent {
-        static void fire(GroupModel group, KeycloakSession session) {
+        static void fire(GroupModel group, UserModel user, KeycloakSession session) {
             session.getKeycloakSessionFactory().publish(new GroupMemberJoinEvent() {
                 @Override
                 public RealmModel getRealm() {
@@ -123,11 +123,18 @@ public interface GroupModel extends RoleMapperModel {
                 }
 
                 @Override
+                public UserModel getUser() {
+                    return user;
+                }
+
+                @Override
                 public KeycloakSession getKeycloakSession() {
                     return session;
                 }
             });
         }
+
+        UserModel getUser();
     }
 
     interface GroupMemberLeaveEvent extends GroupEvent {
@@ -192,6 +199,10 @@ public interface GroupModel extends RoleMapperModel {
     String getName();
 
     void setName(String name);
+
+    String getDescription();
+
+    void setDescription(String description);
 
     /**
      * Set single value of specified attribute. Remove all other existing values

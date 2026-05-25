@@ -18,6 +18,7 @@
 
 package org.keycloak.testsuite.federation.ldap;
 
+import java.util.List;
 import java.util.Map;
 import org.hamcrest.MatcherAssert;
 import org.jboss.arquillian.graphene.page.Page;
@@ -26,8 +27,9 @@ import org.junit.ClassRule;
 import org.junit.FixMethodOrder;
 import org.junit.Test;
 import org.junit.runners.MethodSorters;
-import org.keycloak.OAuth2Constants;
+import org.keycloak.admin.client.resource.AuthenticationManagementResource;
 import org.keycloak.admin.client.resource.UserResource;
+import org.keycloak.authentication.authenticators.browser.OTPFormAuthenticatorFactory;
 import org.keycloak.component.ComponentModel;
 import org.keycloak.models.AuthenticationExecutionModel;
 import org.keycloak.models.LDAPConstants;
@@ -35,6 +37,7 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.credential.OTPCredentialModel;
 import org.keycloak.models.utils.TimeBasedOTP;
+import org.keycloak.representations.idm.AuthenticationExecutionInfoRepresentation;
 import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.storage.StorageId;
@@ -51,12 +54,16 @@ import org.keycloak.testsuite.util.LDAPRule;
 import org.keycloak.testsuite.util.LDAPTestUtils;
 import org.openqa.selenium.By;
 
+import org.keycloak.testsuite.util.WaitUtils;
+
 import jakarta.ws.rs.ClientErrorException;
 
 import java.util.Collections;
 
 import static org.hamcrest.CoreMatchers.is;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -119,7 +126,7 @@ public class LDAPReadOnlyTest extends AbstractLDAPTest  {
     @Test
     public void testReadOnlyWithTOTPEnabled() {
         // Set TOTP required
-        setTotpRequirementExecutionForRealm(AuthenticationExecutionModel.Requirement.REQUIRED);
+        setTotpRequirementExecutionForRealm(AuthenticationExecutionModel.Requirement.REQUIRED, AuthenticationExecutionModel.Requirement.REQUIRED);
 
         // Authenticate as the LDAP user and assert it works
         loginPage.open();
@@ -134,10 +141,10 @@ public class LDAPReadOnlyTest extends AbstractLDAPTest  {
         totpPage.configure(totp.generateTOTP(totpPage.getTotpSecret()));
 
         Assert.assertEquals(AppPage.RequestType.AUTH_RESPONSE, appPage.getRequestType());
-        Assert.assertNotNull(oauth.getCurrentQuery().get(OAuth2Constants.CODE));
+        Assert.assertNotNull(oauth.parseLoginResponse().getCode());
 
         // Revert TOTP
-        setTotpRequirementExecutionForRealm(AuthenticationExecutionModel.Requirement.CONDITIONAL);
+        setTotpRequirementExecutionForRealm(AuthenticationExecutionModel.Requirement.CONDITIONAL, AuthenticationExecutionModel.Requirement.ALTERNATIVE);
         UserResource user = ApiUtil.findUserByUsernameId(testRealm(), "johnkeycloak");
         String totpCredentialId = user.credentials().stream()
                 .filter(credentialRep -> credentialRep.getType().equals(OTPCredentialModel.TYPE))
@@ -164,6 +171,26 @@ public class LDAPReadOnlyTest extends AbstractLDAPTest  {
         user.update(userRepresentation);
     }
 
+    @Test
+    public void testUpdateLocale() {
+        RealmRepresentation realm = testRealm().toRepresentation();
+        realm.setInternationalizationEnabled(true);
+        testRealm().update(realm);
+        UserResource user = ApiUtil.findUserByUsernameId(testRealm(), "johnkeycloak");
+
+        UserRepresentation userRepresentation = user.toRepresentation();
+        String language = "pt_BR";
+        userRepresentation.setAttributes(Map.of(UserModel.LOCALE, List.of(language)));
+        user.update(userRepresentation);
+
+        userRepresentation = user.toRepresentation();
+        assertEquals(language, userRepresentation.getAttributes().get(UserModel.LOCALE).get(0));
+
+        userRepresentation.getAttributes().remove(UserModel.LOCALE);
+        user.update(userRepresentation);
+        assertNull(userRepresentation.getAttributes().get(UserModel.LOCALE));
+    }
+
     // KEYCLOAK-3365
     @Test(expected = ClientErrorException.class)
     public void testReadOnlyUserThrowsIfChanged() {
@@ -186,6 +213,8 @@ public class LDAPReadOnlyTest extends AbstractLDAPTest  {
             testRealm().update(realm);
 
             UserRepresentation user = adminClient.realm("test").users().search("johnkeycloak", 0, 1).get(0);
+            Map<String, Object> bruteForceStatus = testRealm().attackDetection().bruteForceUserStatus(user.getId());
+            assertFalse("User should not be disabled by brute force.", (boolean) bruteForceStatus.get("disabled"));
             assertTrue(user.isEnabled());
 
             // Lock user (permanently) and make sure the number of failures matches failure factor
@@ -193,7 +222,11 @@ public class LDAPReadOnlyTest extends AbstractLDAPTest  {
             loginInvalidPassword("johnkeycloak");
             assertUserNumberOfFailures(user.getId(), failureFactor);
 
+            WaitUtils.waitForBruteForceExecutors(testingClient);
+
             // Make sure user is now disabled
+            bruteForceStatus = testRealm().attackDetection().bruteForceUserStatus(user.getId());
+            assertTrue("User should be disabled by brute force.", (boolean) bruteForceStatus.get("disabled"));
             user = adminClient.realm("test").users().search("johnkeycloak", 0, 1).get(0);
             assertFalse(user.isEnabled());
 
@@ -225,14 +258,21 @@ public class LDAPReadOnlyTest extends AbstractLDAPTest  {
         MatcherAssert.assertThat((Integer) userAttackInfo.get("numFailures"), is(numberOfFailures));
     }
 
-    private void setTotpRequirementExecutionForRealm(AuthenticationExecutionModel.Requirement requirement) {
-        adminClient.realm("test").flows().getExecutions("browser").
-                stream().filter(execution -> execution.getDisplayName().equals("Browser - Conditional OTP"))
-                .forEach(execution ->
-                {execution.setRequirement(requirement.name());
-                    adminClient.realm("test").flows().updateExecutions("browser", execution);});
+    private void setTotpRequirementExecutionForRealm(AuthenticationExecutionModel.Requirement conditionalReq, AuthenticationExecutionModel.Requirement otpReq) {
+        AuthenticationManagementResource authMgtRes = testRealm().flows();
+        AuthenticationExecutionInfoRepresentation browserConditionalExecution = authMgtRes.getExecutions("browser").stream()
+                .filter(execution -> execution.getDisplayName().equals("Browser - Conditional 2FA"))
+                .findAny()
+                .get();
+        browserConditionalExecution.setRequirement(conditionalReq.name());
+        authMgtRes.updateExecutions("browser", browserConditionalExecution);
+        AuthenticationExecutionInfoRepresentation otpExecution = authMgtRes.getExecutions("Browser - Conditional 2FA").stream()
+                .filter(execution -> OTPFormAuthenticatorFactory.PROVIDER_ID.equals(execution.getProviderId()))
+                .findAny()
+                .get();
+        otpExecution.setRequirement(otpReq.name());
+        authMgtRes.updateExecutions("browser", otpExecution);
     }
-
 
     protected void assertFederatedUserLink(UserRepresentation user) {
         Assert.assertTrue(StorageId.isLocalStorage(user.getId()));

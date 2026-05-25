@@ -19,17 +19,16 @@ package org.keycloak.testsuite.oauth;
 
 import org.junit.Rule;
 import org.junit.Test;
-import org.keycloak.OAuth2Constants;
 import org.keycloak.events.Details;
 import org.keycloak.representations.idm.EventRepresentation;
 import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.testsuite.AbstractKeycloakTest;
 import org.keycloak.testsuite.AssertEvents;
-import org.keycloak.testsuite.util.OAuthClient;
+import org.keycloak.testsuite.util.oauth.AccessTokenResponse;
 
 import java.util.List;
 
-import static org.keycloak.testsuite.admin.AbstractAdminTest.loadJson;
+import static org.keycloak.testsuite.AbstractAdminTest.loadJson;
 
 /**
  * @author Sebastian Rose, AOE on 02.06.15.
@@ -59,26 +58,16 @@ public class OAuthDanceClientSessionExtensionTest extends AbstractKeycloakTest {
         String sessionId = loginEvent.getSessionId();
         String codeId = loginEvent.getDetails().get(Details.CODE_ID);
 
-        String code = oauth.getCurrentQuery().get(OAuth2Constants.CODE);
+        String code = oauth.parseLoginResponse().getCode();
 
-        String clientSessionState = "1234";
-        String clientSessionHost = "test-client-host";
-
-        OAuthClient.AccessTokenResponse tokenResponse = oauth.clientSessionState(clientSessionState)
-                .clientSessionHost(clientSessionHost)
-                .doAccessTokenRequest(code, "password");
+        AccessTokenResponse tokenResponse = oauth.doAccessTokenRequest(code);
 
         String refreshTokenString = tokenResponse.getRefreshToken();
 
         EventRepresentation tokenEvent = events.expectCodeToToken(codeId, sessionId)
                 .assertEvent();
 
-
-        String updatedClientSessionState = "5678";
-
-        oauth.clientSessionState(updatedClientSessionState)
-                .clientSessionHost(clientSessionHost)
-                .doRefreshTokenRequest(refreshTokenString, "password");
+        oauth.doRefreshTokenRequest(refreshTokenString);
 
         events.expectRefresh(tokenEvent.getDetails().get(Details.REFRESH_TOKEN_ID), sessionId)
                 .assertEvent();

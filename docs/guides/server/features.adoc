@@ -1,9 +1,10 @@
+<#import "/templates/features.adoc" as features>
 <#import "/templates/guide.adoc" as tmpl>
 <#import "/templates/kc.adoc" as kc>
 
 <@tmpl.guide
 title="Enabling and disabling features"
-summary="Understand how to configure {project_name} to use optional features"
+summary="Configure {project_name} to use optional features."
 includedOptions="features features-*">
 
 {project_name} has packed some functionality in features, including some disabled features, such as Technology Preview and deprecated features. Other features are enabled by default, but you can disable them if they do not apply to your use of {project_name}.
@@ -24,11 +25,11 @@ To enable all preview features, enter this command:
 
 Enabled feature may be versioned, or unversioned.  If you use a versioned feature name, e.g. feature:v1, that exact feature version will be enabled as long as it still exists in the runtime.  If you instead use an unversioned name, e.g. just feature, the selection of the particular supported feature version may change from release to release according to the following precedence:
 
-1. The highest default supported version
-1. The highest non-default supported version
-1. The highest deprecated version
-1. The highest preview version
-1. The highest experimental version
+. The highest default supported version
+. The highest non-default supported version
+. The highest deprecated version
+. The highest preview version
+. The highest experimental version
 
 == Disabling features
 
@@ -48,20 +49,20 @@ When a feature is disabled all versions of that feature are disabled.
 
 The following list contains supported features that are enabled by default, and can be disabled if not needed.
 
-<@showFeatures ctx.features.supported/>
+<@features.table ctx.features.supported/>
 
 === Disabled by default
 
 The following list contains supported features that are disabled by default, and can be enabled if needed.
 
-<@showFeatures ctx.features.supportedDisabledByDefault/>
+<@features.table ctx.features.supportedDisabledByDefault/>
 
 == Preview features
 
 Preview features are disabled by default and are not recommended for use in production.
 These features may change or be removed at a future release.
 
-<@showFeatures ctx.features.preview/>
+<@features.table ctx.features.preview/>
 
 == Deprecated features
 
@@ -69,7 +70,7 @@ These features may change or be removed at a future release.
 
 The following list contains deprecated features that will be removed in a future release. These features are disabled by default.
 
-<@showFeatures ctx.features.deprecated/>
+<@features.table ctx.features.deprecated/>
 
 <#else>
 
@@ -78,10 +79,3 @@ There are no deprecated features in this {project_name} release.
 </#if>
 
 </@tmpl.guide>
-
-<#macro showFeatures features>
-<#list features as feature>
-[.features-name]#${feature.name}#::
-[.features-description]#${feature.description}#
-</#list>
-</#macro>

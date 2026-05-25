@@ -40,6 +40,7 @@ import org.keycloak.models.CibaConfig;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.ClientScopeModel;
 import org.keycloak.models.GroupModel;
+import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.ModelException;
 import org.keycloak.models.OAuth2DeviceConfig;
 import org.keycloak.models.OTPPolicy;
@@ -111,8 +112,6 @@ public class CachedRealm extends AbstractExtendableRevisioned {
     protected int accessCodeLifespanUserAction;
     protected int accessCodeLifespanLogin;
     protected LazyLoader<RealmModel, OAuth2DeviceConfig> deviceConfig;
-    protected LazyLoader<RealmModel, CibaConfig> cibaConfig;
-    protected LazyLoader<RealmModel, ParConfig> parConfig;
     protected int actionTokenGeneratedByAdminLifespan;
     protected int actionTokenGeneratedByUserLifespan;
     protected int notBefore;
@@ -165,8 +164,8 @@ public class CachedRealm extends AbstractExtendableRevisioned {
     private boolean allowUserManagedAccess;
 
     protected List<String> defaultGroups;
-    protected List<String> defaultDefaultClientScopes = new LinkedList<>();
-    protected List<String> optionalDefaultClientScopes = new LinkedList<>();
+    protected DefaultLazyLoader<RealmModel, List<String>> defaultDefaultClientScopes;
+    protected DefaultLazyLoader<RealmModel, List<String>> optionalDefaultClientScopes;
     protected boolean internationalizationEnabled;
     protected Set<String> supportedLocales;
     protected String defaultLocale;
@@ -228,8 +227,6 @@ public class CachedRealm extends AbstractExtendableRevisioned {
         accessTokenLifespanForImplicitFlow = model.getAccessTokenLifespanForImplicitFlow();
         accessCodeLifespan = model.getAccessCodeLifespan();
         deviceConfig = new DefaultLazyLoader<>(OAuth2DeviceConfig::new, null);
-        cibaConfig = new DefaultLazyLoader<>(CibaConfig::new, null);
-        parConfig = new DefaultLazyLoader<>(ParConfig::new, null);
         accessCodeLifespanUserAction = model.getAccessCodeLifespanUserAction();
         accessCodeLifespanLogin = model.getAccessCodeLifespanLogin();
         actionTokenGeneratedByAdminLifespan = model.getActionTokenGeneratedByAdminLifespan();
@@ -268,7 +265,10 @@ public class CachedRealm extends AbstractExtendableRevisioned {
         ClientModel masterAdminClient = model.getMasterAdminClient();
         this.masterAdminClient = (masterAdminClient != null) ? masterAdminClient.getId() : null;
 
-        cacheClientScopes(model);
+        defaultDefaultClientScopes = new DefaultLazyLoader<>(realm -> realm.getDefaultClientScopesStream(true).map(ClientScopeModel::getId)
+                .collect(Collectors.toList()), null);
+        optionalDefaultClientScopes = new DefaultLazyLoader<>(realm -> realm.getDefaultClientScopesStream(false).map(ClientScopeModel::getId)
+                .collect(Collectors.toList()), null);
 
         internationalizationEnabled = model.isInternationalizationEnabled();
         supportedLocales = model.getSupportedLocalesStream().collect(Collectors.toSet());
@@ -324,13 +324,6 @@ public class CachedRealm extends AbstractExtendableRevisioned {
         }
 
         realmLocalizationTexts = model.getRealmLocalizationTexts();
-    }
-
-    protected void cacheClientScopes(RealmModel model) {
-        defaultDefaultClientScopes = model.getDefaultClientScopesStream(true).map(ClientScopeModel::getId)
-                .collect(Collectors.toList());
-        optionalDefaultClientScopes = model.getDefaultClientScopesStream(false).map(ClientScopeModel::getId)
-                .collect(Collectors.toList());
     }
 
     public String getMasterAdminClient() {
@@ -530,16 +523,16 @@ public class CachedRealm extends AbstractExtendableRevisioned {
         return accessCodeLifespanLogin;
     }
 
-    public OAuth2DeviceConfig getOAuth2DeviceConfig(Supplier<RealmModel> modelSupplier) {
-        return deviceConfig.get(modelSupplier);
+    public OAuth2DeviceConfig getOAuth2DeviceConfig(KeycloakSession session, Supplier<RealmModel> modelSupplier) {
+        return deviceConfig.get(session, modelSupplier);
     }
 
     public CibaConfig getCibaConfig(Supplier<RealmModel> modelSupplier) {
-        return cibaConfig.get(modelSupplier);
+        return new CibaConfig(modelSupplier.get());
     }
 
     public ParConfig getParConfig(Supplier<RealmModel> modelSupplier) {
-        return parConfig.get(modelSupplier);
+        return new ParConfig(modelSupplier.get());
     }
 
     public int getActionTokenGeneratedByAdminLifespan() {
@@ -706,12 +699,12 @@ public class CachedRealm extends AbstractExtendableRevisioned {
         return defaultGroups;
     }
 
-    public List<String> getDefaultDefaultClientScopes() {
-        return defaultDefaultClientScopes;
+    public List<String> getDefaultDefaultClientScopes(KeycloakSession session, Supplier<RealmModel> modelSupplier) {
+        return defaultDefaultClientScopes.get(session, modelSupplier);
     }
 
-    public List<String> getOptionalDefaultClientScopes() {
-        return optionalDefaultClientScopes;
+    public List<String> getOptionalDefaultClientScopes(KeycloakSession session, Supplier<RealmModel> modelSupplier) {
+        return optionalDefaultClientScopes.get(session, modelSupplier);
     }
 
     public List<AuthenticationFlowModel> getAuthenticationFlowList() {

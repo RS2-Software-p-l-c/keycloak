@@ -21,7 +21,7 @@
     <parent>
         <groupId>org.keycloak.testsuite</groupId>
         <artifactId>integration-arquillian-tests</artifactId>
-        <version>26.1.4</version>
+        <version>26.4.7</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
@@ -45,9 +45,14 @@
         <mvel.version>2.5.2.Final</mvel.version>
         <systemrules.version>1.19.0</systemrules.version>
         <common.resources>${basedir}/../../servers/auth-server/common</common.resources>
+        <auth.server.ipv6>false</auth.server.ipv6>
     </properties>
     
     <dependencies>
+        <dependency>
+            <groupId>org.keycloak.tests</groupId>
+            <artifactId>keycloak-tests-utils-shared</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.keycloak</groupId>
             <artifactId>keycloak-util-embedded-ldap</artifactId>
@@ -138,11 +143,6 @@
         <dependency>
             <groupId>org.apache.maven.resolver</groupId>
             <artifactId>maven-resolver-api</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.smallrye</groupId>
-            <artifactId>jandex</artifactId>
-            <version>${smallrye.jandex.version}</version>
         </dependency>
         <dependency>
             <groupId>com.github.stefanbirkner</groupId>
@@ -271,6 +271,7 @@
             <plugin>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
+                    <runOrder>alphabetical</runOrder>
                     <excludes>
                         <exclude>${exclude.test}</exclude>
                         <exclude>${exclude.console}</exclude>
@@ -307,26 +308,6 @@
                                         <include>vault/**</include>
                                         <include>firefox-cookies-prefs.js</include>
                                     </includes>
-                                </resource>
-                            </resources>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>copy-admin-user-json-file</id>
-                        <phase>process-resources</phase>
-                        <goals>
-                            <goal>copy-resources</goal>
-                        </goals>
-                        <configuration>
-                            <skip>${skip.add.user.json}</skip>
-                            <outputDirectory>${auth.server.config.dir}</outputDirectory>
-                            <resources>
-                                <resource>
-                                    <directory>src/test/resources</directory>
-                                    <includes>
-                                        <include>keycloak-add-user.json</include>
-                                    </includes>
-                                    <filtering>true</filtering>
                                 </resource>
                             </resources>
                         </configuration>
@@ -414,6 +395,12 @@
                                             <ORACLE_PASSWORD>${keycloak.connectionsJpa.password}</ORACLE_PASSWORD>
                                             <APP_USER>${keycloak.connectionsJpa.user}</APP_USER>
                                             <APP_USER_PASSWORD>${keycloak.connectionsJpa.password}</APP_USER_PASSWORD>
+
+                                            <!-- EnterpriseDB -->
+                                            <PGPORT>${docker.database.port}</PGPORT>
+                                            <PGDATABASE>${keycloak.connectionsJpa.database}</PGDATABASE>
+                                            <PGUSER>${keycloak.connectionsJpa.user}</PGUSER>
+                                            <PGPASSWORD>${keycloak.connectionsJpa.password}</PGPASSWORD>
                                         </env>
                                         <cmd>${docker.database.cmd}</cmd>
                                         <wait>
@@ -448,7 +435,20 @@
     </build>
 
     <profiles>
-
+    
+        <profile>
+            <id>ipv6</id>
+            <activation>
+                <property>
+                    <name>java.net.preferIPv6Addresses</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <properties>
+                <auth.server.ipv6>true</auth.server.ipv6>
+            </properties>
+        </profile>
+        
         <profile>
             <id>app-server-wildfly</id>
             <activation>
@@ -786,7 +786,7 @@
                                     <images>
                                         <image>
                                             <alias>infinispan</alias>
-                                            <name>quay.io/infinispan/server:${infinispan.version}</name>
+                                            <name>${infinispan.container}</name>
                                             <run>
                                                 <ports>
                                                     <port>11222:11222</port>

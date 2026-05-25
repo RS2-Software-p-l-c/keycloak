@@ -37,7 +37,6 @@ import org.keycloak.models.sessions.infinispan.changes.Tasks;
 import org.keycloak.models.sessions.infinispan.entities.RootAuthenticationSessionEntity;
 import org.keycloak.models.sessions.infinispan.events.RealmRemovedSessionEvent;
 import org.keycloak.models.sessions.infinispan.events.SessionEventsSenderTransaction;
-import org.keycloak.models.sessions.infinispan.remotestore.RemoteCacheInvoker;
 import org.keycloak.models.sessions.infinispan.stream.SessionWrapperPredicate;
 import org.keycloak.models.sessions.infinispan.util.InfinispanKeyGenerator;
 import org.keycloak.models.sessions.infinispan.util.SessionTimeouts;
@@ -56,28 +55,23 @@ public class InfinispanAuthenticationSessionProvider implements AuthenticationSe
     private final KeycloakSession session;
     private final InfinispanKeyGenerator keyGenerator;
     private final int authSessionsLimit;
-    protected final Cache<String, SessionEntityWrapper<RootAuthenticationSessionEntity>> cache;
     protected final InfinispanChangelogBasedTransaction<String, RootAuthenticationSessionEntity> sessionTx;
     protected final SessionEventsSenderTransaction clusterEventsSenderTx;
 
-    public InfinispanAuthenticationSessionProvider(KeycloakSession session, RemoteCacheInvoker remoteCacheInvoker, InfinispanKeyGenerator keyGenerator,
-                                                   Cache<String, SessionEntityWrapper<RootAuthenticationSessionEntity>> cache, int authSessionsLimit,  SerializeExecutionsByKey<String> serializer) {
+    public InfinispanAuthenticationSessionProvider(KeycloakSession session, InfinispanKeyGenerator keyGenerator,
+                                                   InfinispanChangelogBasedTransaction<String, RootAuthenticationSessionEntity> sessionTx, int authSessionsLimit) {
         this.session = session;
         this.keyGenerator = keyGenerator;
         this.authSessionsLimit = authSessionsLimit;
-
-        this.cache = cache;
-        this.sessionTx = new InfinispanChangelogBasedTransaction<>(session, cache, remoteCacheInvoker, SessionTimeouts::getAuthSessionLifespanMS, SessionTimeouts::getAuthSessionMaxIdleMS, serializer);
+        this.sessionTx = sessionTx;
         this.clusterEventsSenderTx = new SessionEventsSenderTransaction(session);
-
-        session.getTransactionManager().enlistAfterCompletion(sessionTx);
         session.getTransactionManager().enlistAfterCompletion(clusterEventsSenderTx);
     }
 
 
     @Override
     public RootAuthenticationSessionModel createRootAuthenticationSession(RealmModel realm) {
-        String id = keyGenerator.generateKeyString(session, cache);
+        String id = keyGenerator.generateKeyString(session, sessionTx.getCache());
         return createRootAuthenticationSession(realm, id);
     }
 
@@ -118,11 +112,12 @@ public class InfinispanAuthenticationSessionProvider implements AuthenticationSe
     public void onRealmRemoved(RealmModel realm) {
         // Send message to all DCs. The remoteCache will notify client listeners on all DCs for remove authentication sessions
         clusterEventsSenderTx.addEvent(
-                RealmRemovedSessionEvent.createEvent(RealmRemovedSessionEvent.class, InfinispanAuthenticationSessionProviderFactory.REALM_REMOVED_AUTHSESSION_EVENT, session, realm.getId(), false),
-                ClusterProvider.DCNotify.ALL_DCS);
+                RealmRemovedSessionEvent.createEvent(RealmRemovedSessionEvent.class, InfinispanAuthenticationSessionProviderFactory.REALM_REMOVED_AUTHSESSION_EVENT, session, realm.getId())
+        );
     }
 
     protected void onRealmRemovedEvent(String realmId) {
+        Cache<String, SessionEntityWrapper<RootAuthenticationSessionEntity>> cache = sessionTx.getCache();
         Iterator<Map.Entry<String, SessionEntityWrapper<RootAuthenticationSessionEntity>>> itr = CacheDecorators.localCache(cache)
                 .entrySet()
                 .stream()
@@ -181,7 +176,7 @@ public class InfinispanAuthenticationSessionProvider implements AuthenticationSe
     }
 
     public Cache<String, SessionEntityWrapper<RootAuthenticationSessionEntity>> getCache() {
-        return cache;
+        return sessionTx.getCache();
     }
 
     public InfinispanChangelogBasedTransaction<String, RootAuthenticationSessionEntity> getRootAuthSessionTransaction() {

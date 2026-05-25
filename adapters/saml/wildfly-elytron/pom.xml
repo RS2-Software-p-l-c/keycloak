@@ -21,14 +21,14 @@
     <parent>
         <artifactId>keycloak-parent</artifactId>
         <groupId>org.keycloak</groupId>
-        <version>26.1.4</version>
+        <version>26.4.7</version>
         <relativePath>../../../pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>keycloak-saml-wildfly-elytron-adapter</artifactId>
     <name>Keycloak WildFly Elytron SAML Adapter</name>
-    <description/>
+    <description>Keycloak WildFly Elytron SAML Adapter</description>
 
     <dependencies>
         <dependency>

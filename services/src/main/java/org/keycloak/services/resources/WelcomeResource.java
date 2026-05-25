@@ -61,7 +61,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
@@ -72,9 +71,7 @@ public class WelcomeResource {
 
     protected static final Logger logger = Logger.getLogger(WelcomeResource.class);
 
-    private static final String KEYCLOAK_STATE_CHECKER = "WELCOME_STATE_CHECKER";
-
-    private AtomicBoolean shouldBootstrap;
+    private volatile Boolean shouldBootstrap;
 
     @Context
     KeycloakSession session;
@@ -106,8 +103,8 @@ public class WelcomeResource {
         if (!shouldBootstrap()) {
             return createWelcomePage(null, null);
         } else {
-            if (!isLocal()) {
-                ServicesLogger.LOGGER.rejectedNonLocalAttemptToCreateInitialUser(session.getContext().getConnection().getRemoteAddr());
+            if (!isLocal(session)) {
+                ServicesLogger.LOGGER.rejectedNonLocalAttemptToCreateInitialUser(session.getContext().getConnection().getRemoteHost());
                 throw new WebApplicationException(Response.Status.BAD_REQUEST);
             }
 
@@ -133,9 +130,10 @@ public class WelcomeResource {
                 return createWelcomePage(null, "Password and confirmation doesn't match");
             }
 
+
             try {
                 ApplianceBootstrap applianceBootstrap = new ApplianceBootstrap(session);
-                applianceBootstrap.createMasterRealmUser(username, password);
+                applianceBootstrap.createMasterRealmUser(username, password, false);
             } catch (ModelException e) {
                 session.getTransactionManager().rollback();
                 logger.error("Error creating the administrative user", e);
@@ -144,8 +142,7 @@ public class WelcomeResource {
 
             expireCsrfCookie();
 
-            shouldBootstrap.set(false);
-            ServicesLogger.LOGGER.createdTemporaryAdminUser(username);
+            shouldBootstrap = false;
             return createWelcomePage("User created", null);
         }
     }
@@ -179,7 +176,7 @@ public class WelcomeResource {
             Theme theme = getTheme();
 
             if(Objects.isNull(theme)) {
-                logger.error("Theme is null please check the \"--spi-theme-default\" parameter");
+                logger.error("Theme is null please check the \"--spi-theme--default\" parameter");
                 errorMessage = "The theme is null";
                 ResponseBuilder rb = Response.status(Status.BAD_REQUEST)
                         .entity(errorMessage)
@@ -210,7 +207,7 @@ public class WelcomeResource {
             map.put("resourcesPath", "resources/" + Version.RESOURCES_VERSION + "/" + theme.getType().toString().toLowerCase() +"/" + theme.getName());
             map.put("resourcesCommonPath", "resources/" + Version.RESOURCES_VERSION + "/" + commonPath);
 
-            boolean isLocal = isLocal();
+            boolean isLocal = isLocal(session);
             map.put("localUser", isLocal);
 
             if (bootstrap) {
@@ -262,14 +259,14 @@ public class WelcomeResource {
         if (shouldBootstrap == null) {
             synchronized (this) {
                 if (shouldBootstrap == null) {
-                    shouldBootstrap = new AtomicBoolean(new ApplianceBootstrap(session).isNoMasterUser());
+                    shouldBootstrap = new ApplianceBootstrap(session).isNoMasterUser();
                 }
             }
         }
-        return shouldBootstrap.get();
+        return shouldBootstrap;
     }
 
-    private boolean isLocal() {
+    public static boolean isLocal(KeycloakSession session) {
         ClientConnection clientConnection = session.getContext().getConnection();
         String remoteAddress = clientConnection.getRemoteAddr();
         String localAddress = clientConnection.getLocalAddr();
@@ -277,7 +274,7 @@ public class WelcomeResource {
         HttpHeaders headers = request.getHttpHeaders();
         String xForwardedFor = headers.getHeaderString("X-Forwarded-For");
         String forwarded = headers.getHeaderString("Forwarded");
-        logger.debugf("Checking WelcomePage. Remote address: %s, Local address: %s, X-Forwarded-For header: %s, Forwarded header: %s", remoteAddress.toString(), localAddress.toString(), xForwardedFor, forwarded);
+        logger.debugf("Checking isLocal. Remote address: %s, Local address: %s, X-Forwarded-For header: %s, Forwarded header: %s", remoteAddress, localAddress, xForwardedFor, forwarded);
 
         // Consider that welcome page accessed locally just if it was accessed really through "localhost" URL and without loadbalancer (x-forwarded-for and forwarded header is empty).
         return xForwardedFor == null && forwarded == null && SecureContextResolver.isLocalAddress(remoteAddress) && SecureContextResolver.isLocalAddress(localAddress);
@@ -301,5 +298,4 @@ public class WelcomeResource {
             throw new ForbiddenException();
         }
     }
-
 }

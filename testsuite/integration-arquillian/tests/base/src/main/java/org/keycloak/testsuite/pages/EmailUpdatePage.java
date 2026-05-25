@@ -28,10 +28,10 @@ public class EmailUpdatePage extends AbstractPage {
 	@FindBy(id = "email")
 	private WebElement emailInput;
 
-	@FindBy(css = "input[type=\"submit\"]")
+	@FindBy(id = "kc-submit")
 	private WebElement submitButton;
 
-	@FindBy(name = "cancel-aia")
+	@FindBy(id = "kc-cancel")
 	private WebElement cancelAIAButton;
 
 	@FindBy(id = "input-error-email")
@@ -51,11 +51,6 @@ public class EmailUpdatePage extends AbstractPage {
 	@Override
 	public boolean isCurrent() {
 		return PageUtils.getPageTitle(driver).equals("Update email");
-	}
-
-	@Override
-	public void open() throws Exception {
-		throw new UnsupportedOperationException();
 	}
 
 	public String getEmailError() {

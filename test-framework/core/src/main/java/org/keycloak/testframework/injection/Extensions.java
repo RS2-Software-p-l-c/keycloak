@@ -1,9 +1,12 @@
 package org.keycloak.testframework.injection;
 
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.keycloak.testframework.TestFrameworkExtension;
 import org.keycloak.testframework.config.Config;
 
 import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -17,11 +20,25 @@ public class Extensions {
     private final List<Supplier<?, ?>> suppliers;
     private final List<Class<?>> alwaysEnabledValueTypes;
 
-    public Extensions() {
+    private static Extensions INSTANCE;
+
+    public static Extensions getInstance() {
+        if (INSTANCE == null) {
+            INSTANCE = new Extensions();
+        }
+        return INSTANCE;
+    }
+
+    public static void reset() {
+        INSTANCE = null;
+    }
+
+    private Extensions() {
         List<TestFrameworkExtension> extensions = loadExtensions();
         valueTypeAlias = loadValueTypeAlias(extensions);
+        Config.registerValueTypeAlias(valueTypeAlias);
         logger = new RegistryLogger(valueTypeAlias);
-        suppliers = loadSuppliers(extensions, valueTypeAlias);
+        suppliers = loadSuppliers(extensions);
         alwaysEnabledValueTypes = loadAlwaysEnabledValueTypes(extensions);
     }
 
@@ -59,7 +76,7 @@ public class Extensions {
         return valueTypeAlias;
     }
 
-    private List<Supplier<?, ?>> loadSuppliers(List<TestFrameworkExtension> extensions, ValueTypeAlias valueTypeAlias) {
+    private List<Supplier<?, ?>> loadSuppliers(List<TestFrameworkExtension> extensions) {
         List<Supplier<?, ?>> suppliers = new LinkedList<>();
         List<Supplier<?, ?>> skippedSuppliers = new LinkedList<>();
         Set<Class<?>> loadedValueTypes = new HashSet<>();
@@ -67,8 +84,9 @@ public class Extensions {
         for (TestFrameworkExtension extension : extensions) {
             for (var supplier : extension.suppliers()) {
                 Class<?> valueType = supplier.getValueType();
-                String requestedSupplier = Config.getSelectedSupplier(valueType, valueTypeAlias);
-                if (supplier.getAlias().equals(requestedSupplier) || (requestedSupplier == null && !loadedValueTypes.contains(valueType))) {
+                String requestedSupplier = Config.getSelectedSupplier(valueType);
+                if (isSupplierIncluded(supplier) && (supplier.getAlias().equals(requestedSupplier) || (requestedSupplier == null && !loadedValueTypes.contains(valueType)))) {
+                    configureSupplier(supplier);
                     suppliers.add(supplier);
                     loadedValueTypes.add(valueType);
                 } else {
@@ -82,8 +100,35 @@ public class Extensions {
         return suppliers;
     }
 
+    private boolean isSupplierIncluded(Supplier<?, ?> supplier) {
+        String includedSuppliers = Config.getIncludedSuppliers(supplier.getValueType());
+        if (includedSuppliers != null) {
+            if (Arrays.stream(includedSuppliers.split(",")).noneMatch(s -> s.equals(supplier.getAlias()))) {
+                return false;
+            }
+        }
+
+        String excludedSuppliers = Config.getExcludedSuppliers(supplier.getValueType());
+        if (excludedSuppliers != null) {
+            return Arrays.stream(excludedSuppliers.split(",")).noneMatch(s -> s.equals(supplier.getAlias()));
+        }
+
+        return true;
+    }
+
     private List<Class<?>> loadAlwaysEnabledValueTypes(List<TestFrameworkExtension> extensions) {
         return extensions.stream().flatMap(s -> s.alwaysEnabledValueTypes().stream()).toList();
+    }
+
+    private void configureSupplier(Supplier<?, ?> supplier) {
+        for (Field f : ReflectionUtils.listFields(supplier.getClass())) {
+            ConfigProperty annotation = f.getAnnotation(ConfigProperty.class);
+            if (annotation != null) {
+                Object configValue = Config.getValueTypeConfig(supplier.getValueType(), annotation.name(), annotation.defaultValue(), f.getType());
+                ReflectionUtils.setField(f, supplier, configValue);
+            }
+        }
+
     }
 
 }

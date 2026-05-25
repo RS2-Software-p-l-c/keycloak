@@ -22,10 +22,7 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -186,7 +183,7 @@ public class RealmCacheSession implements CacheRealmProvider {
     @Override
     public void clear() {
         ClusterProvider cluster = session.getProvider(ClusterProvider.class);
-        cluster.notify(InfinispanCacheRealmProviderFactory.REALM_CLEAR_CACHE_EVENTS, ClearCacheEvent.getInstance(), false, ClusterProvider.DCNotify.ALL_DCS);
+        cluster.notify(InfinispanCacheRealmProviderFactory.REALM_CLEAR_CACHE_EVENTS, ClearCacheEvent.getInstance(), false);
     }
 
     @Override
@@ -630,10 +627,6 @@ public class RealmCacheSession implements CacheRealmProvider {
 
     static String getClientScopesCacheKey(String client, boolean defaultScope) {
         return client + "." + (defaultScope ? SCOPE_KEY_DEFAULT : SCOPE_KEY_OPTIONAL) + ".clientscopes";
-    }
-
-    static String getTopGroupsQueryCacheKey(String realm) {
-        return realm + ".top.groups";
     }
 
     static String getGroupByNameCacheKey(String realm, String parentId, String name) {
@@ -1096,57 +1089,6 @@ public class RealmCacheSession implements CacheRealmProvider {
 
     @Override
     public Stream<GroupModel> getTopLevelGroupsStream(RealmModel realm, String search, Boolean exact, Integer first, Integer max) {
-        String cacheKey = getTopGroupsQueryCacheKey(realm.getId());
-
-        if (hasInvalidation(realm, cacheKey)) {
-            return getGroupDelegate().getTopLevelGroupsStream(realm, search, exact, first, max);
-        }
-
-        GroupListQuery query = cache.get(cacheKey, GroupListQuery.class);
-        String searchKey = Optional.ofNullable(search).orElse("") + "." + Optional.ofNullable(first).orElse(-1) + "." + Optional.ofNullable(max).orElse(-1);
-        Set<String> cached;
-
-        if (Objects.isNull(query)) {
-            // not cached yet
-            Long loaded = cache.getCurrentRevision(cacheKey);
-            cached = getGroupDelegate().getTopLevelGroupsStream(realm, search, exact, first, max).map(GroupModel::getId).collect(Collectors.toSet());
-            query = new GroupListQuery(loaded, cacheKey, realm, searchKey, cached);
-            logger.tracev("adding realm getTopLevelGroups cache miss: realm {0} key {1}", realm.getName(), cacheKey);
-            cache.addRevisioned(query, startupRevision);
-        } else {
-            logger.tracev("getTopLevelGroups cache hit: {0}", realm.getName());
-
-            cached = query.getGroups(searchKey);
-
-            if (hasInvalidation(realm, cacheKey) || cached == null) {
-                // there is a cache entry, but the current search is not yet cached
-                cache.invalidateObject(cacheKey);
-                Long loaded = cache.getCurrentRevision(cacheKey);
-                cached = getGroupDelegate().getTopLevelGroupsStream(realm, search, exact, first, max).map(GroupModel::getId).collect(Collectors.toSet());
-                query = new GroupListQuery(loaded, cacheKey, realm, searchKey, cached, query);
-                logger.tracev("adding realm getTopLevelGroups search cache miss: realm {0} key {1}", realm.getName(), searchKey);
-                cache.addRevisioned(query, cache.getCurrentCounter());
-            }
-        }
-
-        AtomicBoolean invalidate = new AtomicBoolean(false);
-        Stream<GroupModel> groups = cached.stream()
-                .map((id) -> session.groups().getGroupById(realm, id))
-                .takeWhile(group -> {
-                    if (Objects.isNull(group)) {
-                        invalidate.set(true);
-                        return false;
-                    }
-                    return true;
-                })
-                .sorted(GroupModel.COMPARE_BY_NAME);
-
-        if (!invalidate.get()) {
-            return groups;
-        }
-
-        invalidations.add(cacheKey);
-
         return getGroupDelegate().getTopLevelGroupsStream(realm, search, exact, first, max);
     }
 
@@ -1319,8 +1261,6 @@ public class RealmCacheSession implements CacheRealmProvider {
             }
             ClientStorageProviderModel model = new ClientStorageProviderModel(component);
 
-            // although we do set a timeout, Infinispan has no guarantees when the user will be evicted
-            // its also hard to test stuff
             if (model.shouldInvalidate(cached)) {
                 registerClientInvalidation(cached.getId(), cached.getClientId(), realm.getId());
                 return getClientDelegate().getClientById(realm, cached.getId());
@@ -1500,6 +1440,17 @@ public class RealmCacheSession implements CacheRealmProvider {
     }
 
     @Override
+    public Stream<ClientScopeModel> getClientScopesByProtocol(RealmModel realm, String protocol) {
+        return getClientScopeDelegate().getClientScopesByProtocol(realm, protocol);
+    }
+
+    @Override
+    public Stream<ClientScopeModel> getClientScopesByAttributes(RealmModel realm, Map<String, String> searchMap,
+                                                                boolean useOr) {
+        return getClientScopeDelegate().getClientScopesByAttributes(realm, searchMap, useOr);
+    }
+
+    @Override
     public void addClientScopes(RealmModel realm, ClientModel client, Set<ClientScopeModel> clientScopes, boolean defaultScope) {
         getClientDelegate().addClientScopes(realm, client, clientScopes, defaultScope);
         registerClientInvalidation(client.getId(), client.getId(), realm.getId());
@@ -1531,13 +1482,16 @@ public class RealmCacheSession implements CacheRealmProvider {
             return model;
         }
         Map<String, ClientScopeModel> assignedScopes = new HashMap<>();
+
+        List<String> acceptedClientProtocols = KeycloakModelUtils.getAcceptedClientScopeProtocols(client);
         for (String id : query.getClientScopes()) {
             ClientScopeModel clientScope = session.clientScopes().getClientScopeById(realm, id);
             if (clientScope == null) {
                 invalidations.add(cacheKey);
                 return getClientDelegate().getClientScopes(realm, client, defaultScopes);
             }
-            if (clientScope.getProtocol().equals((client.getProtocol() == null) ? "openid-connect" : client.getProtocol())) {
+
+            if (acceptedClientProtocols.contains(clientScope.getProtocol())) {
                 assignedScopes.put(clientScope.getName(), clientScope);
             }
         }

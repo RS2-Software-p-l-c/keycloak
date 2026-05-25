@@ -17,6 +17,7 @@
 
 package org.keycloak.protocol.oidc;
 
+import jakarta.ws.rs.HEAD;
 import org.jboss.resteasy.reactive.NoCache;
 import org.keycloak.http.HttpRequest;
 import org.keycloak.OAuthErrorException;
@@ -53,6 +54,8 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriBuilder;
 import jakarta.ws.rs.core.UriInfo;
+
+import static jakarta.ws.rs.core.HttpHeaders.CONTENT_TYPE;
 
 /**
  * Resource class for the oauth/openid connect token service
@@ -193,9 +196,19 @@ public class OIDCLoginProtocolService {
         return Cors.builder().allowedMethods("GET").preflight().auth().add(Response.ok());
     }
 
+    // The method added just as a workaround to https://github.com/quarkusio/quarkus/issues/49172 . It can be removed once that one is
+    // fixed in quarkus and Keycloak updated to the corresponding version
+    @HEAD
+    @Path("/certs")
+    @Produces({MediaType.APPLICATION_JSON, org.keycloak.utils.MediaType.APPLICATION_JWKS})
+    @NoCache
+    public Response certsHead() {
+        return certs();
+    }
+
     @GET
     @Path("certs")
-    @Produces(MediaType.APPLICATION_JSON)
+    @Produces({MediaType.APPLICATION_JSON, org.keycloak.utils.MediaType.APPLICATION_JWKS})
     @NoCache
     public Response certs() {
         checkSsl();
@@ -203,7 +216,15 @@ public class OIDCLoginProtocolService {
         JSONWebKeySet keySet = JWKSServerUtils.getRealmJwks(session, realm);
 
         Response.ResponseBuilder responseBuilder = Response.ok(keySet).cacheControl(CacheControlUtil.getDefaultCacheControl());
-        return Cors.builder().allowedOrigins("*").auth().add(responseBuilder);
+
+        boolean isJwksRequest = org.keycloak.utils.MediaType.APPLICATION_JWKS.equals(this.headers.getHeaderString(HttpHeaders.ACCEPT));
+        if (isJwksRequest) {
+            responseBuilder.header(CONTENT_TYPE, org.keycloak.utils.MediaType.APPLICATION_JWKS);
+        } else {
+            responseBuilder.header(CONTENT_TYPE, MediaType.APPLICATION_JSON);
+        }
+
+        return Cors.builder().allowAllOrigins().auth().add(responseBuilder);
     }
 
     @Path("userinfo")

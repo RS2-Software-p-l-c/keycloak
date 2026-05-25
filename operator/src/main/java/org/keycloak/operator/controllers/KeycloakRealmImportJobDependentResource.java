@@ -18,6 +18,7 @@ package org.keycloak.operator.controllers;
 
 import io.fabric8.kubernetes.api.model.Container;
 import io.fabric8.kubernetes.api.model.EnvVarBuilder;
+import io.fabric8.kubernetes.api.model.PodSpec;
 import io.fabric8.kubernetes.api.model.PodTemplateSpec;
 import io.fabric8.kubernetes.api.model.SecretVolumeSourceBuilder;
 import io.fabric8.kubernetes.api.model.Volume;
@@ -30,37 +31,36 @@ import io.fabric8.kubernetes.client.utils.KubernetesResourceUtil;
 import io.javaoperatorsdk.operator.api.reconciler.Context;
 import io.javaoperatorsdk.operator.api.reconciler.dependent.GarbageCollected;
 import io.javaoperatorsdk.operator.processing.dependent.Creator;
+import io.javaoperatorsdk.operator.processing.dependent.kubernetes.KubernetesDependent;
 import io.javaoperatorsdk.operator.processing.dependent.kubernetes.KubernetesDependentResource;
-
-import io.javaoperatorsdk.operator.processing.dependent.kubernetes.KubernetesDependentResourceConfigBuilder;
 import org.keycloak.operator.Config;
-import org.keycloak.operator.Constants;
+import org.keycloak.operator.ContextUtils;
 import org.keycloak.operator.Utils;
+import org.keycloak.operator.crds.v2alpha1.deployment.Keycloak;
+import org.keycloak.operator.crds.v2alpha1.deployment.spec.ImportSpec;
+import org.keycloak.operator.crds.v2alpha1.deployment.spec.SchedulingSpec;
 import org.keycloak.operator.crds.v2alpha1.realmimport.KeycloakRealmImport;
 import org.keycloak.operator.crds.v2alpha1.realmimport.Placeholder;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.keycloak.operator.Utils.addResources;
 import static org.keycloak.operator.controllers.KeycloakDistConfigurator.getKeycloakOptionEnvVarName;
 
+@KubernetesDependent
 public class KeycloakRealmImportJobDependentResource extends KubernetesDependentResource<Job, KeycloakRealmImport> implements Creator<Job, KeycloakRealmImport>, GarbageCollected<KeycloakRealmImport> {
 
-    private final Config config;
-
-    KeycloakRealmImportJobDependentResource(Config config) {
+    KeycloakRealmImportJobDependentResource() {
         super(Job.class);
-        this.config = config;
-        this.configureWith(new KubernetesDependentResourceConfigBuilder<Job>()
-                .withLabelSelector(Constants.DEFAULT_LABELS_AS_STRING)
-                .build());
     }
 
     @Override
-    protected Job desired(KeycloakRealmImport primary, Context<KeycloakRealmImport> context) {
-        StatefulSet existingDeployment = context.managedDependentResourceContext().get(StatefulSet.class, StatefulSet.class).orElseThrow();
+    public Job desired(KeycloakRealmImport primary, Context<KeycloakRealmImport> context) {
+        Config config = ContextUtils.getOperatorConfig(context);
+        StatefulSet existingDeployment = ContextUtils.getCurrentStatefulSet(context).orElseThrow();
         Map<String, Placeholder> placeholders = primary.getSpec().getPlaceholders();
         boolean replacePlaceholders = (placeholders != null && !placeholders.isEmpty());
 
@@ -71,13 +71,16 @@ public class KeycloakRealmImportJobDependentResource extends KubernetesDependent
         String secretName = KeycloakRealmImportSecretDependentResource.getSecretName(primary);
         String volumeName = KubernetesResourceUtil.sanitizeName(secretName + "-volume");
 
-        buildKeycloakJobContainer(keycloakPodTemplate.getSpec().getContainers().get(0), primary, volumeName, replacePlaceholders);
+        buildKeycloakJobContainer(keycloakPodTemplate.getSpec().getContainers().get(0), primary, volumeName, config);
         keycloakPodTemplate.getSpec().getVolumes().add(buildSecretVolume(volumeName, secretName));
 
         var labels = keycloakPodTemplate.getMetadata().getLabels();
 
         // The Job should not be selected with app=keycloak
         labels.put("app", "keycloak-realm-import");
+
+        var kc = ContextUtils.getKeycloak(context);
+        handleJobScheduling(kc, Optional.ofNullable(kc.getSpec().getImportSpec()).map(ImportSpec::getSchedulingSpec), keycloakPodTemplate.getSpec());
 
         var envvars = keycloakPodTemplate
                 .getSpec()
@@ -93,8 +96,6 @@ public class KeycloakRealmImportJobDependentResource extends KubernetesDependent
 
         // The Job should not connect to the cache
         envvars.add(new EnvVarBuilder().withName(cacheEnvVarName).withValue("local").build());
-        // The Job doesn't need health to be enabled
-        envvars.add(new EnvVarBuilder().withName(healthEnvVarName).withValue("false").build());
 
         if (replacePlaceholders) {
             for (Map.Entry<String, Placeholder> secret : primary.getSpec().getPlaceholders().entrySet()) {
@@ -140,7 +141,7 @@ public class KeycloakRealmImportJobDependentResource extends KubernetesDependent
                 .build();
     }
 
-    private void buildKeycloakJobContainer(Container keycloakContainer, KeycloakRealmImport keycloakRealmImport, String volumeName, boolean replacePlaceholders) {
+    private void buildKeycloakJobContainer(Container keycloakContainer, KeycloakRealmImport keycloakRealmImport, String volumeName, Config config) {
         var importMntPath = "/mnt/realm-import/";
 
         var command = List.of("/bin/bash");
@@ -168,5 +169,15 @@ public class KeycloakRealmImportJobDependentResource extends KubernetesDependent
         keycloakContainer.setStartupProbe(null);
 
         addResources(keycloakRealmImport.getSpec().getResourceRequirements(), config, keycloakContainer);
+    }
+
+    static void handleJobScheduling(Keycloak keycloak, Optional<SchedulingSpec> schedulingSpec, PodSpec spec) {
+        if (schedulingSpec.isPresent() || keycloak.getSpec().getSchedulingSpec() == null) {
+            spec.setPriorityClassName(schedulingSpec.map(SchedulingSpec::getPriorityClassName).orElse(null));
+            spec.setAffinity(schedulingSpec.map(SchedulingSpec::getAffinity).orElse(null));
+            spec.setTolerations(schedulingSpec.map(SchedulingSpec::getTolerations).orElse(null));
+            spec.setTopologySpreadConstraints(schedulingSpec.map(SchedulingSpec::getTopologySpreadConstraints).orElse(null));
+        }
+        // else use the parent values
     }
 }

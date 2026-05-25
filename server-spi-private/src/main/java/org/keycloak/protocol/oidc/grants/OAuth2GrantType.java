@@ -26,16 +26,19 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 
+import org.keycloak.OAuth2Constants;
 import org.keycloak.common.ClientConnection;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.events.EventType;
 import org.keycloak.http.HttpRequest;
 import org.keycloak.http.HttpResponse;
 import org.keycloak.models.ClientModel;
+import org.keycloak.models.Constants;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.provider.Provider;
 import org.keycloak.services.cors.Cors;
+import org.keycloak.protocol.LoginProtocol;
 
 /**
  * Provider interface for OAuth 2.0 grant types
@@ -81,6 +84,8 @@ public interface OAuth2GrantType extends Provider {
         protected EventBuilder event;
         protected Cors cors;
         protected Object tokenManager;
+        protected String grantType;
+        protected LoginProtocol protocol;
 
         public Context(KeycloakSession session, Object clientConfig, Map<String, String> clientAuthAttributes,
                 MultivaluedMap<String, String> formParams, EventBuilder event, Cors cors, Object tokenManager) {
@@ -97,22 +102,11 @@ public interface OAuth2GrantType extends Provider {
             this.event = event;
             this.cors = cors;
             this.tokenManager = tokenManager;
-        }
-
-        public Context(Context context) {
-            this.session = context.session;
-            this.realm = context.realm;
-            this.client = context.client;
-            this.clientConfig = context.clientConfig;
-            this.clientConnection = context.clientConnection;
-            this.clientAuthAttributes = context.clientAuthAttributes;
-            this.request = context.request;
-            this.response = context.response;
-            this.headers = context.headers;
-            this.formParams = context.formParams;
-            this.event = context.event;
-            this.cors = context.cors;
-            this.tokenManager = context.tokenManager;
+            this.grantType = formParams.getFirst(OAuth2Constants.GRANT_TYPE);
+            if (this.client != null) {
+                String protocolName = this.client.getProtocol() != null ? this.client.getProtocol() : Constants.OIDC_PROTOCOL;
+                this.protocol = session.getProvider(LoginProtocol.class, protocolName);
+            }
         }
 
         public void setFormParams(MultivaluedHashMap<String, String> formParams) {
@@ -121,6 +115,10 @@ public interface OAuth2GrantType extends Provider {
 
         public void setClient(ClientModel client) {
             this.client = client;
+            if (client != null) {
+                String protocolName = this.client.getProtocol() != null ? this.client.getProtocol() : Constants.OIDC_PROTOCOL;
+                this.protocol = session.getProvider(LoginProtocol.class, protocolName);
+            }
         }
 
         public void setClientConfig(Object clientConfig) {
@@ -181,6 +179,10 @@ public interface OAuth2GrantType extends Provider {
 
         public Object getTokenManager() {
             return tokenManager;
+        }
+
+        public String getGrantType() {
+            return grantType;
         }
     }
 

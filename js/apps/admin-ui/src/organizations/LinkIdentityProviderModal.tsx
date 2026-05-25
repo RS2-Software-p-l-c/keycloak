@@ -140,7 +140,10 @@ export const LinkIdentityProviderModal = ({
             controller={{ defaultValue: "" }}
             options={[
               { key: "", value: t("none") },
-              ...getValues("domains")!.map((d) => ({ key: d, value: d })),
+              { key: "ANY", value: t("any") },
+              ...(getValues("domains")
+                ? getValues("domains")!.map((d) => ({ key: d, value: d }))
+                : []),
             ]}
             menuAppendTo="parent"
           />

@@ -33,6 +33,7 @@ public class UserStorageProviderModel extends CacheableStorageProviderModel {
     public static final String FULL_SYNC_PERIOD = "fullSyncPeriod";
     public static final String CHANGED_SYNC_PERIOD = "changedSyncPeriod";
     public static final String LAST_SYNC = "lastSync";
+    public static final String REMOVE_INVALID_USERS_ENABLED = "removeInvalidUsersEnabled";
 
     public UserStorageProviderModel() {
         setProviderType(UserStorageProvider.class.getName());
@@ -46,18 +47,13 @@ public class UserStorageProviderModel extends CacheableStorageProviderModel {
     private transient Integer changedSyncPeriod;
     private transient Integer lastSync;
     private transient Boolean importEnabled;
+    private transient Boolean removeInvalidUsersEnabled;
 
     public boolean isImportEnabled() {
         if (importEnabled == null) {
-            String val = getConfig().getFirst(IMPORT_ENABLED);
-            if (val == null) {
-                importEnabled = true;
-            } else {
-                importEnabled = Boolean.valueOf(val);
-            }
+            importEnabled = Boolean.parseBoolean(getConfig().getFirstOrDefault(IMPORT_ENABLED, Boolean.TRUE.toString()));
         }
         return importEnabled;
-
     }
 
     public void setImportEnabled(boolean flag) {
@@ -115,5 +111,17 @@ public class UserStorageProviderModel extends CacheableStorageProviderModel {
     public void setLastSync(int lastSync) {
         this.lastSync = lastSync;
         getConfig().putSingle(LAST_SYNC, Integer.toString(lastSync));
+    }
+
+    public boolean isRemoveInvalidUsersEnabled() {
+        if (removeInvalidUsersEnabled == null) {
+            String val = getConfig().getFirst(REMOVE_INVALID_USERS_ENABLED);
+            if (val == null) {
+                removeInvalidUsersEnabled = true;
+            } else {
+                removeInvalidUsersEnabled = Boolean.valueOf(val);
+            }
+        }
+        return removeInvalidUsersEnabled;
     }
 }

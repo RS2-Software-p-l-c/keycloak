@@ -29,6 +29,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -113,7 +115,14 @@ public class UserStorageManager extends AbstractStorageManager<UserStorageProvid
      * @param user
      * @return
      */
-    protected UserModel importValidation(RealmModel realm, UserModel user) {
+    protected UserModel validateUser(RealmModel realm, UserModel user) {
+        if (user == null) {
+            return null;
+        }
+
+        if (user.isFederated()) {
+            user = validateFederatedUser(realm, user);
+        }
 
         if (isReadOnlyOrganizationMember(user)) {
             if (user instanceof CachedUserModel cachedUserModel) {
@@ -122,13 +131,17 @@ public class UserStorageManager extends AbstractStorageManager<UserStorageProvid
             return new ReadOnlyUserModelDelegate(user, false);
         }
 
-        if (user == null || user.getFederationLink() == null) return user;
+        return user;
+    }
 
-        UserStorageProviderModel model = getStorageProviderModel(realm, user.getFederationLink());
+    private UserModel validateFederatedUser(RealmModel realm, UserModel user) {
+        if (!user.isFederated()) {
+            return user;
+        }
+
+        UserStorageProviderModel model = getUserStorageProviderModel(realm, user);
+
         if (model == null) {
-            // remove linked user with unknown storage provider.
-            logger.debugf("Removed user with federation link of unknown storage provider '%s'", user.getUsername());
-            deleteInvalidUser(realm, user);
             return null;
         }
 
@@ -144,16 +157,62 @@ public class UserStorageManager extends AbstractStorageManager<UserStorageProvid
             return user;
         }
 
-        ImportedUserValidation importedUserValidation = getStorageProviderInstance(model, ImportedUserValidation.class, true);
-        if (importedUserValidation == null) return user;
+        ImportedUserValidation validator = getStorageProviderInstance(model, ImportedUserValidation.class, true);
 
-        UserModel validated = importedUserValidation.validate(realm, user);
-        if (validated == null) {
+        if (validator == null) {
+            return user;
+        }
+
+        try {
+            UserModel validated = validator.validate(realm, user);
+
+            if (validated == null) {
+                return deleteFederatedUser(realm, user);
+            }
+
+            return validated;
+        } catch (Exception e) {
+            logger.warnf(e, "User storage provider %s failed during federated user validation", model.getName());
+            return new ReadOnlyUserModelDelegate(user, false, ignore -> new ReadOnlyException("The user is read-only. The user storage provider '" + model.getName() + "' is currently unavailable. Check the server logs for more details."));
+        }
+    }
+
+    private ReadOnlyUserModelDelegate deleteFederatedUser(RealmModel realm, UserModel user) {
+        if (!user.isFederated()) {
+            return null;
+        }
+
+        UserStorageProviderModel model = getUserStorageProviderModel(realm, user);
+
+        if (model == null) {
+            return null;
+        }
+
+        deleteInvalidUserCache(realm, user);
+
+        if (model.isRemoveInvalidUsersEnabled()) {
             deleteInvalidUser(realm, user);
             return null;
-        } else {
-            return validated;
         }
+
+        return new ReadOnlyUserModelDelegate(user, false);
+    }
+
+    private UserStorageProviderModel getUserStorageProviderModel(RealmModel realm, UserModel user) {
+        if (user.isFederated()) {
+            UserStorageProviderModel model = getStorageProviderModel(realm, user.getFederationLink());
+
+            if (model == null) {
+                // remove linked user with unknown storage provider.
+                logger.debugf("Removed user with federation link of unknown storage provider '%s'", user.getUsername());
+                deleteInvalidUserCache(realm, user);
+                deleteInvalidUser(realm, user);
+            }
+
+            return model;
+        }
+
+        return null;
     }
 
     private static <T> Stream<T> getCredentialProviders(KeycloakSession session, Class<T> type) {
@@ -204,14 +263,16 @@ public class UserStorageManager extends AbstractStorageManager<UserStorageProvid
         return result;
     }
 
-    protected void deleteInvalidUser(final RealmModel realm, final UserModel user) {
-        String userId = user.getId();
-        String userName = user.getUsername();
+    protected void deleteInvalidUserCache(final RealmModel realm, final UserModel user) {
         UserCache userCache = UserStorageUtil.userCache(session);
         if (userCache != null) {
             userCache.evict(realm, user);
         }
+    }
 
+    protected void deleteInvalidUser(final RealmModel realm, final UserModel user) {
+        String userId = user.getId();
+        String userName = user.getUsername();
         // This needs to be running in separate transaction because removing the user may end up with throwing
         // PessimisticLockException which also rollbacks Jpa transaction, hence when it is running in current transaction
         // it will become not usable for all consequent jpa calls. It will end up with Transaction is in rolled back
@@ -219,6 +280,7 @@ public class UserStorageManager extends AbstractStorageManager<UserStorageProvid
         runJobInTransaction(session.getKeycloakSessionFactory(), session -> {
             RealmModel realmModel = session.realms().getRealm(realm.getId());
             if (realmModel == null) return;
+            session.getContext().setRealm(realm);
             UserModel deletedUser = UserStoragePrivateUtil.userLocalStorage(session).getUserById(realmModel, userId);
             if (deletedUser != null) {
                 try {
@@ -234,9 +296,8 @@ public class UserStorageManager extends AbstractStorageManager<UserStorageProvid
         });
     }
 
-
     protected Stream<UserModel> importValidation(RealmModel realm, Stream<UserModel> users) {
-        return users.map(user -> importValidation(realm, user)).filter(Objects::nonNull);
+        return users.map(user -> validateUser(realm, user)).filter(Objects::nonNull);
     }
 
     @FunctionalInterface
@@ -285,7 +346,7 @@ public class UserStorageManager extends AbstractStorageManager<UserStorageProvid
                         return true; // don't filter out this provider because we are unable to say how many users it can provide
                     }
 
-                    long expectedNumberOfUsersForProvider = countQuery.query(provider, 0, currentFirst.get() + 1); // check how many users we can obtain from this provider
+                    long expectedNumberOfUsersForProvider = countQueryWithGracefulDegradation(provider, countQuery, 0, currentFirst.get() + 1); // check how many users we can obtain from this provider
                     logger.tracef("This provider (%s) is able to return %d users.", provider.getClass().getSimpleName(), expectedNumberOfUsersForProvider);
 
                     if (expectedNumberOfUsersForProvider == currentFirst.get()) { // This provider provides exactly the amount of users we need for passing firstResult, we can set currentFirst to 0 and drop this provider
@@ -314,12 +375,12 @@ public class UserStorageManager extends AbstractStorageManager<UserStorageProvid
             // we need to make sure, we skip firstResult users from this or the following providers
             if (maxResults == null || maxResults < 0) {
                 return paginatedStream(providersStream
-                        .flatMap(provider -> pagedQuery.query(provider, null, null)), currentFirst.get(), null);
+                        .flatMap(provider -> queryWithGracefulDegradation(provider, pagedQuery, null, null)), currentFirst.get(), null);
             } else {
                 final AtomicInteger currentMax = new AtomicInteger(currentFirst.get() + maxResults);
 
                 return paginatedStream(providersStream
-                    .flatMap(provider -> pagedQuery.query(provider, null, currentMax.get()))
+                    .flatMap(provider -> queryWithGracefulDegradation(provider, pagedQuery, null, currentMax.get()))
                     .peek(userModel -> {
                         currentMax.updateAndGet(i -> i > 0 ? i - 1 : i);
                     }), currentFirst.get(), maxResults);
@@ -330,19 +391,77 @@ public class UserStorageManager extends AbstractStorageManager<UserStorageProvid
         if (maxResults == null || maxResults < 0) {
             // No maxResult set, we want all users
             return providersStream
-                    .flatMap(provider -> pagedQuery.query(provider, currentFirst.getAndSet(0), null));
+                    .flatMap(provider -> queryWithGracefulDegradation(provider, pagedQuery, currentFirst.getAndSet(0), null));
         } else {
             final AtomicInteger currentMax = new AtomicInteger(maxResults);
 
             // Query users with currentMax variable counting how many users we return
             return providersStream
                     .filter(provider -> currentMax.get() != 0) // If we reach currentMax == 0, we can skip querying all following providers
-                    .flatMap(provider -> pagedQuery.query(provider, currentFirst.getAndSet(0), currentMax.get()))
+                    .flatMap(provider -> queryWithGracefulDegradation(provider, pagedQuery, currentFirst.getAndSet(0), currentMax.get()))
                     .peek(userModel -> {
                         currentMax.updateAndGet(i -> i > 0 ? i - 1 : i);
                     });
         }
 
+    }
+
+    /**
+     * Executes a query against a user storage provider with graceful degradation.
+     * If the provider throws an exception, logs the error and returns an empty stream
+     * to allow other providers to continue functioning.
+     */
+    private Stream<UserModel> queryWithGracefulDegradation(Object provider, PaginatedQuery pagedQuery, 
+                                                          Integer firstResult, Integer maxResults) {
+        try {
+            return pagedQuery.query(provider, firstResult, maxResults);
+        } catch (Exception e) {
+            // Log the failure but continue with other providers for graceful degradation
+            logger.warnf(e, "User storage provider %s failed during query operation. " +
+                         "Continuing with other providers for graceful degradation. " +
+                         "This may indicate an issue with external user store connectivity (e.g., LDAP server down).",
+                         provider.getClass().getSimpleName());
+            return Stream.empty();
+        }
+    }
+
+    /**
+     * Executes a count query against a user storage provider with graceful degradation.
+     * If the provider throws an exception, logs the error and returns 0
+     * to allow other providers to continue functioning.
+     */
+    private int countQueryWithGracefulDegradation(Object provider, CountQuery countQuery, 
+                                                 Integer firstResult, Integer maxResults) {
+        try {
+            return countQuery.query(provider, firstResult, maxResults);
+        } catch (Exception e) {
+            // Log the failure but continue with other providers for graceful degradation
+            logger.warnf(e, "User storage provider %s failed during count operation. " +
+                         "Continuing with other providers for graceful degradation. " +
+                         "This may indicate an issue with external user store connectivity (e.g., LDAP server down).",
+                         provider.getClass().getSimpleName());
+            return 0;
+        }
+    }
+
+    /**
+     * Helper method to get total user count from local storage plus all federated storage providers
+     * with graceful degradation.
+     */
+    private int getTotalUserCountWithGracefulDegradation(RealmModel realm, 
+                                                        java.util.function.Function<Object, Integer> countFunction) {
+        // Count users from local storage
+        int localCount = countFunction.apply(localStorage());
+        
+        // Count users from all enabled storage providers with graceful degradation
+        Stream<Object> providers = getEnabledStorageProviders(realm, Object.class);
+        
+        int federatedCount = providers
+            .mapToInt(provider -> countQueryWithGracefulDegradation(provider, 
+                (p, firstResult, maxResults) -> countFunction.apply(p), null, null))
+            .sum();
+            
+        return localCount + federatedCount;
     }
 
     // removeDuplicates method may cause concurrent issues, it should not be used on parallel streams
@@ -377,9 +496,8 @@ public class UserStorageManager extends AbstractStorageManager<UserStorageProvid
         StorageId storageId = new StorageId(user.getId());
 
         if (storageId.getProviderId() == null) {
-            String federationLink = user.getFederationLink();
-            boolean linkRemoved = federationLink == null || Optional.ofNullable(
-                    getStorageProviderInstance(realm, federationLink, UserRegistrationProvider.class))
+            boolean linkRemoved = !user.isFederated() || Optional.ofNullable(
+                    getStorageProviderInstance(realm, user.getFederationLink(), UserRegistrationProvider.class))
                     .map(provider -> provider.removeUser(realm, user))
                     .orElse(false);
 
@@ -402,7 +520,7 @@ public class UserStorageManager extends AbstractStorageManager<UserStorageProvid
         StorageId storageId = new StorageId(id);
         if (storageId.getProviderId() == null) {
             UserModel user = localStorage().getUserById(realm, id);
-            return importValidation(realm, user);
+            return validateUser(realm, user);
         }
 
         UserLookupProvider provider = getStorageProviderInstance(realm, storageId.getProviderId(), UserLookupProvider.class);
@@ -413,28 +531,16 @@ public class UserStorageManager extends AbstractStorageManager<UserStorageProvid
 
     @Override
     public UserModel getUserByUsername(RealmModel realm, String username) {
-        UserModel user = localStorage().getUserByUsername(realm, username);
-        if (user != null) {
-            return importValidation(realm, user);
-        }
-
-        return mapEnabledStorageProvidersWithTimeout(realm, UserLookupProvider.class,
-                provider -> provider.getUserByUsername(realm, username)).findFirst().orElse(null);
+        return getUserByAttribute(realm,
+                provider -> provider.getUserByUsername(realm, username),
+                u -> username.equalsIgnoreCase(u.getUsername()));
     }
 
     @Override
     public UserModel getUserByEmail(RealmModel realm, String email) {
-        UserModel user = localStorage().getUserByEmail(realm, email);
-        if (user != null) {
-            user = importValidation(realm, user);
-            // Case when email was changed directly in the userStorage and doesn't correspond anymore to the email from local DB
-            if (user != null && email.equalsIgnoreCase(user.getEmail())) {
-                return user;
-            }
-        }
-
-        return mapEnabledStorageProvidersWithTimeout(realm, UserLookupProvider.class,
-                provider -> provider.getUserByEmail(realm, email)).findFirst().orElse(null);
+        return getUserByAttribute(realm,
+                provider -> provider.getUserByEmail(realm, email),
+                u -> email.equalsIgnoreCase(u.getEmail()));
     }
 
     /** {@link UserLookupProvider} methods implementations end here
@@ -523,29 +629,54 @@ public class UserStorageManager extends AbstractStorageManager<UserStorageProvid
         return getUsersCount(realm, false);
     }
 
-    @Override // TODO: missing storageProviders count?
+    @Override
     public int getUsersCount(RealmModel realm, Set<String> groupIds) {
-        return localStorage().getUsersCount(realm, groupIds);
+        return getTotalUserCountWithGracefulDegradation(realm, provider -> {
+            if (provider instanceof UserCountMethodsProvider) {
+                return ((UserCountMethodsProvider) provider).getUsersCount(realm, groupIds);
+            }
+            return 0;
+        });
     }
 
-    @Override // TODO: missing storageProviders count?
+    @Override
     public int getUsersCount(RealmModel realm, String search) {
-        return localStorage().getUsersCount(realm, search);
+        return getTotalUserCountWithGracefulDegradation(realm, provider -> {
+            if (provider instanceof UserCountMethodsProvider) {
+                return ((UserCountMethodsProvider) provider).getUsersCount(realm, search);
+            }
+            return 0;
+        });
     }
 
-    @Override // TODO: missing storageProviders count?
+    @Override
     public int getUsersCount(RealmModel realm, String search, Set<String> groupIds) {
-        return localStorage().getUsersCount(realm, search, groupIds);
+        return getTotalUserCountWithGracefulDegradation(realm, provider -> {
+            if (provider instanceof UserCountMethodsProvider) {
+                return ((UserCountMethodsProvider) provider).getUsersCount(realm, search, groupIds);
+            }
+            return 0;
+        });
     }
 
-    @Override // TODO: missing storageProviders count?
+    @Override
     public int getUsersCount(RealmModel realm, Map<String, String> params) {
-        return localStorage().getUsersCount(realm, params);
+        return getTotalUserCountWithGracefulDegradation(realm, provider -> {
+            if (provider instanceof UserCountMethodsProvider) {
+                return ((UserCountMethodsProvider) provider).getUsersCount(realm, params);
+            }
+            return 0;
+        });
     }
 
-    @Override // TODO: missing storageProviders count?
+    @Override
     public int getUsersCount(RealmModel realm, Map<String, String> params, Set<String> groupIds) {
-        return localStorage().getUsersCount(realm, params, groupIds);
+        return getTotalUserCountWithGracefulDegradation(realm, provider -> {
+            if (provider instanceof UserCountMethodsProvider) {
+                return ((UserCountMethodsProvider) provider).getUsersCount(realm, params, groupIds);
+            }
+            return 0;
+        });
     }
 
     @Override
@@ -800,7 +931,7 @@ public class UserStorageManager extends AbstractStorageManager<UserStorageProvid
     public UserModel getUserByFederatedIdentity(RealmModel realm, FederatedIdentityModel socialLink) {
         UserModel user = localStorage().getUserByFederatedIdentity(realm, socialLink);
         if (user != null) {
-            return importValidation(realm, user);
+            return validateUser(realm, user);
         }
         if (getFederatedStorage() == null) return null;
         String id = getFederatedStorage().getUserByFederatedIdentity(socialLink, realm);
@@ -983,5 +1114,32 @@ public class UserStorageManager extends AbstractStorageManager<UserStorageProvid
                 return session;
             }
         });
+    }
+
+    private UserModel getUserByAttribute(RealmModel realm, Function<UserLookupProvider, UserModel> loader, Predicate<UserModel> attributeValidator) {
+        // first try the local storage
+        UserModel user = loader.apply(localStorage());
+
+        if (user != null) {
+            // run global user validations
+            UserModel validated = validateUser(realm, user);
+
+            // make sure the attribute is valid
+            if (validated != null && attributeValidator.test(validated)) {
+                return validated;
+            }
+
+            // user or attribute not valid, invalidate cache
+            deleteInvalidUserCache(realm, user);
+        }
+
+        // try to resolve the user from the external storage
+        return tryResolveFederatedUser(realm, loader);
+    }
+
+    private UserModel tryResolveFederatedUser(RealmModel realm, Function<UserLookupProvider, UserModel> loader) {
+        return mapEnabledStorageProvidersWithTimeout(realm, UserLookupProvider.class, loader)
+                .findFirst()
+                .orElse(null);
     }
 }

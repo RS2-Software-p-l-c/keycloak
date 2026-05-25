@@ -20,14 +20,14 @@
     <parent>
         <artifactId>keycloak-parent</artifactId>
         <groupId>org.keycloak</groupId>
-        <version>26.1.4</version>
+        <version>26.4.7</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>keycloak-ldap-federation</artifactId>
     <name>Keycloak LDAP UserStoreProvider</name>
-    <description />
+    <description>Keycloak LDAP UserStoreProvider</description>
 
     <dependencies>
         <dependency>

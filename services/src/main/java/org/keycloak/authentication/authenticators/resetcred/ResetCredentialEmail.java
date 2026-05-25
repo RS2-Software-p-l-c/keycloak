@@ -128,14 +128,12 @@ public class ResetCredentialEmail implements Authenticator, AuthenticatorFactory
             context.forkWithSuccessMessage(new FormMessage(Messages.EMAIL_SENT));
         } catch (EmailException e) {
             event.clone().event(EventType.SEND_RESET_PASSWORD)
+                    .detail(Details.REASON, e.getMessage())
                     .detail(Details.USERNAME, username)
                     .user(user)
                     .error(Errors.EMAIL_SEND_FAILED);
             ServicesLogger.LOGGER.failedToSendPwdResetEmail(e);
-            Response challenge = context.form()
-                    .setError(Messages.EMAIL_SENT_ERROR)
-                    .createErrorPage(Response.Status.INTERNAL_SERVER_ERROR);
-            context.failure(AuthenticationFlowError.INTERNAL_ERROR, challenge);
+            context.forkWithSuccessMessage(new FormMessage(Messages.EMAIL_SENT));
         }
     }
 

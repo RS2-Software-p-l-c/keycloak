@@ -31,7 +31,7 @@ public class UnboundedPermissionEvaluator implements PermissionEvaluator {
             AuthorizationRequest request) {
         this.executionContext = executionContext;
         this.authorizationProvider = authorizationProvider;
-        this.policyEvaluator = authorizationProvider.getPolicyEvaluator();
+        this.policyEvaluator = authorizationProvider.getPolicyEvaluator(resourceServer);
         this.resourceServer = resourceServer;
         this.request = request;
     }
@@ -60,10 +60,16 @@ public class UnboundedPermissionEvaluator implements PermissionEvaluator {
 
     @Override
     public Collection<Permission> evaluate(ResourceServer resourceServer, AuthorizationRequest request) {
+        DecisionPermissionCollector decision = getDecision(resourceServer, request, DecisionPermissionCollector.class);
+        return decision.results();
+    }
+
+    @Override
+    public <D extends Decision<?>> D getDecision(ResourceServer resourceServer, AuthorizationRequest request, Class<D> decisionType) {
         DecisionPermissionCollector decision = new DecisionPermissionCollector(authorizationProvider, resourceServer, request);
 
         evaluate(decision);
 
-        return decision.results();
+        return decisionType.cast(decision);
     }
 }

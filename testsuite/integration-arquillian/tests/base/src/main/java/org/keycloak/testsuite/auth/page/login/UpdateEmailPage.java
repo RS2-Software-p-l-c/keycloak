@@ -33,14 +33,14 @@ public class UpdateEmailPage extends LogoutSessionsPage {
     @FindBy(id = "input-error-email")
     private WebElement inputErrorEmail;
 
-    @FindBy(css = "button[name='cancel-aia']")
+    @FindBy(id = "kc-cancel")
     private WebElement cancelActionButton;
 
-    @FindBy(css = "input[type='submit']")
-    private WebElement submitActionButton;
-
-    @FindBy(css = "input[type='submit']")
+    @FindBy(id = "kc-submit")
     private WebElement submitButton;
+
+    @FindBy(className = "kc-feedback-text")
+    private WebElement feedbackMessage;
 
     @Override
     public boolean isCurrent() {
@@ -80,11 +80,15 @@ public class UpdateEmailPage extends LogoutSessionsPage {
     }
 
     public void clickSubmitAction() {
-        clickLink(submitActionButton);
+        clickLink(submitButton);
     }
 
-    @Override
-    public void open() throws Exception {
-        throw new UnsupportedOperationException();
+    public String getInfo() {
+        try {
+            return getTextFromElement(feedbackMessage);
+        } catch (NoSuchElementException e) {
+            return null;
+        }
     }
+
 }

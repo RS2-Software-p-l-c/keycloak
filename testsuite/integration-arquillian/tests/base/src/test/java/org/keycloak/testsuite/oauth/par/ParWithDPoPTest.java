@@ -31,7 +31,6 @@ import org.keycloak.OAuth2Constants;
 import org.keycloak.OAuthErrorException;
 import org.keycloak.admin.client.resource.ClientResource;
 import org.keycloak.client.registration.ClientRegistrationException;
-import org.keycloak.common.Profile;
 import org.keycloak.common.util.Base64Url;
 import org.keycloak.common.util.KeyUtils;
 import org.keycloak.common.util.Time;
@@ -48,25 +47,25 @@ import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.representations.oidc.OIDCClientRepresentation;
 import org.keycloak.testsuite.AssertEvents;
 import org.keycloak.testsuite.admin.ApiUtil;
-import org.keycloak.testsuite.arquillian.annotation.EnableFeature;
 
 import org.keycloak.testsuite.client.policies.AbstractClientPoliciesTest;
 import org.keycloak.testsuite.client.resources.TestApplicationResourceUrls;
 import org.keycloak.testsuite.client.resources.TestOIDCEndpointsApplicationResource;
 import org.keycloak.testsuite.rest.resource.TestingOIDCEndpointsApplicationResource;
-import org.keycloak.testsuite.util.OAuthClient;
+import org.keycloak.testsuite.util.oauth.AccessTokenResponse;
+import org.keycloak.testsuite.util.oauth.AuthorizationEndpointResponse;
+import org.keycloak.testsuite.util.oauth.ParResponse;
 import org.keycloak.util.JWKSUtils;
 import org.keycloak.util.JsonSerialization;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
-import static org.keycloak.testsuite.admin.AbstractAdminTest.loadJson;
+import static org.keycloak.testsuite.AbstractAdminTest.loadJson;
 import static org.keycloak.testsuite.util.ClientPoliciesUtil.createEcJwk;
 import static org.keycloak.testsuite.util.ClientPoliciesUtil.createRsaJwk;
 import static org.keycloak.testsuite.util.ClientPoliciesUtil.generateEcdsaKey;
 import static org.keycloak.testsuite.util.ClientPoliciesUtil.generateSignedDPoPProof;
 
-@EnableFeature(value = Profile.Feature.DPOP, skipRestart = true)
 public class ParWithDPoPTest extends AbstractClientPoliciesTest {
     @Rule
     public AssertEvents events = new AssertEvents(this);
@@ -162,25 +161,25 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
         String clientSecret = getConfidentialClientSecretForTest(clientId);
 
         // [1] EC Key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getParEndpointUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate());
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getPushedAuthorizationRequest(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate(), null);
 
         // [2] EC key 
         String requestObject = generateRequestObject(clientId, jktEc);
   
         // ----- PAR -----
         // [3] RSA key
-        OAuthClient.ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, dpopProofEncoded, jktRsa);
+        ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, dpopProofEncoded, jktRsa);
         assertEquals(201, pResp.getStatusCode());
         String requestUri = pResp.getRequestUri();
 
         // ----- Authorization Request -----
         // [4] jktRsat (always ignores if PAR is used)
-        OAuthClient.AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktRsa);
+        AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktRsa);
 
         // ----- Token Request -----
         // [5] EC key
-        dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getAccessTokenUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate());
-        OAuthClient.AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
+        dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getToken(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate(), null);
+        AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
         assertEquals(200, res.getStatusCode());
         oauth.verifyToken(res.getAccessToken());
     }
@@ -207,25 +206,25 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
         String clientSecret = getConfidentialClientSecretForTest(clientId);
 
         // [1] EC Key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getParEndpointUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate());
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getPushedAuthorizationRequest(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate(), null);
 
         // [2] EC key 
         String requestObject = generateRequestObject(clientId, jktEc);
   
         // ----- PAR -----
         // [3] RSA key
-        OAuthClient.ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, dpopProofEncoded, jktRsa);
+        ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, dpopProofEncoded, jktRsa);
         assertEquals(201, pResp.getStatusCode());
         String requestUri = pResp.getRequestUri();
 
         // ----- Authorization Request -----
         // [4] jktRsat (always ignores if PAR is used)
-        OAuthClient.AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktRsa);
+        AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktRsa);
 
         // ----- Token Request -----
         // [5] RSA key
-        dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getAccessTokenUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate());
-        OAuthClient.AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
+        dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getToken(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate(), null);
+        AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
         assertEquals(400, res.getStatusCode());
         assertEquals(OAuthErrorException.INVALID_REQUEST, res.getError());
         assertEquals(ERROR_DETAILS, res.getErrorDescription());
@@ -252,14 +251,14 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
         String clientSecret = getConfidentialClientSecretForTest(clientId);
 
         // [1] EC Key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getParEndpointUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate());
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getPushedAuthorizationRequest(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate(), null);
 
         // [2] RSA key 
         String requestObject = generateRequestObject(clientId, jktRsa);
   
         // ----- PAR -----
         // [3] EC key
-        OAuthClient.ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, dpopProofEncoded, jktEc);
+        ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, dpopProofEncoded, jktEc);
         assertEquals(400, pResp.getStatusCode());
         assertEquals(OAuthErrorException.INVALID_REQUEST, pResp.getError());
         assertEquals("DPoP Proof public key thumbprint does not match dpop_jkt.", pResp.getErrorDescription());
@@ -287,25 +286,25 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
         String clientSecret = getConfidentialClientSecretForTest(clientId);
 
         // [1] EC Key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getParEndpointUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate());
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getPushedAuthorizationRequest(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate(), null);
 
         // [2] EC key 
         String requestObject = generateRequestObject(clientId, jktEc);
   
         // ----- PAR -----
         // [3] RSA key
-        OAuthClient.ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, dpopProofEncoded, jktRsa);
+        ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, dpopProofEncoded, jktRsa);
         assertEquals(201, pResp.getStatusCode());
         String requestUri = pResp.getRequestUri();
 
         // ----- Authorization Request -----
         // [4] no Key (always ignores if PAR is used)
-        OAuthClient.AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, null);
+        AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, null);
 
         // ----- Token Request -----
         // [5] EC key
-        dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getAccessTokenUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate());
-        OAuthClient.AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
+        dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getToken(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate(), null);
+        AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
         assertEquals(200, res.getStatusCode());
         oauth.verifyToken(res.getAccessToken());
     }
@@ -332,25 +331,25 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
         String clientSecret = getConfidentialClientSecretForTest(clientId);
 
         // [1] EC Key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getParEndpointUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate());
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getPushedAuthorizationRequest(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate(), null);
 
         // [2] EC key 
         String requestObject = generateRequestObject(clientId, jktEc);
   
         // ----- PAR -----
         // [3] RSA key
-        OAuthClient.ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, dpopProofEncoded, jktRsa);
+        ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, dpopProofEncoded, jktRsa);
         assertEquals(201, pResp.getStatusCode());
         String requestUri = pResp.getRequestUri();
 
         // ----- Authorization Request -----
         // [4] no Key (always ignores if PAR is used)
-        OAuthClient.AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, null);
+        AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, null);
 
         // ----- Token Request -----
         // [5] RSA key
-        dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getAccessTokenUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate());
-        OAuthClient.AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
+        dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getToken(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate(), null);
+        AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
         assertEquals(400, res.getStatusCode());
         assertEquals(OAuthErrorException.INVALID_REQUEST, res.getError());
         assertEquals(ERROR_DETAILS, res.getErrorDescription());
@@ -378,25 +377,25 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
         String clientSecret = getConfidentialClientSecretForTest(clientId);
 
         // [1] RSA Key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getParEndpointUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate());
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getPushedAuthorizationRequest(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate(), null);
 
         // [2] RSA key 
         String requestObject = generateRequestObject(clientId, jktRsa);
   
         // ----- PAR -----
         // [3] no key
-        OAuthClient.ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, dpopProofEncoded, null);
+        ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, dpopProofEncoded, null);
         assertEquals(201, pResp.getStatusCode());
         String requestUri = pResp.getRequestUri();
 
         // ----- Authorization Request -----
         // [4] EC Key (always ignores if PAR is used)
-        OAuthClient.AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktEc);
+        AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktEc);
 
         // ----- Token Request -----
         // [5] RSA key
-        dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getAccessTokenUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate());
-        OAuthClient.AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
+        dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getToken(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate(), null);
+        AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
         assertEquals(200, res.getStatusCode());
         oauth.verifyToken(res.getAccessToken());
     }
@@ -423,25 +422,25 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
         String clientSecret = getConfidentialClientSecretForTest(clientId);
 
         // [1] RSA Key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getParEndpointUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate());
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getPushedAuthorizationRequest(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate(), null);
 
         // [2] RSA key 
         String requestObject = generateRequestObject(clientId, jktRsa);
   
         // ----- PAR -----
         // [3] no key
-        OAuthClient.ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, dpopProofEncoded, null);
+        ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, dpopProofEncoded, null);
         assertEquals(201, pResp.getStatusCode());
         String requestUri = pResp.getRequestUri();
 
         // ----- Authorization Request -----
         // [4] no Key (always ignores if PAR is used)
-        OAuthClient.AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, null);
+        AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, null);
 
         // ----- Token Request -----
         // [5] EC key
-        dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getAccessTokenUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate());
-        OAuthClient.AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
+        dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getToken(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate(), null);
+        AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
         assertEquals(400, res.getStatusCode());
         assertEquals(OAuthErrorException.INVALID_REQUEST, res.getError());
         assertEquals(ERROR_DETAILS, res.getErrorDescription());
@@ -469,22 +468,22 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
         String clientSecret = getConfidentialClientSecretForTest(clientId);
 
         // [1] RSA Key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getParEndpointUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate());
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getPushedAuthorizationRequest(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate(), null);
   
         // ----- PAR -----
         // [3] RSA key
-        OAuthClient.ParResponse pResp =  sendGenerateAndPushedAuthorizationRequest(clientId, clientSecret, jktRsa, dpopProofEncoded);
+        ParResponse pResp =  sendGenerateAndPushedAuthorizationRequest(clientId, clientSecret, jktRsa, dpopProofEncoded);
         assertEquals(201, pResp.getStatusCode());
         String requestUri = pResp.getRequestUri();
 
         // ----- Authorization Request -----
         // [4] EC Key (always ignores if PAR is used)
-        OAuthClient.AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktEc);
+        AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktEc);
 
         // ----- Token Request -----
         // [5] RSA key
-        dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getAccessTokenUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate());
-        OAuthClient.AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
+        dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getToken(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate(), null);
+        AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
         assertEquals(200, res.getStatusCode());
         oauth.verifyToken(res.getAccessToken());
     }
@@ -510,11 +509,11 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
         String clientSecret = getConfidentialClientSecretForTest(clientId);
 
         // [1] EC Key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getParEndpointUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate());
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getPushedAuthorizationRequest(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate(), null);
 
         // ----- PAR -----
         // [3] RSA key
-        OAuthClient.ParResponse pResp =  sendGenerateAndPushedAuthorizationRequest(clientId, clientSecret, jktRsa, dpopProofEncoded);
+        ParResponse pResp =  sendGenerateAndPushedAuthorizationRequest(clientId, clientSecret, jktRsa, dpopProofEncoded);
         assertEquals(400, pResp.getStatusCode());
         assertEquals(OAuthErrorException.INVALID_REQUEST, pResp.getError());
         assertEquals("DPoP Proof public key thumbprint does not match dpop_jkt.", pResp.getErrorDescription());
@@ -541,22 +540,22 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
         String clientSecret = getConfidentialClientSecretForTest(clientId);
 
         // [1] RSA Key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getParEndpointUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate());
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getPushedAuthorizationRequest(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate(), null);
   
         // ----- PAR -----
         // [3] RSA key
-        OAuthClient.ParResponse pResp =  sendGenerateAndPushedAuthorizationRequest(clientId, clientSecret, null, dpopProofEncoded);
+        ParResponse pResp =  sendGenerateAndPushedAuthorizationRequest(clientId, clientSecret, null, dpopProofEncoded);
         assertEquals(201, pResp.getStatusCode());
         String requestUri = pResp.getRequestUri();
 
         // ----- Authorization Request -----
         // [4] EC Key (always ignores if PAR is used)
-        OAuthClient.AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktEc);
+        AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktEc);
 
         // ----- Token Request -----
         // [5] RSA key
-        dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getAccessTokenUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate());
-        OAuthClient.AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
+        dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getToken(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate(), null);
+        AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
         assertEquals(200, res.getStatusCode());
         oauth.verifyToken(res.getAccessToken());
     }
@@ -583,22 +582,22 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
         String clientSecret = getConfidentialClientSecretForTest(clientId);
 
         // [1] RSA Key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getParEndpointUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate());
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getPushedAuthorizationRequest(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate(), null);
 
         // ----- PAR -----
         // [3] no key
-        OAuthClient.ParResponse pResp =  sendGenerateAndPushedAuthorizationRequest(clientId, clientSecret, null, dpopProofEncoded);
+        ParResponse pResp =  sendGenerateAndPushedAuthorizationRequest(clientId, clientSecret, null, dpopProofEncoded);
         assertEquals(201, pResp.getStatusCode());
         String requestUri = pResp.getRequestUri();
 
         // ----- Authorization Request -----
         // [4] no Key (always ignores if PAR is used)
-        OAuthClient.AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, null);
+        AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, null);
 
         // ----- Token Request -----
         // [5] EC key
-        dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getAccessTokenUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate());
-        OAuthClient.AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
+        dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getToken(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate(), null);
+        AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
         assertEquals(400, res.getStatusCode());
         assertEquals(OAuthErrorException.INVALID_REQUEST, res.getError());
         assertEquals(ERROR_DETAILS, res.getErrorDescription());
@@ -630,18 +629,18 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
   
         // ----- PAR -----
         // [3] RSA key
-        OAuthClient.ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, null, jktRsa);
+        ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, null, jktRsa);
         assertEquals(201, pResp.getStatusCode());
         String requestUri = pResp.getRequestUri();
 
         // ----- Authorization Request -----
         // [4] RSA Key (always ignores if PAR is used)
-        OAuthClient.AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktRsa);
+        AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktRsa);
 
         // ----- Token Request -----
         // [5] EC key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getAccessTokenUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate());
-        OAuthClient.AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getToken(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate(), null);
+        AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
         assertEquals(200, res.getStatusCode());
         oauth.verifyToken(res.getAccessToken());
     }
@@ -672,18 +671,18 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
   
         // ----- PAR -----
         // [3] RSA key
-        OAuthClient.ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, null, jktRsa);
+        ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, null, jktRsa);
         assertEquals(201, pResp.getStatusCode());
         String requestUri = pResp.getRequestUri();
 
         // ----- Authorization Request -----
         // [4] no Key (always ignores if PAR is used)
-        OAuthClient.AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, null);
+        AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, null);
 
         // ----- Token Request -----
         // [5] EC key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getAccessTokenUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate());
-        OAuthClient.AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getToken(), (long) (Time.currentTime() + clockSkew), Algorithm.PS256, jwsRsaHeader, rsaKeyPair.getPrivate(), null);
+        AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
         assertEquals(400, res.getStatusCode());
         assertEquals(OAuthErrorException.INVALID_REQUEST, res.getError());
         assertEquals(ERROR_DETAILS, res.getErrorDescription());
@@ -715,18 +714,18 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
   
         // ----- PAR -----
         // [3] no key
-        OAuthClient.ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, null, null);
+        ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, null, null);
         assertEquals(201, pResp.getStatusCode());
         String requestUri = pResp.getRequestUri();
 
         // ----- Authorization Request -----
         // [4] RSA Key (always ignores if PAR is used)
-        OAuthClient.AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktRsa);
+        AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktRsa);
 
         // ----- Token Request -----
         // [5] EC key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getAccessTokenUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate());
-        OAuthClient.AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getToken(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate(), null);
+        AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
         assertEquals(200, res.getStatusCode());
         oauth.verifyToken(res.getAccessToken());
     }
@@ -756,18 +755,18 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
   
         // ----- PAR -----
         // [3] no key
-        OAuthClient.ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, null, null);
+        ParResponse pResp =  sendPushedAuthorizationRequestWithDpopJkt(clientId, clientSecret, requestObject, null, null);
         assertEquals(201, pResp.getStatusCode());
         String requestUri = pResp.getRequestUri();
 
         // ----- Authorization Request -----
         // [4] no Key (always ignores if PAR is used)
-        OAuthClient.AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, null);
+        AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, null);
 
         // ----- Token Request -----
         // [5] EC key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getAccessTokenUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate());
-        OAuthClient.AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getToken(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate(), null);
+        AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
         assertEquals(400, res.getStatusCode());
         assertEquals(OAuthErrorException.INVALID_REQUEST, res.getError());
         assertEquals(ERROR_DETAILS, res.getErrorDescription());
@@ -796,18 +795,18 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
  
         // ----- PAR -----
         // [3] EC key
-        OAuthClient.ParResponse pResp =  sendGenerateAndPushedAuthorizationRequest(clientId, clientSecret, jktEc, null);
+        ParResponse pResp =  sendGenerateAndPushedAuthorizationRequest(clientId, clientSecret, jktEc, null);
         assertEquals(201, pResp.getStatusCode());
         String requestUri = pResp.getRequestUri();
 
         // ----- Authorization Request -----
         // [4] RSA Key (always ignores if PAR is used)
-        OAuthClient.AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktRsa);
+        AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktRsa);
 
         // ----- Token Request -----
         // [5] EC key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getAccessTokenUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate());
-        OAuthClient.AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getToken(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate(), null);
+        AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
         assertEquals(200, res.getStatusCode());
         oauth.verifyToken(res.getAccessToken());
     }
@@ -834,18 +833,18 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
  
         // ----- PAR -----
         // [3] RSA key
-        OAuthClient.ParResponse pResp =  sendGenerateAndPushedAuthorizationRequest(clientId, clientSecret, jktRsa, null);
+        ParResponse pResp =  sendGenerateAndPushedAuthorizationRequest(clientId, clientSecret, jktRsa, null);
         assertEquals(201, pResp.getStatusCode());
         String requestUri = pResp.getRequestUri();
 
         // ----- Authorization Request -----
         // [4] no Key (always ignores if PAR is used)
-        OAuthClient.AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, null);
+        AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, null);
 
         // ----- Token Request -----
         // [5] EC key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getAccessTokenUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate());
-        OAuthClient.AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getToken(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate(), null);
+        AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
         assertEquals(400, res.getStatusCode());
         assertEquals(OAuthErrorException.INVALID_REQUEST, res.getError());
         assertEquals(ERROR_DETAILS, res.getErrorDescription());
@@ -873,18 +872,18 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
  
         // ----- PAR -----
         // [3] no key
-        OAuthClient.ParResponse pResp =  sendGenerateAndPushedAuthorizationRequest(clientId, clientSecret, null, null);
+        ParResponse pResp =  sendGenerateAndPushedAuthorizationRequest(clientId, clientSecret, null, null);
         assertEquals(201, pResp.getStatusCode());
         String requestUri = pResp.getRequestUri();
 
         // ----- Authorization Request -----
         // [4] EC Key (no DPoP Proof/dpop_jkt in PAR so it is effective)
-        OAuthClient.AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktEc);
+        AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktEc);
 
         // ----- Token Request -----
         // [5] EC key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getAccessTokenUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate());
-        OAuthClient.AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getToken(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate(), null);
+        AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
         assertEquals(200, res.getStatusCode());
         oauth.verifyToken(res.getAccessToken());
     }
@@ -911,18 +910,18 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
  
         // ----- PAR -----
         // [3] no key
-        OAuthClient.ParResponse pResp =  sendGenerateAndPushedAuthorizationRequest(clientId, clientSecret, null, null);
+        ParResponse pResp =  sendGenerateAndPushedAuthorizationRequest(clientId, clientSecret, null, null);
         assertEquals(201, pResp.getStatusCode());
         String requestUri = pResp.getRequestUri();
 
         // ----- Authorization Request -----
         // [4] RSA Key (no DPoP Proof/dpop_jkt in PAR so it is effective)
-        OAuthClient.AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktRsa);
+        AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, jktRsa);
 
         // ----- Token Request -----
         // [5] EC key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getAccessTokenUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate());
-        OAuthClient.AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getToken(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate(), null);
+        AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
         assertEquals(400, res.getStatusCode());
         assertEquals(OAuthErrorException.INVALID_REQUEST, res.getError());
         assertEquals(ERROR_DETAILS, res.getErrorDescription());
@@ -949,18 +948,18 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
  
         // ----- PAR -----
         // [3] no key
-        OAuthClient.ParResponse pResp =  sendGenerateAndPushedAuthorizationRequest(clientId, clientSecret, null, null);
+        ParResponse pResp =  sendGenerateAndPushedAuthorizationRequest(clientId, clientSecret, null, null);
         assertEquals(201, pResp.getStatusCode());
         String requestUri = pResp.getRequestUri();
 
         // ----- Authorization Request -----
         // [4] no Key (always ignores if PAR is used)
-        OAuthClient.AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, null);
+        AuthorizationEndpointResponse loginResponse = sendAuthorizationRequest(clientId, requestUri, null);
 
         // ----- Token Request -----
         // [5] EC key
-        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getAccessTokenUrl(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate());
-        OAuthClient.AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
+        String dpopProofEncoded = generateSignedDPoPProof(UUID.randomUUID().toString(), HttpMethod.POST, oauth.getEndpoints().getToken(), (long) (Time.currentTime() + clockSkew), Algorithm.ES256, jwsEcHeader, ecKeyPair.getPrivate(), null);
+        AccessTokenResponse res = sentTokenRequest(clientId, clientSecret, loginResponse.getCode(), dpopProofEncoded);
         assertEquals(200, res.getStatusCode());
         oauth.verifyToken(res.getAccessToken());
     }
@@ -1013,73 +1012,54 @@ public class ParWithDPoPTest extends AbstractClientPoliciesTest {
         return client.getOIDCRequest();
     }
 
-    private OAuthClient.ParResponse sendGenerateAndPushedAuthorizationRequest(String clientId, String clientSecret, String dpopJkt, String dpopProofEncoded) throws IOException {
-        oauth.clientId(clientId);
+    private ParResponse sendGenerateAndPushedAuthorizationRequest(String clientId, String clientSecret, String dpopJkt, String dpopProofEncoded) throws IOException {
+        oauth.client(clientId, clientSecret);
         oauth.responseType(OAuth2Constants.CODE);
         oauth.redirectUri(CLIENT_REDIRECT_URI);
         oauth.scope(OAuth2Constants.SCOPE_OPENID);
-        oauth.dpopJkt(dpopJkt);
-        oauth.dpopProof(dpopProofEncoded);
-        oauth.request(null);
         // ----- PAR -----
-        OAuthClient.ParResponse pResp = oauth.doPushedAuthorizationRequest(clientId, clientSecret);
+        ParResponse pResp = oauth.pushedAuthorizationRequest().dpopJkt(dpopJkt).dpopProof(dpopProofEncoded).send();
         // revert
-        oauth.clientId(null);
+        oauth.client(null);
         oauth.responseType(null);
         oauth.redirectUri(null);
         oauth.scope(null);
-        oauth.dpopJkt(null);
-        oauth.dpopProof(null);
         return pResp;
     }
 
-    private OAuthClient.ParResponse sendPushedAuthorizationRequestWithDpopJkt(String clientId, String clientSecret, String requestObject, String dpopProofEncoded, String dpopJkt) throws IOException {
-        oauth.clientId(clientId);
-        oauth.request(requestObject);
-        oauth.dpopProof(dpopProofEncoded);
-        oauth.dpopJkt(dpopJkt);
+    private ParResponse sendPushedAuthorizationRequestWithDpopJkt(String clientId, String clientSecret, String requestObject, String dpopProofEncoded, String dpopJkt) throws IOException {
+        oauth.client(clientId, clientSecret);
         oauth.responseType(null);
         oauth.redirectUri(null);
         oauth.scope(null);
         // ----- PAR -----
-        OAuthClient.ParResponse pResp = oauth.doPushedAuthorizationRequest(clientId, clientSecret);
+        ParResponse pResp = oauth.pushedAuthorizationRequest().dpopJkt(dpopJkt).dpopProof(dpopProofEncoded).request(requestObject).send();
         // revert
-        oauth.clientId(null);
-        oauth.request(null);
-        oauth.dpopProof(null);
-        oauth.dpopJkt(null);
+        oauth.client(null);
         return pResp;
     }
 
-    private OAuthClient.AuthorizationEndpointResponse sendAuthorizationRequest(String clientId, String requestUri, String dpopJkt) {
+    private AuthorizationEndpointResponse sendAuthorizationRequest(String clientId, String requestUri, String dpopJkt) {
         // Authorization Request with request_uri of PAR
         // remove parameters as query strings of uri
         oauth.clientId(clientId);
-        oauth.requestUri(requestUri);
-        oauth.dpopJkt(dpopJkt);
         oauth.responseType(null);
         oauth.redirectUri(null);
         oauth.scope(null);
-        oauth.request(null);
-        oauth.dpopProof(null);
         // ----- Authorization Request -----
-        OAuthClient.AuthorizationEndpointResponse loginResponse = oauth.doLogin(TEST_USER_NAME, TEST_USER_PASSWORD);
+        AuthorizationEndpointResponse loginResponse = oauth.loginForm().requestUri(requestUri).dpopJkt(dpopJkt).doLogin(TEST_USER_NAME, TEST_USER_PASSWORD);
         // revert
         oauth.clientId(null);
-        oauth.requestUri(null);
-        oauth.dpopJkt(null);
         return loginResponse;
     }
 
-    private OAuthClient.AccessTokenResponse sentTokenRequest(String clientId, String clientSecret, String code, String dpopProofEncoded) {
-        oauth.clientId(clientId);
-        oauth.dpopProof(dpopProofEncoded);
+    private AccessTokenResponse sentTokenRequest(String clientId, String clientSecret, String code, String dpopProofEncoded) {
+        oauth.client(clientId, clientSecret);
         oauth.redirectUri(CLIENT_REDIRECT_URI);
         // ----- Token Request -----
-        OAuthClient.AccessTokenResponse res = oauth.doAccessTokenRequest(code, clientSecret);
+        AccessTokenResponse res = oauth.accessTokenRequest(code).dpopProof(dpopProofEncoded).send();
         // revert
-        oauth.clientId(null);
-        oauth.dpopProof(null);
+        oauth.client(null);
         oauth.redirectUri(null);
         return res;
     }

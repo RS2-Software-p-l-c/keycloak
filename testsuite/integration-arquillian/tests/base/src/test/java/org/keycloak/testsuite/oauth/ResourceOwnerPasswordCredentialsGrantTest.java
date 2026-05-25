@@ -17,7 +17,9 @@
 
 package org.keycloak.testsuite.oauth;
 
-import org.apache.http.HttpResponse;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import org.apache.http.NameValuePair;
 import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.client.methods.HttpPost;
@@ -30,6 +32,7 @@ import org.keycloak.OAuth2Constants;
 import org.keycloak.OAuthErrorException;
 import org.keycloak.admin.client.resource.ClientResource;
 import org.keycloak.admin.client.resource.RealmResource;
+import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.authentication.authenticators.client.ClientIdAndSecretAuthenticator;
 import org.keycloak.common.Profile;
 import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
@@ -58,16 +61,14 @@ import org.keycloak.testsuite.admin.ApiUtil;
 import org.keycloak.testsuite.arquillian.annotation.EnableFeature;
 import org.keycloak.testsuite.util.ClientBuilder;
 import org.keycloak.testsuite.util.ClientManager;
-import org.keycloak.testsuite.util.OAuthClient;
 import org.keycloak.testsuite.util.RealmBuilder;
 import org.keycloak.testsuite.util.RealmManager;
 import org.keycloak.testsuite.util.TokenSignatureUtil;
 import org.keycloak.testsuite.util.UserBuilder;
 import org.keycloak.testsuite.util.UserManager;
+import org.keycloak.testsuite.util.oauth.AccessTokenResponse;
+import org.keycloak.testsuite.util.oauth.LogoutResponse;
 
-import jakarta.ws.rs.core.HttpHeaders;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -207,9 +208,9 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
         }
 
         oauth.scope("dynamic-scope:123");
-        oauth.clientId("resource-owner-public");
+        oauth.client("resource-owner-public");
 
-        OAuthClient.AccessTokenResponse response = oauth.doGrantAccessTokenRequest("secret", "direct-login", "password");
+        AccessTokenResponse response = oauth.doPasswordGrantRequest("direct-login", "password");
 
         assertTrue(response.getScope().contains("dynamic-scope:123"));
 
@@ -238,8 +239,8 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
     @EnableFeature(value = Profile.Feature.DYNAMIC_SCOPES, skipRestart = true)
     public void grantAccessTokenWithUnassignedDynamicScope() throws Exception {
         oauth.scope("unknown-scope:123");
-        oauth.clientId("resource-owner-public");
-        OAuthClient.AccessTokenResponse response = oauth.doGrantAccessTokenRequest("secret", "direct-login", "password");
+        oauth.client("resource-owner-public");
+        AccessTokenResponse response = oauth.doPasswordGrantRequest("direct-login", "password");
         assertEquals(400, response.getStatusCode());
         assertEquals("invalid_scope", response.getError());
         assertEquals("Invalid scopes: unknown-scope:123", response.getErrorDescription());
@@ -255,19 +256,19 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
         // Confirm user can login with 1-th OTP since it's the preferred credential
         grantAccessToken(userIdMultipleOTPs, "direct-login-multiple-otps", "resource-owner", totp.generateTOTP("firstOTPIsPreferredCredential"));
         // For remaining OTP tokens HTTP 401 "Unauthorized" is the allowed / expected response
-        oauth.clientId("resource-owner");
+        oauth.client("resource-owner", "secret");
         for (int i = 2; i <= 10; i++) {
             String otp = totp.generateTOTP(String.format("%s-th OTP authenticator", i));
-            OAuthClient.AccessTokenResponse response = oauth.doGrantAccessTokenRequest("secret", "direct-login-multiple-otps", "password", otp);
+            AccessTokenResponse response = oauth.passwordGrantRequest("direct-login-multiple-otps", "password").otp(otp).send();
             assertEquals(401, response.getStatusCode());
         }
     }
 
     @Test
     public void grantAccessTokenMissingTotp() throws Exception {
-        oauth.clientId("resource-owner");
+        oauth.client("resource-owner", "secret");
 
-        OAuthClient.AccessTokenResponse response = oauth.doGrantAccessTokenRequest("secret", "direct-login-otp", "password");
+        AccessTokenResponse response = oauth.doPasswordGrantRequest("direct-login-otp", "password");
 
         assertEquals(401, response.getStatusCode());
 
@@ -286,9 +287,9 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
     public void grantAccessTokenInvalidTotp() throws Exception {
         int authSessionsBefore = getAuthenticationSessionsCount();
 
-        oauth.clientId("resource-owner");
+        oauth.client("resource-owner", "secret");
 
-        OAuthClient.AccessTokenResponse response = oauth.doGrantAccessTokenRequest("secret", "direct-login-otp", "password", totp.generateTOTP("totpSecret2"));
+        AccessTokenResponse response = oauth.passwordGrantRequest("direct-login-otp", "password").otp(totp.generateTOTP("totpSecret2")).send();
 
         assertEquals(401, response.getStatusCode());
 
@@ -311,9 +312,9 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
     }
 
     private void grantAccessToken(String userId, String login, String clientId, String otp) throws Exception {
-        oauth.clientId(clientId);
+        oauth.client(clientId, "secret");
 
-        OAuthClient.AccessTokenResponse response = oauth.doGrantAccessTokenRequest("secret", login, "password", otp);
+        AccessTokenResponse response = oauth.passwordGrantRequest( login, "password").otp(otp).send();
 
         assertEquals(200, response.getStatusCode());
 
@@ -337,7 +338,7 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
 
         assertEquals(accessToken.getSessionState(), refreshToken.getSessionState());
 
-        OAuthClient.AccessTokenResponse refreshedResponse = oauth.doRefreshTokenRequest(response.getRefreshToken(), "secret");
+        AccessTokenResponse refreshedResponse = oauth.doRefreshTokenRequest(response.getRefreshToken());
 
         AccessToken refreshedAccessToken = oauth.verifyToken(refreshedResponse.getAccessToken());
         RefreshToken refreshedRefreshToken = oauth.parseRefreshToken(refreshedResponse.getRefreshToken());
@@ -374,9 +375,9 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
         String clientId = "resource-owner";
         String login = "direct-login";
 
-        oauth.clientId(clientId);
+        oauth.client(clientId, "secret");
 
-        OAuthClient.AccessTokenResponse response = oauth.doGrantAccessTokenRequest("secret", login, "password", null);
+        AccessTokenResponse response = oauth.doPasswordGrantRequest(login, "password");
 
         assertEquals(200, response.getStatusCode());
 
@@ -410,7 +411,7 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
 
         assertEquals(accessToken.getSessionState(), refreshToken.getSessionState());
 
-        OAuthClient.AccessTokenResponse refreshedResponse = oauth.doRefreshTokenRequest(response.getRefreshToken(), "secret");
+        AccessTokenResponse refreshedResponse = oauth.doRefreshTokenRequest(response.getRefreshToken());
 
         AccessToken refreshedAccessToken = oauth.verifyToken(refreshedResponse.getAccessToken());
         RefreshToken refreshedRefreshToken = oauth.parseRefreshToken(refreshedResponse.getRefreshToken());
@@ -423,9 +424,9 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
 
     @Test
     public void grantAccessTokenLogout() throws Exception {
-        oauth.clientId("resource-owner");
+        oauth.client("resource-owner", "secret");
 
-        OAuthClient.AccessTokenResponse response = oauth.doGrantAccessTokenRequest("secret", "test-user@localhost", "password");
+        AccessTokenResponse response = oauth.doPasswordGrantRequest("test-user@localhost", "password");
 
         assertEquals(200, response.getStatusCode());
 
@@ -444,11 +445,11 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
                 .detail(Details.CLIENT_AUTH_METHOD, ClientIdAndSecretAuthenticator.PROVIDER_ID)
                 .assertEvent();
 
-        HttpResponse logoutResponse = oauth.doLogout(response.getRefreshToken(), "secret");
-        assertEquals(204, logoutResponse.getStatusLine().getStatusCode());
+        LogoutResponse logoutResponse = oauth.doLogout(response.getRefreshToken());
+        assertTrue(logoutResponse.isSuccess());
         events.expectLogout(accessToken.getSessionState()).client("resource-owner").removeDetail(Details.REDIRECT_URI).assertEvent();
 
-        response = oauth.doRefreshTokenRequest(response.getRefreshToken(), "secret");
+        response = oauth.doRefreshTokenRequest(response.getRefreshToken());
         assertEquals(400, response.getStatusCode());
         assertEquals("invalid_grant", response.getError());
 
@@ -462,9 +463,9 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
 
     @Test
     public void grantAccessTokenInvalidClientCredentials() throws Exception {
-        oauth.clientId("resource-owner");
+        oauth.client("resource-owner", "invalid");
 
-        OAuthClient.AccessTokenResponse response = oauth.doGrantAccessTokenRequest("invalid", "test-user@localhost", "password");
+        AccessTokenResponse response = oauth.doPasswordGrantRequest("test-user@localhost", "password");
 
         assertEquals(401, response.getStatusCode());
 
@@ -481,9 +482,9 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
 
     @Test
     public void grantAccessTokenMissingClientCredentials() throws Exception {
-        oauth.clientId("resource-owner");
+        oauth.client("resource-owner", null);
 
-        OAuthClient.AccessTokenResponse response = oauth.doGrantAccessTokenRequest(null, "test-user@localhost", "password");
+        AccessTokenResponse response = oauth.doPasswordGrantRequest("test-user@localhost", "password");
 
         assertEquals(401, response.getStatusCode());
 
@@ -503,9 +504,9 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
 
         ClientManager.realm(adminClient.realm("test")).clientId("resource-owner").directAccessGrant(false);
 
-        oauth.clientId("resource-owner");
+        oauth.client("resource-owner", "secret");
 
-        OAuthClient.AccessTokenResponse response = oauth.doGrantAccessTokenRequest("secret", "test-user@localhost", "password");
+        AccessTokenResponse response = oauth.doPasswordGrantRequest("test-user@localhost", "password");
 
         assertEquals(400, response.getStatusCode());
 
@@ -530,9 +531,9 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
         RealmResource realmResource = adminClient.realm("test");
         RealmManager.realm(realmResource).verifyEmail(true);
 
-        oauth.clientId("resource-owner");
+        oauth.client("resource-owner", "secret");
 
-        OAuthClient.AccessTokenResponse response = oauth.doGrantAccessTokenRequest("secret", "test-user@localhost", "password");
+        AccessTokenResponse response = oauth.doPasswordGrantRequest("test-user@localhost", "password");
 
         assertEquals(400, response.getStatusCode());
 
@@ -560,9 +561,9 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
         RealmResource realmResource = adminClient.realm("test");
         RealmManager.realm(realmResource).verifyEmail(true);
 
-        oauth.clientId("resource-owner");
+        oauth.client("resource-owner", "secret");
 
-        OAuthClient.AccessTokenResponse response = oauth.doGrantAccessTokenRequest("secret", "test-user@localhost", "bad-password");
+        AccessTokenResponse response = oauth.doPasswordGrantRequest("test-user@localhost", "bad-password");
 
         assertEquals(401, response.getStatusCode());
 
@@ -593,9 +594,9 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
         try {
             setTimeOffset(60 * 60 * 48);
 
-            oauth.clientId("resource-owner");
+            oauth.client("resource-owner", "secret");
 
-            OAuthClient.AccessTokenResponse response = oauth.doGrantAccessTokenRequest("secret", "test-user@localhost", "password");
+            AccessTokenResponse response = oauth.doPasswordGrantRequest("test-user@localhost", "password");
 
             assertEquals(400, response.getStatusCode());
 
@@ -627,9 +628,9 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
         try {
             setTimeOffset(60 * 60 * 48);
 
-            oauth.clientId("resource-owner");
+            oauth.client("resource-owner", "secret");
 
-            OAuthClient.AccessTokenResponse response = oauth.doGrantAccessTokenRequest("secret", "test-user@localhost", "bad-password");
+            AccessTokenResponse response = oauth.doPasswordGrantRequest("test-user@localhost", "bad-password");
 
             assertEquals(401, response.getStatusCode());
 
@@ -686,9 +687,9 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
 
     @Test
     public void grantAccessTokenInvalidUserCredentials() throws Exception {
-        oauth.clientId("resource-owner");
+        oauth.client("resource-owner", "secret");
 
-        OAuthClient.AccessTokenResponse response = oauth.doGrantAccessTokenRequest("secret", "test-user@localhost", "invalid");
+        AccessTokenResponse response = oauth.doPasswordGrantRequest("test-user@localhost", "invalid");
 
         assertEquals(401, response.getStatusCode());
 
@@ -708,9 +709,9 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
 
     @Test
     public void grantAccessTokenUserNotFound() throws Exception {
-        oauth.clientId("resource-owner");
+        oauth.client("resource-owner", "secret");
 
-        OAuthClient.AccessTokenResponse response = oauth.doGrantAccessTokenRequest("secret", "invalid", "invalid");
+        AccessTokenResponse response = oauth.doPasswordGrantRequest("invalid", "invalid");
 
         assertEquals(401, response.getStatusCode());
 
@@ -731,12 +732,12 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
 
     @Test
     public void grantAccessTokenMissingGrantType() throws Exception {
-        oauth.clientId("resource-owner");
+        oauth.client("resource-owner", "secret");
 
         try (CloseableHttpClient client = HttpClientBuilder.create().build()) {
-            HttpPost post = new HttpPost(oauth.getResourceOwnerPasswordCredentialGrantUrl());
+            HttpPost post = new HttpPost(oauth.getEndpoints().getToken());
             post.addHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_FORM_URLENCODED);
-            OAuthClient.AccessTokenResponse response = new OAuthClient.AccessTokenResponse(client.execute(post));
+            AccessTokenResponse response = new AccessTokenResponse(client.execute(post));
 
             assertEquals(400, response.getStatusCode());
 
@@ -747,15 +748,15 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
 
     @Test
     public void grantAccessTokenUnsupportedGrantType() throws Exception {
-        oauth.clientId("resource-owner");
+        oauth.client("resource-owner", "secret");
 
         try (CloseableHttpClient client = HttpClientBuilder.create().build()) {
-            HttpPost post = new HttpPost(oauth.getResourceOwnerPasswordCredentialGrantUrl());
+            HttpPost post = new HttpPost(oauth.getEndpoints().getToken());
             List<NameValuePair> parameters = new LinkedList<>();
             parameters.add(new BasicNameValuePair(OAuth2Constants.GRANT_TYPE, "unsupported_grant_type"));
             UrlEncodedFormEntity formEntity = new UrlEncodedFormEntity(parameters, StandardCharsets.UTF_8);
             post.setEntity(formEntity);
-            OAuthClient.AccessTokenResponse response = new OAuthClient.AccessTokenResponse(client.execute(post));
+            AccessTokenResponse response = new AccessTokenResponse(client.execute(post));
 
             assertEquals(400, response.getStatusCode());
 
@@ -766,13 +767,38 @@ public class ResourceOwnerPasswordCredentialsGrantTest extends AbstractKeycloakT
 
     @Test
     public void grantAccessTokenNoRefreshToken() throws Exception {
-        oauth.clientId("resource-owner-refresh");
-        OAuthClient.AccessTokenResponse response = oauth.doGrantAccessTokenRequest("secret", "direct-login", "password", null);
+        oauth.client("resource-owner-refresh", "secret");
+        AccessTokenResponse response = oauth.doPasswordGrantRequest("direct-login", "password");
 
         assertEquals(200, response.getStatusCode());
 
         assertNotNull(response.getAccessToken());
         assertNull(response.getRefreshToken());
+    }
+
+    @Test
+    public void grantAccessTokenServiceAccountUserOfOtherClient() throws Exception {
+        ClientManager.realm(adminClient.realm("test")).clientId("resource-owner").setServiceAccountsEnabled(true);
+        oauth.client("resource-owner-refresh", "secret");
+        AccessTokenResponse response = oauth.doPasswordGrantRequest("service-account-resource-owner", "password");
+
+        assertEquals(401, response.getStatusCode());
+        assertEquals("invalid_grant", response.getError());
+        assertEquals("Invalid user credentials", response.getErrorDescription());
+
+        events.expectLogin()
+                .client("resource-owner-refresh")
+                .session((String) null)
+                .user((String) null)
+                .detail(Details.GRANT_TYPE, OAuth2Constants.PASSWORD)
+                .detail(Details.REASON, "User is a service account")
+                .removeDetail(Details.CODE_ID)
+                .removeDetail(Details.REDIRECT_URI)
+                .removeDetail(Details.CONSENT)
+                .error(Errors.INVALID_USER)
+                .assertEvent();
+
+        ClientManager.realm(adminClient.realm("test")).clientId("resource-owner").setServiceAccountsEnabled(false);
     }
 
     private int getAuthenticationSessionsCount() {

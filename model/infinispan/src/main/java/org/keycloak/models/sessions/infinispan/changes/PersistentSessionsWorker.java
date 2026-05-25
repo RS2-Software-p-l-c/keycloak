@@ -43,6 +43,8 @@ import java.util.concurrent.TimeUnit;
  */
 public class PersistentSessionsWorker {
     private static final Logger LOG = Logger.getLogger(PersistentSessionsWorker.class);
+    public static final Duration UPDATE_TIMEOUT = Duration.of(10, ChronoUnit.SECONDS);
+    public static final int UPDATE_BASE_INTERVAL_MILLIS = 0;
 
     private final KeycloakSessionFactory factory;
     private final ArrayBlockingQueue<PersistentUpdate> asyncQueuePersistentUpdate;
@@ -75,8 +77,14 @@ public class PersistentSessionsWorker {
                 try {
                     process(queue);
                 } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
+                    // The arjuna transaction reaper might interrupt this thread due to a long-running transaction.
+                    // But we will not terminate this thread as it will need to continue handling requests.
+                    if (!stop) {
+                        LOG.warn("Caught interrupted exception", e);
+                    }
+                } catch (RuntimeException e) {
+                    // We will need to continue
+                    LOG.warn("Exception when processing queue events", e);
                 }
             }
         }
@@ -144,7 +152,7 @@ public class PersistentSessionsWorker {
                                         }
                                     }
                                 },
-                                Duration.of(10, ChronoUnit.SECONDS), 0);
+                                UPDATE_TIMEOUT, UPDATE_BASE_INTERVAL_MILLIS);
                     } catch (RuntimeException ex) {
                         tracing.error(ex);
                         batch.forEach(o -> o.fail(ex));
@@ -165,6 +173,7 @@ public class PersistentSessionsWorker {
             try {
                 t.join(TimeUnit.MINUTES.toMillis(1));
             } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
                 throw new RuntimeException(e);
             }
         });

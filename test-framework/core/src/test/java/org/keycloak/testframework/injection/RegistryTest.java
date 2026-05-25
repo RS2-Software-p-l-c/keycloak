@@ -26,6 +26,7 @@ public class RegistryTest {
         MockInstances.reset();
         MockParentSupplier.reset();
         MockChildSupplier.reset();
+        Extensions.reset();
         registry = new Registry();
     }
 
@@ -173,6 +174,7 @@ public class RegistryTest {
         try {
             Config.initConfig();
 
+            Extensions.reset();
             registry = new Registry();
             List<Supplier<?, ?>> suppliers = registry.getSuppliers();
             Assertions.assertEquals(1, suppliers.stream().filter(s -> s.getValueType().equals(MockParentValue.class)).count());
@@ -248,6 +250,55 @@ public class RegistryTest {
         Assertions.assertSame(test.child123.getParent(), test.parent123);
     }
 
+    @Test
+    public void testConfigurableSupplier() {
+        ParentTest parentTest = new ParentTest();
+        registry.beforeEach(parentTest);
+
+        Assertions.assertNull(parentTest.parent.getStringOption());
+        Assertions.assertTrue(parentTest.parent.isBooleanOption());
+
+        System.setProperty("kc.test.MockParentValue.string", "some string");
+        System.setProperty("kc.test.MockParentValue.boolean", "false");
+
+        try {
+            Config.initConfig();
+            Extensions.reset();
+            registry = new Registry();
+            parentTest = new ParentTest();
+            registry.beforeEach(parentTest);
+
+            Assertions.assertEquals("some string", parentTest.parent.getStringOption());
+            Assertions.assertFalse(parentTest.parent.isBooleanOption());
+        } finally {
+            System.getProperties().remove("kc.test.MockParentValue.string");
+            System.getProperties().remove("kc.test.MockParentValue.boolean");
+            Config.initConfig();
+        }
+    }
+
+    @Test
+    public void testIncompatibleParent() {
+        MockParentSupplier.COMPATIBLE = false;
+        RealmIncompatibleParentTest test = new RealmIncompatibleParentTest();
+        registry.beforeEach(test);
+
+        MockParentValue parent1 = test.parent;
+        MockChildValue child1 = test.child;
+
+        Assertions.assertNotNull(test.parent);
+        Assertions.assertNotNull(test.child);
+
+        registry.afterEach();
+
+        registry.beforeEach(test);
+
+        Assertions.assertNotNull(test.parent);
+        Assertions.assertNotEquals(parent1, test.parent);
+        Assertions.assertNotNull(test.child);
+        Assertions.assertNotEquals(child1, test.child);
+    }
+
     public static void assertRunning(Object... values) {
         MatcherAssert.assertThat(MockInstances.INSTANCES, Matchers.hasItems(values));
         MatcherAssert.assertThat(MockInstances.INSTANCES, Matchers.hasSize(values.length));
@@ -308,4 +359,15 @@ public class RegistryTest {
         @MockChildAnnotation(ref = "ABC", parentRef = "ABC")
         MockChildValue childABC;
     }
+
+    public static final class RealmIncompatibleParentTest {
+
+        @MockChildAnnotation
+        MockChildValue child;
+
+        @MockParentAnnotation
+        MockParentValue parent;
+
+    }
+
 }

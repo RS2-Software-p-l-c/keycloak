@@ -21,7 +21,7 @@
     <parent>
         <artifactId>keycloak-parent</artifactId>
         <groupId>org.keycloak</groupId>
-        <version>26.1.4</version>
+        <version>26.4.7</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
@@ -35,17 +35,21 @@
     <modules>
         <module>bom</module>
         <module>core</module>
+        <module>junit5-config</module>
+        <module>db-edb</module>
         <module>db-mariadb</module>
         <module>db-mssql</module>
         <module>db-mysql</module>
         <module>db-oracle</module>
         <module>db-postgres</module>
+        <module>db-tidb</module>
         <module>email-server</module>
         <module>examples</module>
-        <module>oauth-nimbus-poc</module>
+        <module>oauth</module>
         <module>remote</module>
         <module>remote-providers</module>
         <module>ui</module>
+        <module>clustering</module>
     </modules>
 
 </project>

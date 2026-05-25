@@ -34,6 +34,7 @@ import { FormFields } from "../ClientDetails";
 import { ClientSecret } from "./ClientSecret";
 import { SignedJWT } from "./SignedJWT";
 import { X509 } from "./X509";
+import { convertAttributeNameToForm } from "../../util";
 
 type AccessToken = {
   registrationAccessToken: string;
@@ -80,7 +81,7 @@ export const Credentials = ({ client, save, refresh }: CredentialsProps) => {
     () =>
       componentTypes?.["org.keycloak.authentication.ClientAuthenticator"]?.find(
         (p) => p.id === clientAuthenticatorType,
-      )?.properties,
+      )?.clientProperties,
     [clientAuthenticatorType, componentTypes],
   );
 
@@ -184,7 +185,12 @@ export const Credentials = ({ client, save, refresh }: CredentialsProps) => {
             {clientAuthenticatorType === "client-x509" && <X509 />}
             {providerProperties && (
               <Form>
-                <DynamicComponents properties={providerProperties} />
+                <DynamicComponents
+                  properties={providerProperties}
+                  convertToName={(name) =>
+                    convertAttributeNameToForm(`attributes.${name}`)
+                  }
+                />
               </Form>
             )}
             <ActionGroup>

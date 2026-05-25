@@ -8,12 +8,13 @@ import org.keycloak.quarkus.runtime.configuration.Configuration;
 
 import static org.keycloak.quarkus.runtime.configuration.mappers.PropertyMapper.fromOption;
 
-final class ProxyPropertyMappers {
+import java.util.List;
 
-    private ProxyPropertyMappers(){}
+final class ProxyPropertyMappers implements PropertyMapperGrouping{
 
-    public static PropertyMapper<?>[] getProxyPropertyMappers() {
-        return new PropertyMapper[] {
+    @Override
+    public List<PropertyMapper<?>> getPropertyMappers() {
+        return List.of(
                 fromOption(ProxyOptions.PROXY_HEADERS)
                         .to("quarkus.http.proxy.proxy-address-forwarding")
                         .transformer((v, c) -> proxyEnabled(null, v, c))
@@ -21,6 +22,11 @@ final class ProxyPropertyMappers {
                         .build(),
                 fromOption(ProxyOptions.PROXY_PROTOCOL_ENABLED)
                         .to("quarkus.http.proxy.use-proxy-protocol")
+                        .validator(v -> {
+                            if (Boolean.parseBoolean(v) && Configuration.getOptionalKcValue(ProxyOptions.PROXY_HEADERS).isPresent()) {
+                                throw new PropertyException("proxy protocol cannot be enabled when using the `proxy-headers` option");
+                            }
+                        })
                         .build(),
                 fromOption(ProxyOptions.PROXY_FORWARDED_HOST)
                         .to("quarkus.http.proxy.enable-forwarded-host")
@@ -34,15 +40,19 @@ final class ProxyPropertyMappers {
                         .to("quarkus.http.proxy.allow-x-forwarded")
                         .mapFrom(ProxyOptions.PROXY_HEADERS, (v, c) -> proxyEnabled(ProxyOptions.Headers.xforwarded, v, c))
                         .build(),
+                fromOption(ProxyOptions.PROXY_TRUSTED_HEADER_ENABLED)
+                        .to("quarkus.http.proxy.enable-trusted-proxy-header")
+                        .mapFrom(ProxyOptions.PROXY_HEADERS, (v, c) -> proxyEnabled(null, v, c))
+                        .build(),
                 fromOption(ProxyOptions.PROXY_TRUSTED_ADDRESSES)
                         .to("quarkus.http.proxy.trusted-proxies")
                         .validator(ProxyPropertyMappers::validateAddress)
                         .addValidateEnabled(() -> !Configuration.isBlank(ProxyOptions.PROXY_HEADERS), "proxy-headers is set")
                         .paramLabel("trusted proxies")
                         .build()
-        };
+        );
     }
-    
+
     private static void validateAddress(String address) {
         if (Inet.parseCidrAddress(address) != null) {
             return;

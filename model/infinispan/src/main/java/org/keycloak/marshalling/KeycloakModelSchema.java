@@ -33,6 +33,7 @@ import org.keycloak.cluster.infinispan.LockEntry;
 import org.keycloak.cluster.infinispan.LockEntryPredicate;
 import org.keycloak.cluster.infinispan.WrapperClusterEvent;
 import org.keycloak.component.ComponentModel;
+import org.keycloak.jgroups.certificates.ReloadCertificateFunction;
 import org.keycloak.keys.infinispan.PublicKeyStorageInvalidationEvent;
 import org.keycloak.models.UserSessionModel;
 import org.keycloak.models.cache.infinispan.ClearCacheEvent;
@@ -79,12 +80,12 @@ import org.keycloak.models.cache.infinispan.stream.InIdentityProviderPredicate;
 import org.keycloak.models.cache.infinispan.stream.InRealmPredicate;
 import org.keycloak.models.sessions.infinispan.changes.ReplaceFunction;
 import org.keycloak.models.sessions.infinispan.changes.SessionEntityWrapper;
-import org.keycloak.models.sessions.infinispan.changes.sessions.LastSessionRefreshEvent;
 import org.keycloak.models.sessions.infinispan.changes.sessions.SessionData;
 import org.keycloak.models.sessions.infinispan.entities.AuthenticatedClientSessionEntity;
 import org.keycloak.models.sessions.infinispan.entities.AuthenticatedClientSessionStore;
 import org.keycloak.models.sessions.infinispan.entities.AuthenticationSessionEntity;
 import org.keycloak.models.sessions.infinispan.entities.ClientSessionKey;
+import org.keycloak.models.sessions.infinispan.entities.EmbeddedClientSessionKey;
 import org.keycloak.models.sessions.infinispan.entities.LoginFailureEntity;
 import org.keycloak.models.sessions.infinispan.entities.LoginFailureKey;
 import org.keycloak.models.sessions.infinispan.entities.RemoteAuthenticatedClientSessionEntity;
@@ -95,14 +96,15 @@ import org.keycloak.models.sessions.infinispan.entities.UserSessionEntity;
 import org.keycloak.models.sessions.infinispan.events.RealmRemovedSessionEvent;
 import org.keycloak.models.sessions.infinispan.events.RemoveAllUserLoginFailuresEvent;
 import org.keycloak.models.sessions.infinispan.events.RemoveUserSessionsEvent;
-import org.keycloak.models.sessions.infinispan.initializer.InitializerState;
 import org.keycloak.models.sessions.infinispan.stream.AuthClientSessionSetMapper;
+import org.keycloak.models.sessions.infinispan.stream.ClientSessionFilterByUser;
 import org.keycloak.models.sessions.infinispan.stream.CollectionToStreamMapper;
 import org.keycloak.models.sessions.infinispan.stream.GroupAndCountCollectorSupplier;
 import org.keycloak.models.sessions.infinispan.stream.MapEntryToKeyMapper;
+import org.keycloak.models.sessions.infinispan.stream.RemoveKeyConsumer;
 import org.keycloak.models.sessions.infinispan.stream.SessionPredicate;
-import org.keycloak.models.sessions.infinispan.stream.SessionWrapperPredicate;
 import org.keycloak.models.sessions.infinispan.stream.SessionUnwrapMapper;
+import org.keycloak.models.sessions.infinispan.stream.SessionWrapperPredicate;
 import org.keycloak.models.sessions.infinispan.stream.UserSessionPredicate;
 import org.keycloak.sessions.CommonClientSessionModel;
 import org.keycloak.storage.UserStorageProviderModel;
@@ -149,14 +151,10 @@ import org.keycloak.storage.managers.UserStorageSyncManager;
                 ScopeUpdatedEvent.class,
                 ScopeRemovedEvent.class,
 
-                // models.sessions.infinispan.initializer package
-                InitializerState.class,
-
                 // models.sessions.infinispan.changes package
                 SessionEntityWrapper.class,
 
                 // models.sessions.infinispan.changes.sessions package
-                LastSessionRefreshEvent.class,
                 SessionData.class,
 
                 // models.cache.infinispan.authorization.stream package
@@ -206,12 +204,12 @@ import org.keycloak.storage.managers.UserStorageSyncManager;
                 UserFullInvalidationEvent.class,
                 UserUpdatedEvent.class,
 
-
                 // sessions.infinispan.entities package
                 AuthenticatedClientSessionStore.class,
                 AuthenticatedClientSessionEntity.class,
                 AuthenticationSessionEntity.class,
                 ClientSessionKey.class,
+                EmbeddedClientSessionKey.class,
                 LoginFailureEntity.class,
                 LoginFailureKey.class,
                 RemoteAuthenticatedClientSessionEntity.class,
@@ -227,6 +225,11 @@ import org.keycloak.storage.managers.UserStorageSyncManager;
                 GroupAndCountCollectorSupplier.class,
                 MapEntryToKeyMapper.class,
                 SessionUnwrapMapper.class,
+                ClientSessionFilterByUser.class,
+                RemoveKeyConsumer.class,
+
+                // infinispan.module.certificates
+                ReloadCertificateFunction.class,
         }
 )
 public interface KeycloakModelSchema extends GeneratedSchema {

@@ -18,7 +18,7 @@
 package org.keycloak.testsuite.pages;
 
 import org.jboss.arquillian.test.api.ArquillianResource;
-import org.keycloak.testsuite.util.OAuthClient;
+import org.keycloak.testsuite.util.oauth.OAuthClient;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
 
@@ -33,9 +33,11 @@ public class VerifyEmailPage extends AbstractPage {
     @FindBy(linkText = "Click here")
     private WebElement resendEmailLink;
 
-    @Override
-    public void open() {
-    }
+    @FindBy(name = "cancel-aia")
+    private WebElement cancelAIAButton;
+
+    @FindBy(className = "kc-feedback-text")
+    private WebElement feedbackText;
 
     public boolean isCurrent() {
         return PageUtils.getPageTitle(driver).equals("Email verification");
@@ -47,6 +49,14 @@ public class VerifyEmailPage extends AbstractPage {
 
     public String getResendEmailLink() {
         return resendEmailLink.getAttribute("href");
+    }
+
+    public String getFeedbackText() {
+        return feedbackText.getText();
+    }
+
+    public void cancel() {
+        cancelAIAButton.click();
     }
 
 }

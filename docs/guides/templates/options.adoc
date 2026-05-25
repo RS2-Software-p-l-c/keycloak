@@ -5,23 +5,36 @@
     </#list>
 </#macro>
 
-<#macro list options buildIcon=true anchor=true>
+<#macro includeOptions includedOptions excludedOptions="" deniedCategories="">
+<@list options=ctx.options.getOptions(includedOptions, excludedOptions, deniedCategories) anchor=false></@list>
+</#macro>
+
+<#macro printRelevantOptions includedOptions excludedOptions="" deniedCategories="">
+== Relevant options
+
+<@includeOptions includedOptions=includedOptions excludedOptions=excludedOptions deniedCategories=deniedCategories></@includeOptions>
+<#nested>
+</#macro>
+
+<#macro list options buildIcon=true anchor=true categoryName="">
 [cols="12a,4",role="options"]
 |===
 | |Value
 
 <#list options as option>
 |
-[.options-key]#``${option.key}``# <#if buildIcon><#if option.build>[.none]#icon:tools[role=options-build]#</#if></#if>
+[.options-key]#`+${option.key}+`# <#if buildIcon><#if option.build>[.none]#icon:tools[role=options-build]#</#if></#if>
 
 [.options-description]#${option.description}#
 
-[<#if anchor>#option-extended-${option.key},</#if>role="options-extended"]
+[<#if anchor>#option-extended-${categoryName?lower_case}-${option.key},</#if>role="options-extended"]
 --
 <#if option.descriptionExtended?has_content>[.options-description-extended]#${option.descriptionExtended!}#</#if>
 
-*CLI:* `${option.keyCli}` +
-*Env:* `${option.keyEnv}`
+<#if option.wildcardKey?has_content>*Named key:* [.options-wildcard-key]#`+${option.wildcardKey}+`# <#if buildIcon><#if option.build>[.none]#icon:tools[role=options-build]#</#if></#if></#if>
+
+*CLI:* `+${option.keyCli}+` +
+*Env:* `+${option.keyEnv}+`
 --
 
 <#if option.enabledWhen?has_content>

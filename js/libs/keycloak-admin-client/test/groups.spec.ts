@@ -5,8 +5,8 @@ import { KeycloakAdminClient } from "../src/client.js";
 import type ClientRepresentation from "../src/defs/clientRepresentation.js";
 import type GroupRepresentation from "../src/defs/groupRepresentation.js";
 import type RoleRepresentation from "../src/defs/roleRepresentation.js";
+import type { SubGroupQuery } from "../src/resources/groups.js";
 import { credentials } from "./constants.js";
-import { SubGroupQuery } from "../src/resources/groups.js";
 
 const expect = chai.expect;
 
@@ -70,7 +70,7 @@ describe("Groups", () => {
     const groupId = currentGroup.id;
     await kcAdminClient.groups.update(
       { id: groupId! },
-      { name: "another-group-name" },
+      { name: "another-group-name", description: "another-group-description" },
     );
 
     const group = await kcAdminClient.groups.findOne({

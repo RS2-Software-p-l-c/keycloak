@@ -24,50 +24,53 @@ import org.keycloak.config.Option;
 import org.keycloak.config.OptionBuilder;
 import org.keycloak.config.OptionCategory;
 import org.keycloak.exportimport.Strategy;
+import org.keycloak.quarkus.runtime.cli.Picocli;
 import org.keycloak.quarkus.runtime.cli.PropertyException;
+import org.keycloak.quarkus.runtime.cli.command.Import;
 
 import static org.keycloak.exportimport.ExportImportConfig.PROVIDER;
 import static org.keycloak.quarkus.runtime.configuration.Configuration.getOptionalValue;
 import static org.keycloak.quarkus.runtime.configuration.mappers.PropertyMapper.fromOption;
 
-public final class ImportPropertyMappers {
-    private static final String IMPORTER_PROPERTY = "kc.spi-import-importer";
+import java.util.List;
+
+public final class ImportPropertyMappers implements PropertyMapperGrouping {
+    private static final String IMPORTER_PROPERTY = "kc.spi-import--importer";
     private static final String SINGLE_FILE = "singleFile";
     private static final String DIR = "dir";
 
-    private ImportPropertyMappers() {
-    }
-
-    public static PropertyMapper<?>[] getMappers() {
-        return new PropertyMapper[]{
+    @Override
+    public List<PropertyMapper<?>> getPropertyMappers() {
+        return List.of(
                 fromOption(IMPORTER_PLACEHOLDER)
                         .to(IMPORTER_PROPERTY)
                         .transformer(ImportPropertyMappers::transformImporter)
                         .paramLabel("file")
                         .build(),
                 fromOption(ImportOptions.FILE)
-                        .to("kc.spi-import-single-file-file")
+                        .to("kc.spi-import--single-file--file")
                         .paramLabel("file")
                         .build(),
                 fromOption(ImportOptions.DIR)
-                        .to("kc.spi-import-dir-dir")
+                        .to("kc.spi-import--dir--dir")
                         .paramLabel("dir")
                         .build(),
                 fromOption(ImportOptions.OVERRIDE)
-                        .to("kc.spi-import-single-file-strategy")
+                        .to("kc.spi-import--single-file--strategy")
                         .transformer(ImportPropertyMappers::transformOverride)
                         .isEnabled(ImportPropertyMappers::isSingleFileProvider)
                         .build(),
                 fromOption(ImportOptions.OVERRIDE)
-                        .to("kc.spi-import-dir-strategy")
+                        .to("kc.spi-import--dir--strategy")
                         .transformer(ImportPropertyMappers::transformOverride)
                         .isEnabled(ImportPropertyMappers::isDirProvider)
-                        .build(),
-        };
+                        .build()
+        );
     }
 
-    public static void validateConfig() {
-        if (getOptionalValue(IMPORTER_PROPERTY).isEmpty() && System.getProperty(PROVIDER) == null) {
+    @Override
+    public void validateConfig(Picocli picocli) {
+        if (picocli.getParsedCommand().orElse(null) instanceof Import && getOptionalValue(IMPORTER_PROPERTY).isEmpty() && System.getProperty(PROVIDER) == null) {
             throw new PropertyException("Must specify either --dir or --file options.");
         }
     }
@@ -107,8 +110,8 @@ public final class ImportPropertyMappers {
             return importer.getValue();
         }
 
-        var file = getOptionalValue("kc.spi-import-single-file-file").map(f -> SINGLE_FILE);
-        var dir = getOptionalValue("kc.spi-import-dir-dir")
+        var file = getOptionalValue("kc.spi-import--single-file--file").map(f -> SINGLE_FILE);
+        var dir = getOptionalValue("kc.spi-import--dir--dir")
                 .or(() -> getOptionalValue("kc.dir"))
                 .map(f -> DIR);
 

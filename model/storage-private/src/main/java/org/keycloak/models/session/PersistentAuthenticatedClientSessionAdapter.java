@@ -31,6 +31,7 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -125,8 +126,11 @@ public class PersistentAuthenticatedClientSessionAdapter implements Authenticate
     // Write updated model with latest serialized data
     public PersistentClientSessionModel getUpdatedModel() {
         try {
-            String updatedData = JsonSerialization.writeValueAsString(getData());
-            this.model.setData(updatedData);
+            if (data != null) {
+                // If data hasn't been initialized, it hasn't been touched and is unchanged. So need to deserialize and serialize it
+                String updatedData = JsonSerialization.writeValueAsString(getData());
+                this.model.setData(updatedData);
+            }
         } catch (IOException ioe) {
             throw new ModelException("Error persisting session", ioe);
         }
@@ -242,20 +246,22 @@ public class PersistentAuthenticatedClientSessionAdapter implements Authenticate
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (o == null || !(o instanceof AuthenticatedClientSessionModel)) return false;
+        if (!(o instanceof AuthenticatedClientSessionModel that)) return false;
 
-        AuthenticatedClientSessionModel that = (AuthenticatedClientSessionModel) o;
-        return that.getId().equals(getId());
+        return Objects.equals(getId(), that.getId());
     }
 
     @Override
     public int hashCode() {
-        return getId().hashCode();
+        return Objects.hashCode(getId());
     }
 
     @Override
     public String toString() {
-        return getId();
+        return "PersistentAuthenticatedClientSessionAdapter{" +
+                "userSessionId=" + model.getUserSessionId() +
+                "clientId=" + model.getClientId() +
+                "}";
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

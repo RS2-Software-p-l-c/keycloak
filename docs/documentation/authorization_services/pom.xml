@@ -5,11 +5,13 @@
     <parent>
         <groupId>org.keycloak.documentation</groupId>
         <artifactId>documentation-parent</artifactId>
-        <version>26.1.4</version>
+        <version>26.4.7</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <name>Authorization Services</name>
+    <name>Authorization Services Documentation</name>
+    <description>Authorization Services Documentation</description>
+
     <artifactId>authorization-services</artifactId>
     <packaging>pom</packaging>
 

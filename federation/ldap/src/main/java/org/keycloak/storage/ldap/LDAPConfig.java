@@ -17,6 +17,8 @@
 
 package org.keycloak.storage.ldap;
 
+import static org.keycloak.storage.UserStorageProviderModel.IMPORT_ENABLED;
+
 import org.keycloak.common.util.MultivaluedHashMap;
 import org.keycloak.models.LDAPConstants;
 import org.keycloak.storage.UserStorageProvider;
@@ -33,6 +35,8 @@ import java.util.Set;
  *
  */
 public class LDAPConfig {
+
+    public static final String DEFAULT_CONNECTION_TIMEOUT = "5000";
 
     private final MultivaluedHashMap<String, String> config;
     private final Set<String> binaryAttributeNames = new HashSet<>();
@@ -77,6 +81,15 @@ public class LDAPConfig {
         }
 
         return usersDn;
+    }
+
+    public String getRelativeCreateDn() {
+        String relativeCreateDn = config.getFirst(LDAPConstants.RELATIVE_CREATE_DN);
+        if(relativeCreateDn != null) {
+            relativeCreateDn = relativeCreateDn.trim();
+            return relativeCreateDn.endsWith(",") ? relativeCreateDn : relativeCreateDn + ",";
+        }
+        return "";
     }
 
     public String getBaseDn() {
@@ -133,7 +146,8 @@ public class LDAPConfig {
     }
 
     public String getConnectionTimeout() {
-        return config.getFirst(LDAPConstants.CONNECTION_TIMEOUT);
+        return config.getFirstOrDefault(LDAPConstants.CONNECTION_TIMEOUT,
+                System.getProperty("com.sun.jndi.ldap.connect.timeout", DEFAULT_CONNECTION_TIMEOUT));
     }
 
     public String getReadTimeout() {
@@ -270,6 +284,10 @@ public class LDAPConfig {
 
     public boolean isEdirectory() {
         return LDAPConstants.VENDOR_NOVELL_EDIRECTORY.equalsIgnoreCase(getVendor());
+    }
+
+    public boolean isImportEnabled() {
+        return Boolean.parseBoolean(config.getFirstOrDefault(IMPORT_ENABLED, Boolean.TRUE.toString())) ;
     }
 
     @Override

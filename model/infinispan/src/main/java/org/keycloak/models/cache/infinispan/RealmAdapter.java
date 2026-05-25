@@ -78,7 +78,7 @@ public class RealmAdapter implements CachedRealmModel {
         this.cached = cached;
         this.cacheSession = cacheSession;
         this.session = session;
-        this.modelSupplier = this::getRealm;
+        this.modelSupplier = new LazyModel<>(this::getRealm);
     }
 
     @Override
@@ -409,7 +409,7 @@ public class RealmAdapter implements CachedRealmModel {
                 @Override
                 protected void commitImpl() {
                     ClusterProvider cluster = session.getProvider(ClusterProvider.class);
-                    cluster.notify(InfinispanUserCacheProviderFactory.USER_CLEAR_CACHE_EVENTS, ClearCacheEvent.getInstance(), false, ClusterProvider.DCNotify.ALL_DCS);
+                    cluster.notify(InfinispanUserCacheProviderFactory.USER_CLEAR_CACHE_EVENTS, ClearCacheEvent.getInstance(), false);
                 }
 
                 @Override
@@ -721,7 +721,7 @@ public class RealmAdapter implements CachedRealmModel {
     public OAuth2DeviceConfig getOAuth2DeviceConfig() {
         if (isUpdated())
             return updated.getOAuth2DeviceConfig();
-        return cached.getOAuth2DeviceConfig(modelSupplier);
+        return cached.getOAuth2DeviceConfig(session, modelSupplier);
     }
 
     @Override
@@ -1610,7 +1610,7 @@ public class RealmAdapter implements CachedRealmModel {
     @Override
     public Stream<ClientScopeModel> getDefaultClientScopesStream(boolean defaultScope) {
         if (isUpdated()) return updated.getDefaultClientScopesStream(defaultScope);
-        List<String> clientScopeIds = defaultScope ? cached.getDefaultDefaultClientScopes() : cached.getOptionalDefaultClientScopes();
+        List<String> clientScopeIds = defaultScope ? cached.getDefaultDefaultClientScopes(session, modelSupplier) : cached.getOptionalDefaultClientScopes(session, modelSupplier);
         return clientScopeIds.stream()
                 .map(scope -> cacheSession.getClientScopeById(this, scope))
                 .filter(Objects::nonNull);
@@ -1800,28 +1800,32 @@ public class RealmAdapter implements CachedRealmModel {
 
     @Override
     public ClientInitialAccessModel createClientInitialAccessModel(int expiration, int count) {
-        getDelegateForUpdate();
-        return updated.createClientInitialAccessModel(expiration, count);
+        // This does not call getDelegateForUpdate() this data is never cached, and calling it would invalidate all cached realm data
+        return modelSupplier.get().createClientInitialAccessModel(expiration, count);
     }
 
     @Override
     public ClientInitialAccessModel getClientInitialAccessModel(String id) {
-        return getDelegateForUpdate().getClientInitialAccessModel(id);
+        // This does not call getDelegateForUpdate() this data is never cached, and calling it would invalidate all cached realm data
+        return modelSupplier.get().getClientInitialAccessModel(id);
     }
 
     @Override
     public void removeClientInitialAccessModel(String id) {
-        getDelegateForUpdate().removeClientInitialAccessModel(id);
+        // This does not call getDelegateForUpdate() this data is never cached, and calling it would invalidate all cached realm data
+        modelSupplier.get().removeClientInitialAccessModel(id);
     }
 
     @Override
     public Stream<ClientInitialAccessModel> getClientInitialAccesses() {
-        return getDelegateForUpdate().getClientInitialAccesses();
+        // This does not call getDelegateForUpdate() this data is never cached, and calling it would invalidate all cached realm data
+        return modelSupplier.get().getClientInitialAccesses();
     }
 
     @Override
     public void decreaseRemainingCount(ClientInitialAccessModel clientInitialAccess) {
-        getDelegateForUpdate().decreaseRemainingCount(clientInitialAccess);
+        // This does not call getDelegateForUpdate() this data is never cached, and calling it would invalidate all cached realm data
+        modelSupplier.get().decreaseRemainingCount(clientInitialAccess);
     }
 
     @Override

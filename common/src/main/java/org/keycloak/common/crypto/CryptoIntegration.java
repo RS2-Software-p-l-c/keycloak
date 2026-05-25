@@ -43,6 +43,10 @@ public class CryptoIntegration {
         }
     }
 
+    public static boolean isInitialised() {
+        return cryptoProvider != null;
+    }
+
     public static CryptoProvider getProvider() {
         if (cryptoProvider == null) {
             throw new IllegalStateException("Illegal state. Please init first before obtaining provider");
@@ -94,7 +98,7 @@ public class CryptoIntegration {
     }
 
     public static void setProvider(CryptoProvider provider) {
-        logger.debugf("Using the crypto provider: %s", provider.getClass().getName());
+        logger.debugf("Using the crypto provider: %s", provider != null ? provider.getClass().getName() : "null");
         cryptoProvider = provider;
     }
 }

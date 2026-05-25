@@ -2,13 +2,14 @@
 
 <#macro guide title summary priority=999 deniedCategories="" includedOptions="" excludedOptions="" preview="" tileVisible="true" previewDiscussionLink="">
 :guide-id: ${id}
+:guide-parent: ${parent}
 :guide-title: ${title}
 :guide-summary: ${summary}
 :guide-priority: ${priority}
 :guide-tile-visible: ${tileVisible}
 :version: ${version}
 
-include::../attributes.adoc[]
+include::${attributes}
 
 [[${id}]]
 = ${title}
@@ -26,8 +27,6 @@ endif::[]
 <#nested>
 
 <#if includedOptions?has_content>
-== Relevant options
-
-<@opts.list options=ctx.options.getOptions(includedOptions, excludedOptions, deniedCategories) anchor=false></@opts.list>
+<@opts.printRelevantOptions includedOptions=includedOptions excludedOptions=excludedOptions deniedCategories=deniedCategories></@>
 </#if>
 </#macro>

@@ -111,7 +111,11 @@ public class DefaultAttributes extends HashMap<String, List<String>> implements 
     private boolean isReadableOrWritableDuringRegistration(String name) {
         if (context.equals(UserProfileContext.REGISTRATION) && isRequired(name)) {
             // in context of registration, username or email (email as username) cannot be readonly otherwise registration is not possible
-            return UserModel.EMAIL.equals(name) || UserModel.USERNAME.equals(name);
+            if (UserModel.EMAIL.equals(name)) {
+                RealmModel realm = session.getContext().getRealm();
+                return realm.isRegistrationEmailAsUsername();
+            }
+            return UserModel.USERNAME.equals(name);
         }
         return false;
     }
@@ -260,6 +264,7 @@ public class DefaultAttributes extends HashMap<String, List<String>> implements 
             RealmModel realm = session.getContext().getRealm();
 
             if ((UserModel.USERNAME.equals(name) && realm.isRegistrationEmailAsUsername())
+                || isReadableOrWritableDuringRegistration(name)
                 || !isManagedAttribute(name)) {
                 continue;
             }
@@ -295,12 +300,14 @@ public class DefaultAttributes extends HashMap<String, List<String>> implements 
                 continue;
             }
 
-            if (!isReadableOrWritableDuringRegistration(name)) {
-                AttributeContext attributeContext = createAttributeContext(metadata);
+            if (isReadableOrWritableDuringRegistration(name)) {
+                continue;
+            }
 
-                if (!metadata.canView(attributeContext) || !metadata.isSelected(attributeContext)) {
-                    attributes.remove(name);
-                }
+            AttributeContext attributeContext = createAttributeContext(metadata);
+
+            if (!metadata.canView(attributeContext) || !metadata.isSelected(attributeContext)) {
+                attributes.remove(name);
             }
         }
 
@@ -340,7 +347,7 @@ public class DefaultAttributes extends HashMap<String, List<String>> implements 
     }
 
     private Map<String, AttributeMetadata> getUserStorageProviderMetadata(UserProfileMetadata profileMetadata) {
-        if (user == null || (StorageId.isLocalStorage(user.getId()) && user.getFederationLink() == null)) {
+        if (user == null || (StorageId.isLocalStorage(user.getId()) && !user.isFederated())) {
             // new user or not a user from a storage provider other than local
             return Collections.emptyMap();
         }
@@ -405,19 +412,20 @@ public class DefaultAttributes extends HashMap<String, List<String>> implements 
         }
 
         // the profile should always hold all attributes defined in the config
-        for (String attributeName : metadataByAttribute.keySet()) {
+        for (var entry : metadataByAttribute.entrySet()) {
+            String attributeName = entry.getKey();
             if (!isSupportedAttribute(attributeName) || newAttributes.containsKey(attributeName)) {
                 continue;
             }
 
             List<String> values = EMPTY_VALUE;
-            AttributeMetadata metadata = metadataByAttribute.get(attributeName);
+            AttributeMetadata metadata = entry.getValue();
 
             if (user != null && isIncludeAttributeIfNotProvided(metadata)) {
-                values = normalizeAttributeValues(attributeName, user.getAttributes().getOrDefault(attributeName, EMPTY_VALUE));
+                values = user.getAttributes().getOrDefault(attributeName, EMPTY_VALUE);
             }
 
-            newAttributes.put(attributeName, values);
+            newAttributes.put(attributeName, normalizeAttributeValues(attributeName, values));
         }
 
         if (user != null) {
@@ -462,10 +470,16 @@ public class DefaultAttributes extends HashMap<String, List<String>> implements 
         if (value instanceof String) {
             values = Collections.singletonList((String) value);
         } else {
-            values = (List<String>) value;
+            values = value == null ? EMPTY_VALUE : (List<String>) value;
         }
 
-        Stream<String> valuesStream = Optional.ofNullable(values).orElse(EMPTY_VALUE).stream().filter(Objects::nonNull);
+        AttributeMetadata metadata = metadataByAttribute.get(name);
+
+        if (values.isEmpty() && metadata != null && metadata.getDefaultValue() != null) {
+            values = List.of(metadata.getDefaultValue());
+        }
+
+        Stream<String> valuesStream = values.stream().filter(Objects::nonNull);
 
         // do not normalize the username if a federated user because we need to respect the format from the external identity store
         if ((UserModel.USERNAME.equals(name) && !isFederated()) || UserModel.EMAIL.equals(name)) {
@@ -559,6 +573,19 @@ public class DefaultAttributes extends HashMap<String, List<String>> implements 
     @Override
     public Map<String, List<String>> getUnmanagedAttributes() {
         return unmanagedAttributes;
+    }
+
+    @Override
+    public Map<String, Object> getAnnotations(String name) {
+        AttributeMetadata metadata = getMetadata(name);
+
+        if (metadata == null) {
+            return Collections.emptyMap();
+        }
+
+        AttributeContext context = createAttributeContext(metadata);
+
+        return metadata.getAnnotations(context);
     }
 
     protected AttributeMetadata createUnmanagedAttributeMetadata(String name) {

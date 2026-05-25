@@ -4,7 +4,7 @@
     <#if section = "header">
         ${msg("auth-recovery-code-header")}
     <#elseif section = "form">
-        <form id="kc-recovery-code-login-form" class="${properties.kcFormClass!}" action="${url.loginAction}" method="post">
+        <form id="kc-recovery-code-login-form" class="${properties.kcFormClass!}" onsubmit="login.disabled = true; return true;" action="${url.loginAction}" method="post">
             <div class="${properties.kcFormGroupClass!}">
                 <div class="${properties.kcLabelWrapperClass!}">
                     <label for="recoveryCodeInput" class="${properties.kcLabelClass!}">${msg("auth-recovery-code-prompt", recoveryAuthnCodesInputBean.codeNumber?c)}</label>
@@ -14,9 +14,10 @@
                     <input tabindex="1" id="recoveryCodeInput"
                            name="recoveryCodeInput"
                            aria-invalid="<#if messagesPerField.existsError('recoveryCodeInput')>true</#if>"
-                           autocomplete="off"
+                           autocomplete="one-time-code"
                            type="text"
                            class="${properties.kcInputClass!}"
+                           inputmode="numeric"
                            autofocus
                            dir="ltr"/>
 

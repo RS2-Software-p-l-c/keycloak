@@ -18,6 +18,7 @@
 package org.keycloak.models.jpa;
 
 import org.keycloak.Config;
+import org.keycloak.authorization.fgap.AdminPermissionsSchema;
 import org.keycloak.common.Profile;
 import org.keycloak.connections.jpa.JpaConnectionProvider;
 import org.keycloak.models.ClientProvider;
@@ -26,7 +27,6 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.jpa.entities.RealmAttributes;
-import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.protocol.saml.SamlConfigAttributes;
 
 import jakarta.persistence.EntityManager;
@@ -45,7 +45,9 @@ public class JpaClientProviderFactory implements ClientProviderFactory {
 
     private static final List<String> REQUIRED_SEARCHABLE_ATTRIBUTES = Arrays.asList(
         "saml_idp_initiated_sso_url_name",
-        SamlConfigAttributes.SAML_ARTIFACT_BINDING_IDENTIFIER
+        SamlConfigAttributes.SAML_ARTIFACT_BINDING_IDENTIFIER,
+        "jwt.credential.issuer",
+        "jwt.credential.sub"
     );
 
     @Override
@@ -70,10 +72,7 @@ public class JpaClientProviderFactory implements ClientProviderFactory {
                     if (Objects.equals(attrUpdateEvent.getAttributeName(), RealmAttributes.ADMIN_PERMISSIONS_ENABLED) && Boolean.parseBoolean(attrUpdateEvent.getAttributeValue())) {
                         KeycloakSession keycloakSession = attrUpdateEvent.getKeycloakSession();
                         RealmModel realm = attrUpdateEvent.getRealm();
-
-                        if (realm.getAdminPermissionsClient() != null) return;
-
-                        KeycloakModelUtils.setupAdminPermissionsClient(keycloakSession, realm);
+                        AdminPermissionsSchema.SCHEMA.init(keycloakSession, realm);
                     }
                 }
             });

@@ -59,7 +59,16 @@ For development purposes, you can run the server in development mode instead usi
 This spins up Keycloak using a development database (h2-file) and with insecure HTTP enabled.
 
 ### Running from your IDE
-Alternatively, you can run the server in development mode from your IDE. For that, run the `org.keycloak.quarkus._private.IDELauncher` main class in the `server` directory.
+Alternatively, you can run the server in development mode from your IDE. For that, run the `org.keycloak.Keycloak` main class in the `tests/junit5` directory.
+
+If you have problems starting the server in debug mode, add following environment variables to your run config:
+
+    -Djava.util.logging.manager=org.jboss.logmanager.LogManager
+    -Djava.util.concurrent.ForkJoinPool.common.threadFactory=io.quarkus.bootstrap.forkjoin.QuarkusForkJoinWorkerThreadFactory
+
+Set the `kc.home.dir` environment variable for keeping state between startups:
+    
+    -Dkc.home.dir=.kc 
 
 ## Contributing
 Please make sure to read our [Contribution Guidelines](../CONTRIBUTING.md) before contributing.
@@ -102,7 +111,7 @@ There are also some container based tests to check if Keycloak starts using one 
 
 These tests are disabled by default. They using Quarkus development mode predefined database containers by default and can be run in the `tests` subdirectory by using e.g. 
 
-    ../mvnw clean install -Dkc.test.storage.database=true -Dtest=MariaDBStartDatabaseTest
+    ../mvnw clean install -Ptest-database -Dtest=MariaDBDistTest
 
 to spin up a MariaDB container and start Keycloak with it.
 
@@ -110,7 +119,7 @@ To use a specific database container image, use the option `-Dkc.db.postgresql.c
 
 Example:
 
-    ../mvnw clean install -Dkc.test.storage.database=true -Dtest=PostgreSQLDistTest -Dkc.db.postgresql.container.image=postgres:alpine
+    ../mvnw clean install -Ptest-database -Dtest=PostgreSQLDistTest -Dkc.db.postgresql.container.image=postgres:alpine
     
 ### Updating Expectations
 

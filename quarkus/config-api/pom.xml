@@ -21,15 +21,15 @@
     <parent>
         <artifactId>keycloak-quarkus-parent</artifactId>
         <groupId>org.keycloak</groupId>
-        <version>26.1.4</version>
+        <version>26.4.7</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>keycloak-config-api</artifactId>
     <name>Keycloak Configuration API</name>
+    <description>Keycloak Configuration API</description>
     <packaging>jar</packaging>
-    <description/>
 
     <dependencies>
         <dependency>

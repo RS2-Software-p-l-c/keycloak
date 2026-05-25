@@ -34,6 +34,7 @@ import org.keycloak.operator.crds.v2alpha1.deployment.Keycloak;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.HostnameSpecBuilder;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.IngressSpec;
 import org.keycloak.operator.crds.v2alpha1.deployment.spec.IngressSpecBuilder;
+import org.keycloak.operator.testsuite.apiserver.DisabledIfApiServerTest;
 import org.keycloak.operator.testsuite.utils.K8sUtils;
 
 import java.util.Map;
@@ -48,6 +49,7 @@ import static org.keycloak.operator.testsuite.utils.K8sUtils.enableHttp;
 @QuarkusTest
 public class KeycloakIngressTest extends BaseOperatorTest {
 
+    @DisabledIfApiServerTest
     @Test
     public void testIngressOnHTTP() {
         var kc = getTestKeycloakDeployment(false);
@@ -76,6 +78,7 @@ public class KeycloakIngressTest extends BaseOperatorTest {
         testIngressURLs(baseUrl);
     }
 
+    @DisabledIfApiServerTest
     @Test
     public void testIngressOnHTTPSAndProxySettings() {
         var kc = getTestKeycloakDeployment(false);
@@ -104,6 +107,34 @@ public class KeycloakIngressTest extends BaseOperatorTest {
         assertThat(envVars)
                 .noneMatch(e -> "KC_PROXY".equals(e.getName()))
                 .anyMatch(e -> "KC_PROXY_HEADERS".equals(e.getName()) && "xforwarded".equals(e.getValue()));
+    }
+
+    @DisabledIfApiServerTest
+    @Test
+    public void testIngressTLSTermination() {
+        var kc = getTestKeycloakDeployment(false);
+        var hostnameSpecBuilder = new HostnameSpecBuilder()
+                .withStrict(false)
+                .withStrictBackchannel(false);
+        if (isOpenShift) {
+            kc.getSpec().setIngressSpec(new IngressSpecBuilder().withIngressClassName(KeycloakController.OPENSHIFT_DEFAULT).build());
+        }
+        kc.getSpec().setHostnameSpec(hostnameSpecBuilder.build());
+        String secret = kc.getSpec().getHttpSpec().getTlsSecret();
+        kc.getSpec().getHttpSpec().setHttpEnabled(true);
+        kc.getSpec().getHttpSpec().setTlsSecret(null);
+        kc.getSpec().setIngressSpec(new IngressSpecBuilder().withTlsSecret(secret).build());
+
+        K8sUtils.deployKeycloak(k8sclient, kc, true);
+
+        String testHostname;
+        if (isOpenShift) {
+            testHostname = k8sclient.resource(kc).get().getSpec().getHostnameSpec().getHostname();
+        } else {
+            testHostname = kubernetesIp;
+        }
+
+        testIngressURLs("https://" + testHostname + ":443");
     }
 
     private void testIngressURLs(String baseUrl) {

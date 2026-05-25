@@ -21,7 +21,7 @@
     <parent>
         <artifactId>keycloak-parent</artifactId>
         <groupId>org.keycloak</groupId>
-        <version>26.1.4</version>
+        <version>26.4.7</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
@@ -29,7 +29,7 @@
     <artifactId>keycloak-testsuite-pom</artifactId>
     <packaging>pom</packaging>
     <name>Keycloak TestSuite</name>
-    <description />
+    <description>Keycloak TestSuite</description>
 
     <build>
         <plugins>

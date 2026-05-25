@@ -3,10 +3,13 @@ import { IdentityProviderRoute } from "./routes/IdentityProvider";
 import { IdentityProviderKeycloakOidcRoute } from "./routes/IdentityProviderKeycloakOidc";
 import { IdentityProviderOidcRoute } from "./routes/IdentityProviderOidc";
 import { IdentityProviderSamlRoute } from "./routes/IdentityProviderSaml";
+import { IdentityProviderSpiffeRoute } from "./routes/IdentityProviderSpiffe";
+import { IdentityProviderKubernetesRoute } from "./routes/IdentityProviderKubernetes";
 import { IdentityProvidersRoute } from "./routes/IdentityProviders";
 import { IdentityProviderAddMapperRoute } from "./routes/AddMapper";
 import { IdentityProviderEditMapperRoute } from "./routes/EditMapper";
 import { IdentityProviderCreateRoute } from "./routes/IdentityProviderCreate";
+import { IdentityProviderOAuth2Route } from "./routes/IdentityProviderOAuth2";
 
 const routes: AppRouteObject[] = [
   IdentityProviderAddMapperRoute,
@@ -14,9 +17,12 @@ const routes: AppRouteObject[] = [
   IdentityProvidersRoute,
   IdentityProviderOidcRoute,
   IdentityProviderSamlRoute,
+  IdentityProviderSpiffeRoute,
+  IdentityProviderKubernetesRoute,
   IdentityProviderKeycloakOidcRoute,
   IdentityProviderCreateRoute,
   IdentityProviderRoute,
+  IdentityProviderOAuth2Route,
 ];
 
 export default routes;

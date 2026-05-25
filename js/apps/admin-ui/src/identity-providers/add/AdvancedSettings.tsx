@@ -95,9 +95,18 @@ const LoginFlow = ({
 };
 
 const SYNC_MODES = ["IMPORT", "LEGACY", "FORCE"];
-type AdvancedSettingsProps = { isOIDC: boolean; isSAML: boolean };
+const SHOW_IN_ACCOUNT_CONSOLE_VALUES = ["ALWAYS", "WHEN_LINKED", "NEVER"];
+type AdvancedSettingsProps = {
+  isOIDC: boolean;
+  isSAML: boolean;
+  isOAuth2: boolean;
+};
 
-export const AdvancedSettings = ({ isOIDC, isSAML }: AdvancedSettingsProps) => {
+export const AdvancedSettings = ({
+  isOIDC,
+  isSAML,
+  isOAuth2,
+}: AdvancedSettingsProps) => {
   const { t } = useTranslation();
   const {
     control,
@@ -113,6 +122,9 @@ export const AdvancedSettings = ({ isOIDC, isSAML }: AdvancedSettingsProps) => {
   const claimFilterRequired = filteredByClaim === "true";
   const isFeatureEnabled = useIsFeatureEnabled();
   const isTransientUsersEnabled = isFeatureEnabled(Feature.TransientUsers);
+  const isClientAuthFederatedEnabled = isFeatureEnabled(
+    Feature.ClientAuthFederated,
+  );
   const transientUsers = useWatch({
     control,
     name: "config.doNotStoreUsers",
@@ -121,18 +133,18 @@ export const AdvancedSettings = ({ isOIDC, isSAML }: AdvancedSettingsProps) => {
   const syncModeAvailable = transientUsers === "false";
   return (
     <>
-      {!isOIDC && !isSAML && (
+      {!isOIDC && !isSAML && !isOAuth2 && (
         <TextField field="config.defaultScope" label="scopes" />
       )}
       <SwitchField field="storeToken" label="storeTokens" fieldType="boolean" />
-      {(isSAML || isOIDC) && (
+      {(isSAML || isOIDC || isOAuth2) && (
         <SwitchField
           field="addReadTokenRoleOnCreate"
           label="storedTokensReadable"
           fieldType="boolean"
         />
       )}
-      {!isOIDC && !isSAML && (
+      {!isOIDC && !isSAML && !isOAuth2 && (
         <>
           <SwitchField
             field="config.acceptsPromptNoneForwardFromClient"
@@ -155,8 +167,23 @@ export const AdvancedSettings = ({ isOIDC, isSAML }: AdvancedSettingsProps) => {
         label="hideOnLoginPage"
         fieldType="boolean"
       />
+      <SelectControl
+        name="config.showInAccountConsole"
+        label={t("showInAccountConsole")}
+        labelIcon={t("showInAccountConsoleHelp")}
+        options={SHOW_IN_ACCOUNT_CONSOLE_VALUES.map((showInAccountConsole) => ({
+          key: showInAccountConsole,
+          value: t(
+            `showInAccountConsole.${showInAccountConsole.toLocaleLowerCase()}`,
+          ),
+        }))}
+        controller={{
+          defaultValue: SHOW_IN_ACCOUNT_CONSOLE_VALUES[0],
+          rules: { required: t("required") },
+        }}
+      />
 
-      {(!isSAML || isOIDC) && (
+      {((!isSAML && !isOAuth2) || isOIDC) && (
         <FormGroupField label="filteredByClaim">
           <Controller
             name="config.filteredByClaim"
@@ -287,6 +314,18 @@ export const AdvancedSettings = ({ isOIDC, isSAML }: AdvancedSettingsProps) => {
         field="config.caseSensitiveOriginalUsername"
         label="caseSensitiveOriginalUsername"
       />
+      {isClientAuthFederatedEnabled && isOIDC && (
+        <>
+          <SwitchField
+            field="config.supportsClientAssertions"
+            label="supportsClientAssertions"
+          />
+          <SwitchField
+            field="config.supportsClientAssertionReuse"
+            label="supportsClientAssertionReuse"
+          />
+        </>
+      )}
     </>
   );
 };

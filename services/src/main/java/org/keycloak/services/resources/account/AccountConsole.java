@@ -3,29 +3,26 @@ package org.keycloak.services.resources.account;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.ServerErrorException;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.Response.Status;
-import jakarta.ws.rs.core.UriBuilder;
 import org.jboss.resteasy.reactive.NoCache;
-import org.keycloak.OAuth2Constants;
 import org.keycloak.authentication.requiredactions.DeleteAccount;
+import org.keycloak.authentication.requiredactions.UpdateEmail;
 import org.keycloak.common.Profile;
 import org.keycloak.common.Version;
 import org.keycloak.common.util.Environment;
+import org.keycloak.models.FederatedIdentityModel;
+import org.keycloak.models.IdentityProviderModel;
+import org.keycloak.models.IdentityProviderStorageProvider;
 import org.keycloak.protocol.oidc.OIDCLoginProtocol;
-import org.keycloak.protocol.oidc.utils.PkceUtils;
 import org.keycloak.utils.SecureContextResolver;
 import org.keycloak.models.AccountRoles;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.Constants;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
-import org.keycloak.models.RequiredActionProviderModel;
 import org.keycloak.models.RoleModel;
 import org.keycloak.models.UserModel;
-import org.keycloak.protocol.oidc.OIDCLoginProtocolService;
 import org.keycloak.protocol.oidc.utils.RedirectUtils;
 import org.keycloak.services.Urls;
 import org.keycloak.services.managers.AppAuthManager;
@@ -43,30 +40,25 @@ import org.keycloak.theme.freemarker.FreeMarkerProvider;
 import org.keycloak.urls.UrlType;
 import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.MediaType;
-import org.keycloak.utils.StringUtil;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Scanner;
-import java.util.UUID;
 import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Created by st on 29/03/17.
  */
 public class AccountConsole implements AccountResourceProvider {
-
-    // Used when some other context (ie. IdentityBrokerService) wants to forward error to account management and display it here
-    public static final String ACCOUNT_MGMT_FORWARDED_ERROR_NOTE = "ACCOUNT_MGMT_FORWARDED_ERROR";
 
     private final Pattern bundleParamPattern = Pattern.compile("(\\{\\s*(\\d+)\\s*\\})");
 
@@ -109,14 +101,10 @@ public class AccountConsole implements AccountResourceProvider {
     @Path("{path:.*}")
     public Response getMainPage(@PathParam("path") String path) throws IOException, FreeMarkerException {
 
-        if (auth == null) {
-            return redirectToLogin(path);
-        }
-
         return renderAccountConsole();
     }
 
-    private Response renderAccountConsole() throws IOException, FreeMarkerException {
+    protected Response renderAccountConsole() throws IOException, FreeMarkerException {
         final var serverUriInfo = session.getContext().getUri(UrlType.FRONTEND);
         final var serverBaseUri = serverUriInfo.getBaseUri();
         // Strip any trailing slashes from the URL.
@@ -184,6 +172,7 @@ public class AccountConsole implements AccountResourceProvider {
         });
 
         map.put("isAuthorizationEnabled", Profile.isFeatureEnabled(Profile.Feature.AUTHORIZATION));
+        map.put("isLinkedAccountsEnabled", isLinkedAccountsEnabled(user));
 
         boolean deleteAccountAllowed = false;
         boolean isViewGroupsEnabled = false;
@@ -201,8 +190,7 @@ public class AccountConsole implements AccountResourceProvider {
         map.put("isOid4VciEnabled", realm.isVerifiableCredentialsEnabled());
 
         map.put("updateEmailFeatureEnabled", Profile.isFeatureEnabled(Profile.Feature.UPDATE_EMAIL));
-        RequiredActionProviderModel updateEmailActionProvider = realm.getRequiredActionProviderByAlias(UserModel.RequiredAction.UPDATE_EMAIL.name());
-        map.put("updateEmailActionEnabled", updateEmailActionProvider != null && updateEmailActionProvider.isEnabled());
+        map.put("updateEmailActionEnabled", UpdateEmail.isEnabled(realm));
 
         final var devServerUrl = Environment.isDevMode() ? System.getenv(ViteManifest.ACCOUNT_VITE_URL) : null;
 
@@ -225,75 +213,21 @@ public class AccountConsole implements AccountResourceProvider {
         }
 
         FreeMarkerProvider freeMarkerUtil = session.getProvider(FreeMarkerProvider.class);
-        String result = freeMarkerUtil.processTemplate(map, "index.ftl", theme);
+        String result = renderAccountConsole(freeMarkerUtil, map);
         Response.ResponseBuilder builder = Response.status(Response.Status.OK).type(MediaType.TEXT_HTML_UTF_8).language(Locale.ENGLISH).entity(result);
         return builder.build();
     }
 
-    private Response redirectToLogin(String path) {
-        UriBuilder consoleUriBuilder = Urls.accountBase(session.getContext().getUri().getBaseUri());
-        if (!StringUtil.isNullOrEmpty(path)) {
-            consoleUriBuilder.path(path);
-        }
-        var queryParameters = session.getContext().getUri().getQueryParameters();
-        if (!queryParameters.isEmpty()) {
-            String referrer = queryParameters.getFirst("referrer");
-            if (referrer != null) {
-                consoleUriBuilder.queryParam("referrer", referrer);
-            }
-
-            String referrerUri = queryParameters.getFirst("referrer_uri");
-            if (referrerUri != null) {
-                consoleUriBuilder.queryParam("referrer_uri", referrerUri);
-            }
-        }
-        URI targetUri = consoleUriBuilder.build(realm.getName());
-
-        String pkceChallenge;
-        try {
-            // Add PKCE parameters as it is required for the account-console client.
-            // Because the account console configuration requires PKCE, we need to send this with the redirect in order to not fail validations.
-            // The real PKCE challenge will be sent by the account-console OIDC client JavaScript integration.
-            String codeVerifier = UUID.randomUUID().toString();
-            pkceChallenge = PkceUtils.generateS256CodeChallenge(codeVerifier);
-        } catch (Exception e) {
-            // this should never happen
-            throw new RuntimeException(e);
-        }
-
-        UriBuilder uriBuilder = UriBuilder.fromUri(OIDCLoginProtocolService.authUrl(session.getContext().getUri()).build(realm.getName()).toString())
-                .queryParam(OAuth2Constants.CLIENT_ID, Constants.ACCOUNT_CONSOLE_CLIENT_ID)
-                .queryParam(OAuth2Constants.REDIRECT_URI, targetUri)
-                .queryParam(OAuth2Constants.RESPONSE_TYPE, OAuth2Constants.CODE)
-                .queryParam(OAuth2Constants.CODE_CHALLENGE, pkceChallenge)
-                .queryParam(OAuth2Constants.CODE_CHALLENGE_METHOD, OAuth2Constants.PKCE_METHOD_S256);
-
-        if (!queryParameters.isEmpty()) {
-            String error = queryParameters.getFirst(OAuth2Constants.ERROR);
-            if (error != null) {
-                try {
-                    return renderAccountConsole();
-                } catch (IOException | FreeMarkerException e) {
-                    throw new ServerErrorException(Status.INTERNAL_SERVER_ERROR);
-                }
-            }
-            String scope = queryParameters.getFirst(OIDCLoginProtocol.SCOPE_PARAM);
-            if (StringUtil.isNotBlank(scope)) {
-                uriBuilder.queryParam(OIDCLoginProtocol.SCOPE_PARAM, scope);
-            }
-        }
-
-        URI url = uriBuilder.build();
-
-        return Response.status(302).location(url).build();
+    protected String renderAccountConsole(FreeMarkerProvider freeMarkerUtil, Map<String, Object> map) throws FreeMarkerException {
+        return freeMarkerUtil.processTemplate(map, "index.ftl", theme);
     }
 
-    private Map<String, String> supportedLocales(Properties messages) {
+    protected Map<String, String> supportedLocales(Properties messages) {
         return realm.getSupportedLocalesStream()
                 .collect(Collectors.toMap(Function.identity(), l -> messages.getProperty("locale_" + l, l)));
     }
 
-    private String messagesToJsonString(Properties props) {
+    protected String messagesToJsonString(Properties props) {
         if (props == null) return "";
         Properties newProps = new Properties();
         for (String prop : props.stringPropertyNames()) {
@@ -368,5 +302,21 @@ public class AccountConsole implements AccountResourceProvider {
         }
 
         return new String[]{referrer, referrerName, referrerUri};
+    }
+
+    protected boolean isLinkedAccountsEnabled(UserModel user) {
+        if (user == null) {
+            return false;
+        }
+
+        IdentityProviderStorageProvider identityProviders = session.identityProviders();
+        Stream<IdentityProviderModel> realmBrokers = identityProviders.getAllStream(Map.of(
+                IdentityProviderModel.ENABLED, "true",
+                IdentityProviderModel.ORGANIZATION_ID, ""), 0, 1);
+        Stream<IdentityProviderModel> linkedBrokers = session.users().getFederatedIdentitiesStream(realm, user)
+                .map(FederatedIdentityModel::getIdentityProvider)
+                .map(identityProviders::getByAlias);
+
+        return Stream.concat(realmBrokers, linkedBrokers).findAny().isPresent();
     }
 }

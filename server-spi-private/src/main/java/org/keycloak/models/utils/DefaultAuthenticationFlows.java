@@ -25,6 +25,7 @@ import org.keycloak.models.AuthenticationFlowModel;
 import org.keycloak.models.AuthenticatorConfigModel;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.RequiredCredentialModel;
+import org.keycloak.models.credential.WebAuthnCredentialModel;
 import org.keycloak.representations.idm.IdentityProviderRepresentation;
 
 import java.util.HashMap;
@@ -351,8 +352,8 @@ public class DefaultAuthenticationFlows {
         AuthenticationFlowModel conditionalOTP = new AuthenticationFlowModel();
         conditionalOTP.setTopLevel(false);
         conditionalOTP.setBuiltIn(true);
-        conditionalOTP.setAlias("Browser - Conditional OTP");
-        conditionalOTP.setDescription("Flow to determine if the OTP is required for the authentication");
+        conditionalOTP.setAlias("Browser - Conditional 2FA");
+        conditionalOTP.setDescription("Flow to determine if any 2FA is required for the authentication");
         conditionalOTP.setProviderId("basic-flow");
         conditionalOTP = realm.addAuthenticationFlow(conditionalOTP);
         execution = new AuthenticationExecutionModel();
@@ -374,14 +375,55 @@ public class DefaultAuthenticationFlows {
         execution.setAuthenticatorFlow(false);
         realm.addAuthenticatorExecution(execution);
 
+        if (Profile.isFeatureEnabled(Profile.Feature.PASSKEYS)) {
+            AuthenticatorConfigModel configModel = new AuthenticatorConfigModel();
+            configModel.setAlias("browser-conditional-credential");
+            configModel.setConfig(Map.of("credentials", WebAuthnCredentialModel.TYPE_PASSWORDLESS));
+            configModel = realm.addAuthenticatorConfig(configModel);
+
+            execution = new AuthenticationExecutionModel();
+            execution.setParentFlow(conditionalOTP.getId());
+            execution.setRequirement(AuthenticationExecutionModel.Requirement.REQUIRED);
+            execution.setAuthenticator("conditional-credential");
+            execution.setPriority(20);
+            execution.setAuthenticatorFlow(false);
+            execution.setAuthenticatorConfig(configModel.getId());
+            realm.addAuthenticatorExecution(execution);
+        }
+
         // otp processing
         execution = new AuthenticationExecutionModel();
         execution.setParentFlow(conditionalOTP.getId());
-        execution.setRequirement(AuthenticationExecutionModel.Requirement.REQUIRED);
+        execution.setRequirement(AuthenticationExecutionModel.Requirement.ALTERNATIVE);
+        if (migrate && hasCredentialType(realm, RequiredCredentialModel.TOTP.getType())) {
+            execution.setRequirement(AuthenticationExecutionModel.Requirement.REQUIRED);
+        }
         execution.setAuthenticator("auth-otp-form");
-        execution.setPriority(20);
+        execution.setPriority(30);
         execution.setAuthenticatorFlow(false);
         realm.addAuthenticatorExecution(execution);
+
+        // webauthn as disabled
+        if (Profile.isFeatureEnabled(Profile.Feature.WEB_AUTHN)) {
+            execution = new AuthenticationExecutionModel();
+            execution.setParentFlow(conditionalOTP.getId());
+            execution.setRequirement(AuthenticationExecutionModel.Requirement.DISABLED);
+            execution.setAuthenticator("webauthn-authenticator");
+            execution.setPriority(40);
+            execution.setAuthenticatorFlow(false);
+            realm.addAuthenticatorExecution(execution);
+        }
+
+        // recovery-codes as disabled
+        if (Profile.isFeatureEnabled(Profile.Feature.RECOVERY_CODES)) {
+            execution = new AuthenticationExecutionModel();
+            execution.setParentFlow(conditionalOTP.getId());
+            execution.setRequirement(AuthenticationExecutionModel.Requirement.DISABLED);
+            execution.setAuthenticator("auth-recovery-authn-code-form");
+            execution.setPriority(50);
+            execution.setAuthenticatorFlow(false);
+            realm.addAuthenticatorExecution(execution);
+        }
 
         addOrganizationBrowserFlowStep(realm, browser);
     }
@@ -464,6 +506,15 @@ public class DefaultAuthenticationFlows {
         execution.setAuthenticatorFlow(false);
         realm.addAuthenticatorExecution(execution);
 
+        if (Profile.isFeatureEnabled(Feature.CLIENT_AUTH_FEDERATED)) {
+            execution = new AuthenticationExecutionModel();
+            execution.setParentFlow(clients.getId());
+            execution.setRequirement(AuthenticationExecutionModel.Requirement.ALTERNATIVE);
+            execution.setAuthenticator("federated-jwt");
+            execution.setPriority(50);
+            execution.setAuthenticatorFlow(false);
+            realm.addAuthenticatorExecution(execution);
+        }
     }
 
     public static void firstBrokerLoginFlow(RealmModel realm, boolean migrate) {
@@ -597,8 +648,8 @@ public class DefaultAuthenticationFlows {
         AuthenticationFlowModel conditionalOTP = new AuthenticationFlowModel();
         conditionalOTP.setTopLevel(false);
         conditionalOTP.setBuiltIn(true);
-        conditionalOTP.setAlias("First broker login - Conditional OTP");
-        conditionalOTP.setDescription("Flow to determine if the OTP is required for the authentication");
+        conditionalOTP.setAlias("First broker login - Conditional 2FA");
+        conditionalOTP.setDescription("Flow to determine if any 2FA is required for the authentication");
         conditionalOTP.setProviderId("basic-flow");
         conditionalOTP = realm.addAuthenticationFlow(conditionalOTP);
         execution = new AuthenticationExecutionModel();
@@ -636,13 +687,54 @@ public class DefaultAuthenticationFlows {
         execution.setAuthenticatorFlow(false);
         realm.addAuthenticatorExecution(execution);
 
+        if (Profile.isFeatureEnabled(Profile.Feature.PASSKEYS)) {
+            AuthenticatorConfigModel configModel = new AuthenticatorConfigModel();
+            configModel.setAlias("first-broker-login-conditional-credential");
+            configModel.setConfig(Map.of("credentials", WebAuthnCredentialModel.TYPE_PASSWORDLESS));
+            configModel = realm.addAuthenticatorConfig(configModel);
+
+            execution = new AuthenticationExecutionModel();
+            execution.setParentFlow(conditionalOTP.getId());
+            execution.setRequirement(AuthenticationExecutionModel.Requirement.REQUIRED);
+            execution.setAuthenticator("conditional-credential");
+            execution.setPriority(20);
+            execution.setAuthenticatorFlow(false);
+            execution.setAuthenticatorConfig(configModel.getId());
+            realm.addAuthenticatorExecution(execution);
+        }
+
         execution = new AuthenticationExecutionModel();
         execution.setParentFlow(conditionalOTP.getId());
-        execution.setRequirement(AuthenticationExecutionModel.Requirement.REQUIRED);
+        execution.setRequirement(AuthenticationExecutionModel.Requirement.ALTERNATIVE);
+        if (migrate && hasCredentialType(realm, RequiredCredentialModel.TOTP.getType())) {
+            execution.setRequirement(AuthenticationExecutionModel.Requirement.REQUIRED);
+        }
         execution.setAuthenticator("auth-otp-form");
-        execution.setPriority(20);
+        execution.setPriority(30);
         execution.setAuthenticatorFlow(false);
         realm.addAuthenticatorExecution(execution);
+
+        // webauthn as disabled
+        if (Profile.isFeatureEnabled(Profile.Feature.WEB_AUTHN)) {
+            execution = new AuthenticationExecutionModel();
+            execution.setParentFlow(conditionalOTP.getId());
+            execution.setRequirement(AuthenticationExecutionModel.Requirement.DISABLED);
+            execution.setAuthenticator("webauthn-authenticator");
+            execution.setPriority(40);
+            execution.setAuthenticatorFlow(false);
+            realm.addAuthenticatorExecution(execution);
+        }
+
+        // recovery-codes as disabled
+        if (Profile.isFeatureEnabled(Profile.Feature.RECOVERY_CODES)) {
+            execution = new AuthenticationExecutionModel();
+            execution.setParentFlow(conditionalOTP.getId());
+            execution.setRequirement(AuthenticationExecutionModel.Requirement.DISABLED);
+            execution.setAuthenticator("auth-recovery-authn-code-form");
+            execution.setPriority(50);
+            execution.setAuthenticatorFlow(false);
+            realm.addAuthenticatorExecution(execution);
+        }
 
         addOrganizationFirstBrokerFlowStep(realm, firstBrokerLogin);
     }
@@ -707,7 +799,7 @@ public class DefaultAuthenticationFlows {
             execution.setParentFlow(flow.getId());
             execution.setRequirement(AuthenticationExecutionModel.Requirement.CONDITIONAL);
             execution.setFlowId(conditionalOrg.getId());
-            execution.setPriority(50);
+            execution.setPriority(60);
             execution.setAuthenticatorFlow(true);
             realm.addAuthenticatorExecution(execution);
 

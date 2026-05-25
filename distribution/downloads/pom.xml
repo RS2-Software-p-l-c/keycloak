@@ -21,13 +21,13 @@
     <parent>
         <artifactId>keycloak-distribution-parent</artifactId>
         <groupId>org.keycloak</groupId>
-        <version>26.1.4</version>
+        <version>26.4.7</version>
     </parent>
 
     <artifactId>keycloak-dist-downloads</artifactId>
     <packaging>jar</packaging>
     <name>Keycloak Release Downloads</name>
-    <description/>
+    <description>Keycloak Release Downloads</description>
 
     <build>
         <plugins>

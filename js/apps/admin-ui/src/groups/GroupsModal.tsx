@@ -1,5 +1,11 @@
 import type GroupRepresentation from "@keycloak/keycloak-admin-client/lib/defs/groupRepresentation";
 import {
+  FormSubmitButton,
+  TextControl,
+  useAlerts,
+  useFetch,
+} from "@keycloak/keycloak-ui-shared";
+import {
   Alert,
   AlertVariant,
   Button,
@@ -8,16 +14,11 @@ import {
   Modal,
   ModalVariant,
 } from "@patternfly/react-core";
+import { useState } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
-import {
-  FormSubmitButton,
-  TextControl,
-  useFetch,
-} from "@keycloak/keycloak-ui-shared";
 import { useAdminClient } from "../admin-client";
-import { useAlerts } from "@keycloak/keycloak-ui-shared";
-import { useState } from "react";
+import useIsFeatureEnabled, { Feature } from "../utils/useIsFeatureEnabled";
 
 type GroupsModalProps = {
   id?: string;
@@ -48,11 +49,15 @@ export const GroupsModal = ({
   const { adminClient } = useAdminClient();
   const { t } = useTranslation();
   const { addAlert, addError } = useAlerts();
+  const isFeatureEnabled = useIsFeatureEnabled();
   const [duplicateGroupDetails, setDuplicateGroupDetails] =
     useState<GroupRepresentation | null>(null);
 
   const form = useForm({
-    defaultValues: { name: "" },
+    defaultValues: {
+      name: rename?.name || "",
+      description: rename?.description || "",
+    },
   });
   const { handleSubmit, formState } = form;
 
@@ -132,15 +137,17 @@ export const GroupsModal = ({
         });
       }
 
-      const permissions = await adminClient.groups.listPermissions({
-        id: sourceGroup.id!,
-      });
+      if (isFeatureEnabled(Feature.AdminFineGrainedAuthz)) {
+        const permissions = await adminClient.groups.listPermissions({
+          id: sourceGroup.id!,
+        });
 
-      if (permissions) {
-        await adminClient.groups.updatePermission(
-          { id: createdGroup.id },
-          permissions,
-        );
+        if (permissions) {
+          await adminClient.groups.updatePermission(
+            { id: createdGroup.id },
+            permissions,
+          );
+        }
       }
 
       const realmRoles = await adminClient.groups.listRealmRoleMappings({
@@ -231,13 +238,13 @@ export const GroupsModal = ({
       } else if (rename) {
         await adminClient.groups.update(
           { id },
-          { ...rename, name: group.name },
+          { ...rename, name: group.name, description: group.description },
         );
       } else {
         await adminClient.groups.updateChildGroup({ id }, group);
       }
 
-      refresh(rename ? { ...rename, name: group.name } : undefined);
+      refresh(rename ? { ...rename, ...group } : undefined);
       handleModalToggle();
       addAlert(
         t(
@@ -259,12 +266,12 @@ export const GroupsModal = ({
       variant={ModalVariant.small}
       title={
         rename
-          ? t("renameAGroup")
+          ? t("editGroup")
           : duplicateId
             ? t("duplicateAGroup")
             : t("createAGroup")
       }
-      isOpen={true}
+      isOpen
       onClose={handleModalToggle}
       actions={[
         <FormSubmitButton
@@ -275,7 +282,7 @@ export const GroupsModal = ({
           allowInvalid
           allowNonDirty
         >
-          {t(rename ? "rename" : duplicateId ? "duplicate" : "create")}
+          {t(rename ? "edit" : duplicateId ? "duplicate" : "create")}
         </FormSubmitButton>,
         <Button
           id="modal-cancel"
@@ -304,6 +311,7 @@ export const GroupsModal = ({
             rules={{ required: t("required") }}
             autoFocus
           />
+          <TextControl name="description" label={t("description")} />
         </Form>
       </FormProvider>
     </Modal>

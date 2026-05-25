@@ -21,13 +21,7 @@ import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
-
-import java.util.Map;
-import java.util.Objects;
-import java.util.function.Function;
-
 import org.jboss.logging.Logger;
-
 import org.keycloak.OAuth2Constants;
 import org.keycloak.OAuthErrorException;
 import org.keycloak.authentication.AuthenticationProcessor;
@@ -42,6 +36,7 @@ import org.keycloak.http.HttpResponse;
 import org.keycloak.models.AuthenticatedClientSessionModel;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.ClientSessionContext;
+import org.keycloak.models.Constants;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
@@ -60,6 +55,15 @@ import org.keycloak.services.cors.Cors;
 import org.keycloak.services.util.AuthorizationContextUtil;
 import org.keycloak.services.util.MtlsHoKTokenUtil;
 import org.keycloak.util.TokenUtil;
+import org.keycloak.protocol.oidc.rar.AuthorizationDetailsProcessor;
+import org.keycloak.protocol.oidc.rar.AuthorizationDetailsResponse;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
+
+import static org.keycloak.OAuth2Constants.AUTHORIZATION_DETAILS_PARAM;
 
 /**
  * Base class for OAuth 2.0 grant types
@@ -105,6 +109,7 @@ public abstract class OAuth2GrantTypeBase implements OAuth2GrantType {
 
     protected Response createTokenResponse(UserModel user, UserSessionModel userSession, ClientSessionContext clientSessionCtx,
         String scopeParam, boolean code, Function<TokenManager.AccessTokenResponseBuilder, ClientPolicyContext> clientPolicyContextGenerator) {
+        clientSessionCtx.setAttribute(Constants.GRANT_TYPE, context.getGrantType());
         AccessToken token = tokenManager.createClientAccessToken(session, realm, client, user, userSession, clientSessionCtx);
 
         TokenManager.AccessTokenResponseBuilder responseBuilder = tokenManager
@@ -129,7 +134,9 @@ public abstract class OAuth2GrantTypeBase implements OAuth2GrantType {
             try {
                 session.clientPolicy().triggerOnEvent(clientPolicyContextGenerator.apply(responseBuilder));
             } catch (ClientPolicyException cpe) {
-                event.detail(Details.REASON, cpe.getErrorDetail());
+                event.detail(Details.REASON, Details.CLIENT_POLICY_ERROR);
+                event.detail(Details.CLIENT_POLICY_ERROR, cpe.getError());
+                event.detail(Details.CLIENT_POLICY_ERROR_DETAIL, cpe.getErrorDetail());
                 event.error(cpe.getError());
                 throw new CorsErrorResponseException(cors, cpe.getError(), cpe.getErrorDetail(), cpe.getErrorStatus());
             }
@@ -150,6 +157,9 @@ public abstract class OAuth2GrantTypeBase implements OAuth2GrantType {
         } else {
             res = responseBuilder.build();
         }
+
+        // Extension point for subclasses to add custom claims
+        addCustomTokenResponseClaims(res, clientSessionCtx);
 
         event.success();
 
@@ -237,6 +247,71 @@ public abstract class OAuth2GrantTypeBase implements OAuth2GrantType {
 
         if (client.isBearerOnly()) {
             throw new CorsErrorResponseException(cors, OAuthErrorException.INVALID_CLIENT, "Bearer-only not allowed", Response.Status.BAD_REQUEST);
+        }
+    }
+
+    /**
+     * Extension point for subclasses to add custom claims to the AccessTokenResponse before it is returned.
+     * Default implementation does nothing.
+     */
+    protected void addCustomTokenResponseClaims(AccessTokenResponse res, ClientSessionContext clientSessionCtx) {
+        // Default: do nothing
+    }
+
+    /**
+     * Processes the authorization_details parameter using provider discovery.
+     * This method can be overridden by subclasses to customize the behavior.
+     *
+     * @param userSession      the user session
+     * @param clientSessionCtx the client session context
+     * @return the authorization details response if processing was successful, null otherwise
+     */
+    protected List<AuthorizationDetailsResponse> processAuthorizationDetails(UserSessionModel userSession, ClientSessionContext clientSessionCtx) {
+        String authorizationDetailsParam = formParams.getFirst(AUTHORIZATION_DETAILS_PARAM);
+        if (authorizationDetailsParam != null) {
+            try {
+                return session.getKeycloakSessionFactory()
+                        .getProviderFactoriesStream(AuthorizationDetailsProcessor.class)
+                        .sorted((f1, f2) -> f2.order() - f1.order())
+                        .map(f -> session.getProvider(AuthorizationDetailsProcessor.class, f.getId()))
+                        .map(authzDetailsProcessor -> authzDetailsProcessor.process(userSession, clientSessionCtx, authorizationDetailsParam))
+                        .filter(authzDetailsResponse -> authzDetailsResponse != null)
+                        .findFirst()
+                        .orElse(null);
+            } catch (RuntimeException e) {
+                if (e.getMessage() != null && e.getMessage().contains("Invalid authorization_details")) {
+                    logger.warnf(e, "Error when processing authorization_details");
+                    event.error(Errors.INVALID_REQUEST);
+                    throw new CorsErrorResponseException(cors, "invalid_request", "Error when processing authorization_details", Response.Status.BAD_REQUEST);
+                } else {
+                    throw e;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Handle missing authorization_details parameter by allowing processors to generate authorization details response.
+     * This is used in Pre-Authorized Code Flow where the credential offer contains the authorized credential configuration IDs.
+     *
+     * @param userSession the user session
+     * @param clientSessionCtx the client session context
+     * @return the authorization details response if generation was successful, null otherwise
+     */
+    protected List<AuthorizationDetailsResponse> handleMissingAuthorizationDetails(UserSessionModel userSession, ClientSessionContext clientSessionCtx) {
+        try {
+            return session.getKeycloakSessionFactory()
+                    .getProviderFactoriesStream(AuthorizationDetailsProcessor.class)
+                    .sorted((f1, f2) -> f2.order() - f1.order())
+                    .map(f -> session.getProvider(AuthorizationDetailsProcessor.class, f.getId()))
+                    .map(processor -> processor.handleMissingAuthorizationDetails(userSession, clientSessionCtx))
+                    .filter(authzDetailsResponse -> authzDetailsResponse != null)
+                    .findFirst()
+                    .orElse(null);
+        } catch (RuntimeException e) {
+            logger.warnf(e, "Error when handling missing authorization_details");
+            return null;
         }
     }
 

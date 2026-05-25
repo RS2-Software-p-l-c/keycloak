@@ -4,17 +4,20 @@ import org.keycloak.config.HealthOptions;
 
 import static org.keycloak.quarkus.runtime.configuration.mappers.PropertyMapper.fromOption;
 
+import java.util.List;
 
-final class HealthPropertyMappers {
 
-    private HealthPropertyMappers(){}
+final class HealthPropertyMappers implements PropertyMapperGrouping {
 
-    public static PropertyMapper<?>[] getHealthPropertyMappers() {
-        return new PropertyMapper[] {
+
+    @Override
+    public List<PropertyMapper<?>> getPropertyMappers() {
+        return List.of(
                 fromOption(HealthOptions.HEALTH_ENABLED)
-                        .to("quarkus.smallrye-health.extensions.enabled")
+                        // no need to map to a quarkus option, this option exists to
+                        // to control artifact / extension inclusion. Quarkus will default to enabled
                         .build()
-        };
+        );
     }
 
 }

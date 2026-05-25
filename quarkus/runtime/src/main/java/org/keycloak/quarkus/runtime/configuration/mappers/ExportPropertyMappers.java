@@ -24,7 +24,9 @@ import org.keycloak.config.Option;
 import org.keycloak.config.OptionBuilder;
 import org.keycloak.config.OptionCategory;
 import org.keycloak.exportimport.UsersExportStrategy;
+import org.keycloak.quarkus.runtime.cli.Picocli;
 import org.keycloak.quarkus.runtime.cli.PropertyException;
+import org.keycloak.quarkus.runtime.cli.command.Export;
 import org.keycloak.quarkus.runtime.configuration.Configuration;
 
 import static org.keycloak.exportimport.ExportImportConfig.PROVIDER;
@@ -32,50 +34,50 @@ import static org.keycloak.quarkus.runtime.configuration.Configuration.getOption
 import static org.keycloak.quarkus.runtime.configuration.Configuration.isBlank;
 import static org.keycloak.quarkus.runtime.configuration.mappers.PropertyMapper.fromOption;
 
-public final class ExportPropertyMappers {
-    private static final String EXPORTER_PROPERTY = "kc.spi-export-exporter";
+import java.util.List;
+
+public final class ExportPropertyMappers implements PropertyMapperGrouping {
+    private static final String EXPORTER_PROPERTY = "kc.spi-export--exporter";
     private static final String SINGLE_FILE = "singleFile";
     private static final String DIR = "dir";
 
-    private ExportPropertyMappers() {
-    }
-
-    public static PropertyMapper<?>[] getMappers() {
-        return new PropertyMapper[]{
+    @Override
+    public List<PropertyMapper<?>> getPropertyMappers() {
+        return List.of(
                 fromOption(EXPORTER_PLACEHOLDER)
                         .to(EXPORTER_PROPERTY)
                         .transformer(ExportPropertyMappers::transformExporter)
                         .paramLabel("file")
                         .build(),
                 fromOption(ExportOptions.FILE)
-                        .to("kc.spi-export-single-file-file")
+                        .to("kc.spi-export--single-file--file")
                         .paramLabel("file")
                         .build(),
                 fromOption(ExportOptions.DIR)
-                        .to("kc.spi-export-dir-dir")
+                        .to("kc.spi-export--dir--dir")
                         .paramLabel("dir")
                         .build(),
                 fromOption(ExportOptions.REALM)
-                        .to("kc.spi-export-single-file-realm-name")
+                        .to("kc.spi-export--single-file--realm-name")
                         .isEnabled(ExportPropertyMappers::isSingleFileProvider)
                         .paramLabel("realm")
                         .build(),
                 fromOption(ExportOptions.REALM)
-                        .to("kc.spi-export-dir-realm-name")
+                        .to("kc.spi-export--dir--realm-name")
                         .isEnabled(ExportPropertyMappers::isDirProvider)
                         .paramLabel("realm")
                         .build(),
                 fromOption(ExportOptions.USERS)
-                        .to("kc.spi-export-dir-users-export-strategy")
+                        .to("kc.spi-export--dir--users-export-strategy")
                         .addValidator(ExportPropertyMappers::validateUsersUsage)
                         .paramLabel("strategy")
                         .build(),
                 fromOption(ExportOptions.USERS_PER_FILE)
-                        .to("kc.spi-export-dir-users-per-file")
+                        .to("kc.spi-export--dir--users-per-file")
                         .isEnabled(ExportPropertyMappers::isDirProvider)
                         .paramLabel("number")
                         .build()
-        };
+        );
     }
 
     private static void validateUsersUsage(PropertyMapper<?> mapper, ConfigValue value) {
@@ -88,8 +90,9 @@ public final class ExportPropertyMappers {
         }
     }
 
-    public static void validateConfig() {
-        if (getOptionalValue(EXPORTER_PROPERTY).isEmpty() && System.getProperty(PROVIDER) == null) {
+    @Override
+    public void validateConfig(Picocli picocli) {
+        if (picocli.getParsedCommand().orElse(null) instanceof Export && getOptionalValue(EXPORTER_PROPERTY).isEmpty() && System.getProperty(PROVIDER) == null) {
             throw new PropertyException("Must specify either --dir or --file options.");
         }
     }
@@ -121,8 +124,8 @@ public final class ExportPropertyMappers {
             return exporter.getValue();
         }
 
-        var file = Configuration.getOptionalValue("kc.spi-export-single-file-file").map(f -> SINGLE_FILE);
-        var dir = Configuration.getOptionalValue("kc.spi-export-dir-dir")
+        var file = Configuration.getOptionalValue("kc.spi-export--single-file--file").map(f -> SINGLE_FILE);
+        var dir = Configuration.getOptionalValue("kc.spi-export--dir--dir")
                 .or(() -> Configuration.getOptionalValue("kc.dir"))
                 .map(f -> DIR);
 

@@ -67,7 +67,8 @@ import java.nio.file.Path;
                 Import.class,
                 ShowConfig.class,
                 Tools.class,
-                BootstrapAdmin.class
+                BootstrapAdmin.class,
+                UpdateCompatibility.class
         })
 public final class Main {
 
@@ -87,7 +88,8 @@ public final class Main {
     @Option(names = { "-v", "--verbose" },
             description = "Print out error details when running this command.",
             paramLabel = NO_PARAM_LABEL,
-            scope = ScopeType.INHERIT)
+            scope = ScopeType.INHERIT,
+            defaultValue = "${env:KC_VERBOSE}")
     public void setVerbose(boolean verbose) {
         ExecutionExceptionHandler exceptionHandler = (ExecutionExceptionHandler) spec.commandLine().getExecutionExceptionHandler();
         exceptionHandler.setVerbose(verbose);

@@ -16,7 +16,12 @@
  */
 package org.keycloak.social.google;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.ws.rs.core.MultivaluedMap;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriBuilder;
 import org.keycloak.OAuth2Constants;
+import org.keycloak.OAuthErrorException;
 import org.keycloak.broker.oidc.OIDCIdentityProvider;
 import org.keycloak.broker.oidc.OIDCIdentityProviderConfig;
 import org.keycloak.broker.provider.AuthenticationRequest;
@@ -25,13 +30,16 @@ import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.broker.social.SocialIdentityProvider;
 import org.keycloak.common.ClientConnection;
 import org.keycloak.common.util.KeycloakUriBuilder;
+import org.keycloak.events.Details;
+import org.keycloak.events.Errors;
 import org.keycloak.events.EventBuilder;
+import org.keycloak.http.simple.SimpleHttp;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.protocol.oidc.TokenExchangeContext;
 import org.keycloak.representations.JsonWebToken;
+import org.keycloak.services.ErrorResponseException;
 
-import jakarta.ws.rs.core.MultivaluedMap;
-import jakarta.ws.rs.core.UriBuilder;
-import java.util.Arrays;
+import java.util.List;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
@@ -41,6 +49,7 @@ public class GoogleIdentityProvider extends OIDCIdentityProvider implements Soci
     public static final String AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
     public static final String TOKEN_URL = "https://oauth2.googleapis.com/token";
     public static final String PROFILE_URL = "https://openidconnect.googleapis.com/v1/userinfo";
+    public static final String TOKEN_INFO_URL = "https://oauth2.googleapis.com/tokeninfo";
     public static final String DEFAULT_SCOPE = "openid profile email";
 
     private static final String OIDC_PARAMETER_HOSTED_DOMAINS = "hd";
@@ -64,7 +73,7 @@ public class GoogleIdentityProvider extends OIDCIdentityProvider implements Soci
         String uri = super.getUserInfoUrl();
         if (((GoogleIdentityProviderConfig)getConfig()).isUserIp()) {
             ClientConnection connection = session.getContext().getConnection();
-            if (connection != null) {
+            if (connection != null && connection.getRemoteAddr() != null) {
                 uri = KeycloakUriBuilder.fromUri(super.getUserInfoUrl()).queryParam("userIp", connection.getRemoteAddr()).build().toString();
             }
 
@@ -87,8 +96,30 @@ public class GoogleIdentityProvider extends OIDCIdentityProvider implements Soci
 
 
     @Override
-    protected BrokeredIdentityContext exchangeExternalImpl(EventBuilder event, MultivaluedMap<String, String> params) {
+    protected BrokeredIdentityContext exchangeExternalTokenV1Impl(EventBuilder event, MultivaluedMap<String, String> params) {
         return exchangeExternalUserInfoValidationOnly(event, params);
+    }
+
+    @Override
+    protected BrokeredIdentityContext exchangeExternalTokenV2Impl(TokenExchangeContext tokenExchangeContext) {
+        try {
+            JsonNode tokenInfo = SimpleHttp.create(session).doGet(TOKEN_INFO_URL)
+                    .header("Authorization", "Bearer " + tokenExchangeContext.getParams().getSubjectToken())
+                    .asJson();
+            if (tokenInfo == null || !tokenInfo.has(JsonWebToken.AUD) || !tokenInfo.get(JsonWebToken.AUD).asText().equals(getConfig().getClientId())) {
+                logger.tracef("Invalid response or unmatching audience from the token-info endpoint from Google. Expected audience '%s' . Token info response: %s", getConfig().getClientId(), tokenInfo);
+                EventBuilder event = tokenExchangeContext.getEvent();
+                event.detail(Details.REASON, "Google token validation failed");
+                event.error(Errors.INVALID_TOKEN);
+                throw new ErrorResponseException(OAuthErrorException.INVALID_TOKEN, "Google token validation failed", Response.Status.BAD_REQUEST);
+            }
+        } catch (ErrorResponseException ere) {
+            throw ere;
+        } catch (Exception e) {
+            throw new IdentityBrokerException("Could not verify token info from google.", e);
+        }
+
+        return exchangeExternalUserInfoValidationOnly(tokenExchangeContext.getEvent(), tokenExchangeContext.getFormParams());
     }
 
     @Override
@@ -112,8 +143,9 @@ public class GoogleIdentityProvider extends OIDCIdentityProvider implements Soci
     protected JsonWebToken validateToken(final String encodedToken, final boolean ignoreAudience) {
         JsonWebToken token = super.validateToken(encodedToken, ignoreAudience);
         String hostedDomain = ((GoogleIdentityProviderConfig) getConfig()).getHostedDomain();
+        boolean anyHostedDomain = hostedDomain == null || "*".equals(hostedDomain);
 
-        if (hostedDomain == null) {
+        if (anyHostedDomain) {
             return token;
         }
 
@@ -123,7 +155,7 @@ public class GoogleIdentityProvider extends OIDCIdentityProvider implements Soci
             throw new IdentityBrokerException("Identity token does not contain hosted domain parameter.");
         }
 
-        if (hostedDomain.equals("*") || Arrays.asList(hostedDomain.split(",")).contains(receivedHdParam))  {
+        if (List.of(hostedDomain.split(",")).contains(receivedHdParam))  {
             return token;
         }
 

@@ -25,6 +25,12 @@ Cache:
 --cache-config-file <file>
                      Defines the file from which cache configuration should be loaded from. The
                        configuration file is relative to the 'conf/' directory.
+--cache-config-mutate <true|false>
+                     Determines whether changes to the default cache configurations are allowed.
+                       This is only recommended for advanced use-cases where the default cache
+                       configurations are proven to be problematic. The only supported way to
+                       change the default cache configurations is via the other 'cache-...'
+                       options. Default: false.
 --cache-embedded-authorization-max-count <max-count>
                      The maximum number of entries that can be stored in-memory by the
                        authorization cache.
@@ -32,22 +38,10 @@ Cache:
                      The maximum number of entries that can be stored in-memory by the
                        clientSessions cache. Available only when embedded Infinispan clusters
                        configured.
+--cache-embedded-crl-max-count <max-count>
+                     The maximum number of entries that can be stored in-memory by the crl cache.
 --cache-embedded-keys-max-count <max-count>
                      The maximum number of entries that can be stored in-memory by the keys cache.
---cache-embedded-mtls-enabled <true|false>
-                     Encrypts the network communication between Keycloak servers. Default: false.
---cache-embedded-mtls-key-store-file <file>
-                     The Keystore file path. The Keystore must contain the certificate to use by
-                       the TLS protocol. By default, it lookup 'cache-mtls-keystore.p12' under
-                       conf/ directory.
---cache-embedded-mtls-key-store-password <password>
-                     The password to access the Keystore.
---cache-embedded-mtls-trust-store-file <file>
-                     The Truststore file path. It should contain the trusted certificates or the
-                       Certificate Authority that signed the certificates. By default, it lookup
-                       'cache-mtls-truststore.p12' under conf/ directory.
---cache-embedded-mtls-trust-store-password <password>
-                     The password to access the Truststore.
 --cache-embedded-offline-client-sessions-max-count <max-count>
                      The maximum number of entries that can be stored in-memory by the
                        offlineClientSessions cache. Available only when embedded Infinispan
@@ -65,8 +59,8 @@ Cache:
                      The maximum number of entries that can be stored in-memory by the users cache.
 --cache-remote-host <hostname>
                      The hostname of the external Infinispan cluster. Available only when feature
-                       'multi-site', 'clusterless' or 'cache-embedded-remote-store' is set.
-                       Required when feature 'multi-site' or 'clusterless' is set.
+                       'multi-site' or 'clusterless' is set. Required when feature 'multi-site' or
+                       'clusterless' is set.
 
 Config:
 
@@ -81,14 +75,25 @@ Database:
 
 --db <vendor>        The database vendor. In production mode the default value of 'dev-file' is
                        deprecated, you should explicitly specify the db instead. Possible values
-                       are: dev-file, dev-mem, mariadb, mssql, mysql, oracle, postgres. Default:
-                       dev-file.
+                       are: dev-file, dev-mem, mariadb, mssql, mysql, oracle, postgres, tidb.
+                       Default: dev-file.
+--db-debug-jpql <true|false>
+                     Add JPQL information as comments to SQL statements to debug JPA SQL statement
+                       generation. Default: false.
 --db-driver <driver> The fully qualified class name of the JDBC driver. If not set, a default
                        driver is set accordingly to the chosen database.
+--db-log-slow-queries-threshold <milliseconds>
+                     Log SQL statements slower than the configured threshold with logger org.
+                       hibernate.SQL_SLOW and log-level info. Default: 10000.
 --db-password <password>
                      The password of the database user.
 --db-pool-initial-size <size>
                      The initial size of the connection pool.
+--db-pool-max-lifetime <duration>
+                     The maximum time a connection remains in the pool, after which it will be
+                       closed upon return and replaced as necessary. May be an ISO 8601 duration
+                       value, an integer number of seconds, or an integer followed by one of [ms,
+                       h, m, s, d].
 --db-pool-max-size <size>
                      The maximum size of the connection pool. Default: 100.
 --db-pool-min-size <size>
@@ -113,10 +118,67 @@ Database:
 --db-username <username>
                      The username of the database user.
 
+Database - additional datasources:
+
+--db-debug-jpql-<datasource> <true|false>
+                     Used for named <datasource>. Add JPQL information as comments to SQL
+                       statements to debug JPA SQL statement generation. Default: false.
+--db-driver-<datasource> <driver>
+                     Used for named <datasource>. The fully qualified class name of the JDBC
+                       driver. If not set, a default driver is set accordingly to the chosen
+                       database.
+--db-enabled-<datasource> <true|false>
+                     If the named datasource <datasource> should be enabled at runtime. Default:
+                       true.
+--db-kind-<datasource> <vendor>
+                     Used for named <datasource>. The database vendor. In production mode the
+                       default value of 'dev-file' is deprecated, you should explicitly specify the
+                       db instead. Possible values are: dev-file, dev-mem, mariadb, mssql, mysql,
+                       oracle, postgres, tidb.
+--db-log-slow-queries-threshold-<datasource> <milliseconds>
+                     Used for named <datasource>. Log SQL statements slower than the configured
+                       threshold with logger org.hibernate.SQL_SLOW and log-level info. Default:
+                       10000.
+--db-password-<datasource> <password>
+                     Used for named <datasource>. The password of the database user.
+--db-pool-initial-size-<datasource> <size>
+                     Used for named <datasource>. The initial size of the connection pool.
+--db-pool-max-size-<datasource> <size>
+                     Used for named <datasource>. The maximum size of the connection pool. Default:
+                       100.
+--db-pool-min-size-<datasource> <size>
+                     Used for named <datasource>. The minimal size of the connection pool.
+--db-schema-<datasource> <schema>
+                     Used for named <datasource>. The database schema to be used.
+--db-url-database-<datasource> <dbname>
+                     Used for named <datasource>. Sets the database name of the default JDBC URL of
+                       the chosen vendor. If the `db-url` option is set, this option is ignored.
+--db-url-full-<datasource> <jdbc-url>
+                     Used for named <datasource>. The full database JDBC URL. If not provided, a
+                       default URL is set based on the selected database vendor. For instance, if
+                       using 'postgres', the default JDBC URL would be 'jdbc:postgresql:
+                       //localhost/keycloak'.
+--db-url-host-<datasource> <hostname>
+                     Used for named <datasource>. Sets the hostname of the default JDBC URL of the
+                       chosen vendor. If the `db-url` option is set, this option is ignored.
+--db-url-port-<datasource> <port>
+                     Used for named <datasource>. Sets the port of the default JDBC URL of the
+                       chosen vendor. If the `db-url` option is set, this option is ignored.
+--db-url-properties-<datasource> <properties>
+                     Used for named <datasource>. Sets the properties of the default JDBC URL of
+                       the chosen vendor. Make sure to set the properties accordingly to the format
+                       expected by the database vendor, as well as appending the right character at
+                       the beginning of this property value. If the `db-url` option is set, this
+                       option is ignored.
+--db-username-<datasource> <username>
+                     Used for named <datasource>. The username of the database user.
+
 Transaction:
 
 --transaction-xa-enabled <true|false>
                      If set to true, XA datasources will be used. Default: false.
+--transaction-xa-enabled-<datasource> <true|false>
+                     If set to true, XA for <datasource> datasource will be used. Default: true.
 
 Feature:
 
@@ -153,6 +215,11 @@ Hostname v2:
 
 HTTP(S):
 
+--http-accept-non-normalized-paths <true|false>
+                     DEPRECATED. If the server should accept paths that are not normalized
+                       according to RFC3986 or that contain a double slash ('//'). While accepting
+                       those requests might be relevant for legacy applications, it is recommended
+                       to disable it to allow for more concise URL filtering. Default: false.
 --http-enabled <true|false>
                      Enables the HTTP listener. Enabled by default in development mode. Typically
                        not enabled in production unless the server is fronted by a TLS termination
@@ -176,7 +243,7 @@ HTTP(S):
                      The file path to a private key in PEM format.
 --https-certificates-reload-period <reload period>
                      Interval on which to reload key store, trust store, and certificate files
-                       referenced by https-* options. May be a java.time.Duration value, an integer
+                       referenced by https-* options. May be an ISO 8601 duration value, an integer
                        number of seconds, or an integer followed by one of [ms, h, m, s, d]. Must
                        be greater than 30 seconds. Use -1 to disable. Default: 1h.
 --https-cipher-suites <ciphers>
@@ -195,7 +262,9 @@ HTTP(S):
                        no value is set, it defaults to 'BCFKS'.
 --https-port <port>  The used HTTPS port. Default: 8443.
 --https-protocols <protocols>
-                     The list of protocols to explicitly enable. Default: TLSv1.3,TLSv1.2.
+                     The list of protocols to explicitly enable. If a value is not supported by the
+                       JRE / security configuration, it will be silently ignored. Possible values
+                       are: TLSv1.3, TLSv1.2, or a custom one. Default: TLSv1.3,TLSv1.2.
 --https-trust-store-file <file>
                      The trust store which holds the certificate information of the certificates to
                        trust.
@@ -205,6 +274,12 @@ HTTP(S):
                      The type of the trust store file. If not given, the type is automatically
                        detected based on the file extension. If 'fips-mode' is set to 'strict' and
                        no value is set, it defaults to 'BCFKS'.
+
+HTTP Access log:
+
+--http-access-log-enabled <true|false>
+                     If HTTP access logging is enabled. By default this will log records in
+                       console. Default: false.
 
 Health:
 
@@ -223,15 +298,32 @@ Management:
                        The path must start with a '/'. If not given, the value is inherited from
                        HTTP options. Relevant only when something is exposed on the management
                        interface - see the guide for details. Default: /.
+--http-management-scheme <scheme>
+                     Configures the management interface scheme. If 'inherited', the management
+                       interface will inherit the HTTPS settings of the main interface. If 'http',
+                       the management interface will be accessible via HTTP - it will not inherit
+                       HTTPS settings and cannot be configured for HTTPS. Possible values are:
+                       http, inherited. Default: inherited.
 --https-management-certificate-file <file>
                      The file path to a server certificate or certificate chain in PEM format for
                        the management server. If not given, the value is inherited from HTTP
                        options. Relevant only when something is exposed on the management interface
-                       - see the guide for details.
+                       - see the guide for details. Available only when http-management-scheme is
+                       inherited.
 --https-management-certificate-key-file <file>
                      The file path to a private key in PEM format for the management server. If not
                        given, the value is inherited from HTTP options. Relevant only when
-                       something is exposed on the management interface - see the guide for details.
+                       something is exposed on the management interface - see the guide for
+                       details. Available only when http-management-scheme is inherited.
+--https-management-certificates-reload-period <reload period>
+                     Interval on which to reload key store, trust store, and certificate files
+                       referenced by https-management-* options for the management server. May be
+                       an ISO 8601 duration value, an integer number of seconds, or an integer
+                       followed by one of [ms, h, m, s, d]. Must be greater than 30 seconds. Use -1
+                       to disable. If not given, the value is inherited from HTTP options. Relevant
+                       only when something is exposed on the management interface - see the guide
+                       for details. Default: 1h. Available only when http-management-scheme is
+                       inherited.
 --https-management-client-auth <auth>
                      Configures the management interface to require/request client authentication.
                        If not given, the value is inherited from HTTP options. Relevant only when
@@ -241,12 +333,13 @@ Management:
                      The key store which holds the certificate information instead of specifying
                        separate files for the management server. If not given, the value is
                        inherited from HTTP options. Relevant only when something is exposed on the
-                       management interface - see the guide for details.
+                       management interface - see the guide for details. Available only when
+                       http-management-scheme is inherited.
 --https-management-key-store-password <password>
                      The password of the key store file for the management server. If not given,
                        the value is inherited from HTTP options. Relevant only when something is
                        exposed on the management interface - see the guide for details. Default:
-                       password.
+                       password. Available only when http-management-scheme is inherited.
 --legacy-observability-interface <true|false>
                      DEPRECATED. If metrics/health endpoints should be exposed on the main HTTP
                        server (not recommended). If set to true, the management interface is
@@ -267,7 +360,8 @@ Proxy:
 --proxy-protocol-enabled <true|false>
                      Whether the server should use the HA PROXY protocol when serving requests from
                        behind a proxy. When set to true, the remote address returned will be the
-                       one from the actual connecting client. Default: false.
+                       one from the actual connecting client. Cannot be enabled when the
+                       `proxy-headers` is used. Default: false.
 --proxy-trusted-addresses <trusted proxies>
                      A comma separated list of trusted proxy addresses. If set, then proxy headers
                        from other addresses will be ignored. By default all addresses are trusted.
@@ -288,6 +382,12 @@ Logging:
 
 --log <handler>      Enable one or more log handlers in a comma-separated list. Possible values
                        are: console, file, syslog. Default: console.
+--log-async <true|false>
+                     Indicates whether to log asynchronously to all handlers. Default: false.
+--log-console-async <true|false>
+                     Indicates whether to log asynchronously to console. If not set, value from the
+                       parent property 'log-async' is used. Default: false. Available only when
+                       Console log handler is activated.
 --log-console-color <true|false>
                      Enable or disable colors when logging to console. Default: false. Available
                        only when Console log handler is activated.
@@ -325,8 +425,8 @@ Truststore:
 
 --tls-hostname-verifier <tls-hostname-verifier>
                      The TLS hostname verification policy for out-going HTTPS and SMTP requests.
-                       Possible values are: ANY, WILDCARD (deprecated), STRICT (deprecated),
-                       DEFAULT. Default: DEFAULT.
+                       ANY should not be used in production. Possible values are: ANY, WILDCARD
+                       (deprecated), STRICT (deprecated), DEFAULT. Default: DEFAULT.
 --truststore-paths <truststore-paths>
                      List of pkcs12 (p12, pfx, or pkcs12 file extensions), PEM files, or
                        directories containing those files that will be used as a system truststore.

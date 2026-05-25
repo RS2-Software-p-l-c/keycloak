@@ -1,14 +1,13 @@
 package org.keycloak.config;
 
+import com.google.common.base.CaseFormat;
+
 import java.util.List;
 import java.util.Optional;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public class Option<T> {
-    public static final Pattern WILDCARD_PLACEHOLDER_PATTERN = Pattern.compile("<.+>");
-
     private final Class<T> type;
     private final String key;
     private final OptionCategory category;
@@ -20,8 +19,12 @@ public class Option<T> {
     private final boolean strictExpectedValues;
     private final boolean caseInsensitiveExpectedValues;
     private final DeprecatedMetadata deprecatedMetadata;
+    private final Set<String> connectedOptions;
+    private String wildcardKey;
 
-    public Option(Class<T> type, String key, OptionCategory category, boolean hidden, boolean buildTime, String description, Optional<T> defaultValue, List<String> expectedValues, boolean strictExpectedValues, boolean caseInsensitiveExpectedValues, DeprecatedMetadata deprecatedMetadata) {
+    public Option(Class<T> type, String key, OptionCategory category, boolean hidden, boolean buildTime, String description,
+                  Optional<T> defaultValue, List<String> expectedValues, boolean strictExpectedValues, boolean caseInsensitiveExpectedValues,
+                  DeprecatedMetadata deprecatedMetadata, Set<String> connectedOptions, String wildcardKey) {
         this.type = type;
         this.key = key;
         this.category = category;
@@ -33,6 +36,8 @@ public class Option<T> {
         this.strictExpectedValues = strictExpectedValues;
         this.caseInsensitiveExpectedValues = caseInsensitiveExpectedValues;
         this.deprecatedMetadata = deprecatedMetadata;
+        this.connectedOptions = connectedOptions;
+        this.wildcardKey = wildcardKey;
     }
 
     public Class<T> getType() {
@@ -86,19 +91,47 @@ public class Option<T> {
     }
 
     public Option<T> withRuntimeSpecificDefault(T defaultValue) {
-        return new Option<T>(
-            this.type,
-            this.key,
-            this.category,
-            this.hidden,
-            this.buildTime,
-            this.description,
-            Optional.ofNullable(defaultValue),
-            this.expectedValues,
-            this.strictExpectedValues,
-            this.caseInsensitiveExpectedValues,
-            this.deprecatedMetadata
-        );
+        return toBuilder().defaultValue(defaultValue).build();
+    }
+
+    /**
+     * Get connected options that have a certain relationship with the current option.
+     * Usually when the current option is set, the connected options should be set as well.
+     */
+    public Set<String> getConnectedOptions() {
+        return connectedOptions;
+    }
+
+    /**
+     * Get sibling option name that is able to use a named key - like using wildcards
+     * Useful mainly for references in docs
+     * f.e. {@code db-username} has wildcard option {@code db-username-<datasource>}
+     */
+    public Optional<String> getWildcardKey() {
+        return Optional.ofNullable(wildcardKey);
+    }
+
+    // used for setting the named key implicitly
+    void setWildcardKey(String wildcardKey) {
+        this.wildcardKey = wildcardKey;
+    }
+
+    public OptionBuilder<T> toBuilder() {
+        var builder = new OptionBuilder<>(key, type)
+                .category(category)
+                .buildTime(buildTime)
+                .description(description)
+                .defaultValue(defaultValue)
+                .expectedValues(expectedValues)
+                .strictExpectedValues(strictExpectedValues)
+                .caseInsensitiveExpectedValues(caseInsensitiveExpectedValues)
+                .deprecatedMetadata(deprecatedMetadata)
+                .wildcardKey(wildcardKey);
+
+        if (hidden) {
+            builder.hidden();
+        }
+        return builder;
     }
 
     private static String getDescriptionByCategorySupportLevel(String description, OptionCategory category) {
@@ -126,5 +159,13 @@ public class Option<T> {
             return ((List<?>) value).stream().map(String::valueOf).collect(Collectors.joining(","));
         }
         return String.valueOf(value);
+    }
+
+    /**
+     * Transform enum values from upper underscore to lower hyphen
+     * Transform enum type HAS_SOMETHING -> has-something
+     */
+    public static String transformEnumValue(String value) {
+        return CaseFormat.UPPER_UNDERSCORE.to(CaseFormat.LOWER_HYPHEN, value);
     }
 }

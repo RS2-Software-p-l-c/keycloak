@@ -1,70 +1,77 @@
-/*
- * Copyright 2023 Red Hat, Inc. and/or its affiliates
- *  and other contributors as indicated by the @author tags.
- *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *  http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
- *
- */
-
 package org.keycloak.authentication.authenticators.client;
 
-import java.util.Optional;
-
 import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
-import org.jboss.logging.Logger;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.authentication.ClientAuthenticationFlowContext;
-import org.keycloak.common.util.Time;
 import org.keycloak.http.HttpRequest;
-import org.keycloak.jose.jws.JWSInput;
-import org.keycloak.jose.jws.JWSInputException;
-import org.keycloak.models.ClientModel;
-import org.keycloak.models.RealmModel;
-import org.keycloak.models.SingleUseObjectProvider;
+import org.keycloak.protocol.LoginProtocol;
 import org.keycloak.protocol.oidc.OIDCAdvancedConfigWrapper;
-import org.keycloak.representations.JsonWebToken;
+import org.keycloak.protocol.oidc.OIDCLoginProtocol;
+import org.keycloak.protocol.oidc.OIDCLoginProtocolService;
+import org.keycloak.protocol.oidc.OIDCProviderConfig;
+import org.keycloak.protocol.oidc.grants.ciba.CibaGrantType;
+import org.keycloak.protocol.oidc.par.endpoints.ParEndpoint;
+import org.keycloak.services.Urls;
 
-/**
- * Common validation for JWT client authentication with private_key_jwt or with client_secret
- *
- * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
- */
-public class JWTClientValidator {
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
-    private static final Logger logger = Logger.getLogger(JWTClientValidator.class);
+public class JWTClientValidator extends AbstractJWTClientValidator {
 
-    private final ClientAuthenticationFlowContext context;
-    private final RealmModel realm;
-    private final int currentTime;
-    private final String clientAuthenticatorProviderId;
+    public JWTClientValidator(ClientAuthenticationFlowContext context, SignatureValidator signatureValidator, String clientAuthenticatorProviderId) throws Exception {
+        super(context, signatureValidator, clientAuthenticatorProviderId);
+    }
 
-    private MultivaluedMap<String, String> params;
-    private String clientAssertion;
-    private JWSInput jws;
-    private JsonWebToken token;
-    private ClientModel client;
+    @Override
+    protected String getExpectedTokenIssuer() {
+        return clientAssertionState.getToken().getSubject();
+    }
 
-    private static final int ALLOWED_CLOCK_SKEW = 15; // sec
+    @Override
+    protected List<String> getExpectedAudiences() {
+        String issuerUrl = Urls.realmIssuer(context.getUriInfo().getBaseUri(), realm.getName());
+        String tokenUrl = OIDCLoginProtocolService.tokenUrl(context.getUriInfo().getBaseUriBuilder()).build(realm.getName()).toString();
+        String tokenIntrospectUrl = OIDCLoginProtocolService.tokenIntrospectionUrl(context.getUriInfo().getBaseUriBuilder()).build(realm.getName()).toString();
+        String parEndpointUrl = ParEndpoint.parUrl(context.getUriInfo().getBaseUriBuilder()).build(realm.getName()).toString();
+        List<String> expectedAudiences = new ArrayList<>(Arrays.asList(issuerUrl, tokenUrl, tokenIntrospectUrl, parEndpointUrl));
+        String backchannelAuthenticationUrl = CibaGrantType.authorizationUrl(context.getUriInfo().getBaseUriBuilder()).build(realm.getName()).toString();
+        expectedAudiences.add(backchannelAuthenticationUrl);
 
-    public JWTClientValidator(ClientAuthenticationFlowContext context, String clientAuthenticatorProviderId) {
-        this.context = context;
-        this.realm = context.getRealm();
-        this.currentTime = Time.currentTime();
-        this.clientAuthenticatorProviderId = clientAuthenticatorProviderId;
+        return expectedAudiences;
+    }
+
+    @Override
+    public boolean validate() {
+        return clientAssertionParametersValidation() && super.validate();
+    }
+
+    @Override
+    protected boolean isMultipleAudienceAllowed() {
+        OIDCLoginProtocol loginProtocol = (OIDCLoginProtocol) context.getSession().getProvider(LoginProtocol.class, OIDCLoginProtocol.LOGIN_PROTOCOL);
+        OIDCProviderConfig config = loginProtocol.getConfig();
+        return config.isAllowMultipleAudiencesForJwtClientAuthentication();
+    }
+
+    @Override
+    protected int getAllowedClockSkew() {
+        return 15;
+    }
+
+    protected int getMaximumExpirationTime() {
+        return OIDCAdvancedConfigWrapper.fromClientModel(client).getTokenEndpointAuthSigningMaxExp();
+    }
+
+    @Override
+    protected boolean isReusePermitted() {
+        return false;
+    }
+
+    @Override
+    protected String getExpectedSignatureAlgorithm() {
+        return OIDCAdvancedConfigWrapper.fromClientModel(client).getTokenEndpointAuthSigningAlg();
     }
 
     public boolean clientAssertionParametersValidation() {
@@ -75,10 +82,10 @@ public class JWTClientValidator {
             return false;
         }
 
-        params = context.getHttpRequest().getDecodedFormParameters();
+        var params = context.getHttpRequest().getDecodedFormParameters();
 
         String clientAssertionType = params.getFirst(OAuth2Constants.CLIENT_ASSERTION_TYPE);
-        clientAssertion = params.getFirst(OAuth2Constants.CLIENT_ASSERTION);
+        var clientAssertion = params.getFirst(OAuth2Constants.CLIENT_ASSERTION);
 
         if (clientAssertionType == null) {
             Response challengeResponse = ClientAuthUtil.errorResponse(Response.Status.BAD_REQUEST.getStatusCode(), "invalid_client", "Parameter client_assertion_type is missing");
@@ -88,7 +95,7 @@ public class JWTClientValidator {
 
         if (!clientAssertionType.equals(OAuth2Constants.CLIENT_ASSERTION_TYPE_JWT)) {
             Response challengeResponse = ClientAuthUtil.errorResponse(Response.Status.BAD_REQUEST.getStatusCode(), "invalid_client", "Parameter client_assertion_type has value '"
-                    + clientAssertionType + "' but expected is '" + OAuth2Constants.CLIENT_ASSERTION_TYPE_JWT + "'");
+                                                                                                                                     + clientAssertionType + "' but expected is '" + OAuth2Constants.CLIENT_ASSERTION_TYPE_JWT + "'");
             context.challenge(challengeResponse);
             return false;
         }
@@ -102,141 +109,9 @@ public class JWTClientValidator {
         return true;
     }
 
-    public void readJws() throws JWSInputException {
-        if (clientAssertion == null) throw new IllegalStateException("Incorrect usage. Variable 'clientAssertion' is null. Need to validate clientAssertion first before read JWS");
-
-        jws = new JWSInput(clientAssertion);
-        token = jws.readJsonContent(JsonWebToken.class);
-    }
-
-    public boolean validateClient() {
-        if (token == null) throw new IllegalStateException("Incorrect usage. Variable 'token' is null. Need to read JWS first before validateClient");
-
-        String clientId = token.getSubject();
-        if (clientId == null) {
-            throw new RuntimeException("Can't identify client. Subject missing on JWT token");
-        }
-
-        if (!clientId.equals(token.getIssuer())) {
-            throw new RuntimeException("Issuer mismatch. The issuer should match the subject");
-        }
-
-        String clientIdParam = params.getFirst(OAuth2Constants.CLIENT_ID);
-        if (clientIdParam != null && !clientIdParam.equals(clientId)) {
-            throw new RuntimeException("client_id parameter not matching with client from JWT token");
-        }
-
-        context.getEvent().client(clientId);
-        client = realm.getClientByClientId(clientId);
-        if (client == null) {
-            context.failure(AuthenticationFlowError.CLIENT_NOT_FOUND, null);
-            return false;
-        } else {
-            context.setClient(client);
-        }
-
-        if (!client.isEnabled()) {
-            context.failure(AuthenticationFlowError.CLIENT_DISABLED, null);
-            return false;
-        }
-
-        if (!clientAuthenticatorProviderId.equals(client.getClientAuthenticatorType())) {
-            context.failure(AuthenticationFlowError.INVALID_CLIENT_CREDENTIALS, null);
-            return false;
-        }
-
-        return true;
-    }
-
-    public boolean validateSignatureAlgorithm() {
-        if (jws == null) throw new IllegalStateException("Incorrect usage. Variable 'jws' is null. Need to read token first before validate signature algorithm");
-        if (client == null) throw new IllegalStateException("Incorrect usage. Variable 'client' is null. Need to validate client first before validate signature algorithm");
-
-        String expectedSignatureAlg = OIDCAdvancedConfigWrapper.fromClientModel(client).getTokenEndpointAuthSigningAlg();
-        if (jws.getHeader().getAlgorithm() == null || jws.getHeader().getAlgorithm().name() == null) {
-            Response challengeResponse = ClientAuthUtil.errorResponse(Response.Status.BAD_REQUEST.getStatusCode(), "invalid_client", "invalid signature algorithm");
-            context.challenge(challengeResponse);
-            return false;
-        }
-
-        String actualSignatureAlg = jws.getHeader().getAlgorithm().name();
-        if (expectedSignatureAlg != null && !expectedSignatureAlg.equals(actualSignatureAlg)) {
-            Response challengeResponse = ClientAuthUtil.errorResponse(Response.Status.BAD_REQUEST.getStatusCode(), "invalid_client", "invalid signature algorithm");
-            context.challenge(challengeResponse);
-            return false;
-        }
-
-        return true;
-    }
-
-    public void validateToken() {
-        if (token == null) throw new IllegalStateException("Incorrect usage. Variable 'token' is null. Need to read token first before validateToken");
-
-        if (!token.isActive(ALLOWED_CLOCK_SKEW)) {
-            throw new RuntimeException("Token is not active");
-        }
-
-        // KEYCLOAK-2986, token-timeout or token-expiration in keycloak.json might not be used
-        if (token.getExp() == null || token.getExp() <= 0) { // in case of "exp" not exist
-            if (token.getIat() + ALLOWED_CLOCK_SKEW + 10 < currentTime) { // consider "exp" = 10, client's clock delays from Keycloak's clock
-                throw new RuntimeException("Token is not active");
-            }
-        } else {
-            if ((token.getIat() != null && token.getIat() > 0) && token.getIat() - ALLOWED_CLOCK_SKEW > currentTime) { // consider client's clock is ahead from Keycloak's clock
-                throw new RuntimeException("Token was issued in the future");
-            }
-        }
-
-        if (token.getId() == null) {
-            throw new RuntimeException("Missing ID on the token");
-        }
-    }
-
-    public void validateTokenReuse() {
-        if (token == null) throw new IllegalStateException("Incorrect usage. Variable 'token' is null. Need to read token first before validateToken reuse");
-        if (client == null) throw new IllegalStateException("Incorrect usage. Variable 'client' is null. Need to validate client first before validateToken reuse");
-
-        SingleUseObjectProvider singleUseCache = context.getSession().singleUseObjects();
-        long lifespanInSecs = Math.max(Optional.ofNullable(token.getExp()).orElse(0L) - currentTime, 10);
-        if (singleUseCache.putIfAbsent(token.getId(), lifespanInSecs)) {
-            logger.tracef("Added token '%s' to single-use cache. Lifespan: %d seconds, client: %s", token.getId(), lifespanInSecs, client.getClientId());
-
-        } else {
-            logger.warnf("Token '%s' already used when authenticating client '%s'.", token.getId(), client.getClientId());
-            throw new RuntimeException("Token reuse detected");
-        }
-    }
-
-    public ClientAuthenticationFlowContext getContext() {
-        return context;
-    }
-
-    public RealmModel getRealm() {
-        return realm;
-    }
-
-    public MultivaluedMap<String, String> getParams() {
-        return params;
-    }
-
-    public String getClientAssertion() {
-        return clientAssertion;
-    }
-
-    public JWSInput getJws() {
-        return jws;
-    }
-
-    public JsonWebToken getToken() {
-        return token;
-    }
-
-    public ClientModel getClient() {
-        return client;
-    }
-
     private boolean isFormDataRequest(HttpRequest request) {
         MediaType mediaType = request.getHttpHeaders().getMediaType();
         return mediaType != null && mediaType.isCompatible(MediaType.APPLICATION_FORM_URLENCODED_TYPE);
     }
+
 }

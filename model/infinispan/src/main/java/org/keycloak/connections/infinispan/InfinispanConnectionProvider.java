@@ -54,6 +54,7 @@ public interface InfinispanConnectionProvider extends Provider {
     String AUTHORIZATION_CACHE_NAME = "authorization";
     String AUTHORIZATION_REVISIONS_CACHE_NAME = "authorizationRevisions";
     int AUTHORIZATION_REVISIONS_CACHE_DEFAULT_MAX = 20000;
+    int SESSIONS_CACHE_DEFAULT_MAX = 10000;
 
     String ACTION_TOKEN_CACHE = "actionTokens";
     int ACTION_TOKEN_CACHE_DEFAULT_MAX = -1;
@@ -63,6 +64,9 @@ public interface InfinispanConnectionProvider extends Provider {
     String KEYS_CACHE_NAME = "keys";
     int KEYS_CACHE_DEFAULT_MAX = 1000;
     int KEYS_CACHE_MAX_IDLE_SECONDS = 3600;
+
+    String CRL_CACHE_NAME = "crl";
+    int CRL_CACHE_DEFAULT_MAX = 1000;
 
     // System property used on Wildfly to identify distributedCache address and sticky session route
     String JBOSS_NODE_NAME = "jboss.node.name";
@@ -85,7 +89,16 @@ public interface InfinispanConnectionProvider extends Provider {
             USER_REVISIONS_CACHE_NAME,
             AUTHORIZATION_CACHE_NAME,
             AUTHORIZATION_REVISIONS_CACHE_NAME,
-            KEYS_CACHE_NAME
+            KEYS_CACHE_NAME,
+            CRL_CACHE_NAME,
+    };
+
+    // list of cache name for user and client session caches, both offline and online
+    String[] USER_AND_CLIENT_SESSION_CACHES = {
+            USER_SESSION_CACHE_NAME,
+            CLIENT_SESSION_CACHE_NAME,
+            OFFLINE_USER_SESSION_CACHE_NAME,
+            OFFLINE_CLIENT_SESSION_CACHE_NAME,
     };
 
     // list of cache name which could be defined as distributed or replicated
@@ -101,6 +114,30 @@ public interface InfinispanConnectionProvider extends Provider {
     };
 
     String[] ALL_CACHES_NAME = Stream.concat(Arrays.stream(LOCAL_CACHE_NAMES), Arrays.stream(CLUSTERED_CACHE_NAMES)).toArray(String[]::new);
+
+    String[] LOCAL_MAX_COUNT_CACHES = new String[]{
+            AUTHORIZATION_CACHE_NAME,
+            CRL_CACHE_NAME,
+            KEYS_CACHE_NAME,
+            REALM_CACHE_NAME,
+            USER_CACHE_NAME
+    };
+
+    String[] CLUSTERED_MAX_COUNT_CACHES = new String[]{
+            CLIENT_SESSION_CACHE_NAME,
+            OFFLINE_USER_SESSION_CACHE_NAME,
+            OFFLINE_CLIENT_SESSION_CACHE_NAME,
+            USER_SESSION_CACHE_NAME
+    };
+
+    // caches that allow numOwner attribute to be configurable using options.
+    String[] CLUSTERED_CACHE_NUM_OWNERS = new String[]{
+            USER_SESSION_CACHE_NAME,
+            CLIENT_SESSION_CACHE_NAME,
+            LOGIN_FAILURE_CACHE_NAME,
+            AUTHENTICATION_SESSIONS_CACHE_NAME,
+            ACTION_TOKEN_CACHE,
+    };
 
     /**
      *

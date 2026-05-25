@@ -20,7 +20,7 @@ package org.keycloak.testsuite.pages;
 import org.jboss.arquillian.test.api.ArquillianResource;
 import org.junit.Assert;
 import org.keycloak.testsuite.util.DroneUtils;
-import org.keycloak.testsuite.util.OAuthClient;
+import org.keycloak.testsuite.util.oauth.OAuthClient;
 import org.keycloak.testsuite.util.UIUtils;
 import org.keycloak.testsuite.util.WaitUtils;
 import org.openqa.selenium.By;
@@ -144,6 +144,10 @@ public class LoginPage extends LanguageComboboxAwarePage {
 
     public boolean isUsernameInputEnabled() {
         return usernameInput.isEnabled();
+    }
+
+    public String getUsernameAutocomplete() {
+        return usernameInput.getDomAttribute("autocomplete");
     }
 
     public boolean isUsernameInputPresent() {
@@ -274,12 +278,19 @@ public class LoginPage extends LanguageComboboxAwarePage {
         return rememberMe.isSelected();
     }
 
-    @Override
+    /**
+     * @deprecated Use {@link OAuthClient#openLoginForm()}
+     */
+    @Deprecated
     public void open() {
         oauth.openLoginForm();
         assertCurrent();
     }
 
+    /**
+     * @deprecated Use {@link OAuthClient#openLoginForm()}
+     */
+    @Deprecated
     public void open(String realm) {
         oauth.realm(realm);
         oauth.openLoginForm();

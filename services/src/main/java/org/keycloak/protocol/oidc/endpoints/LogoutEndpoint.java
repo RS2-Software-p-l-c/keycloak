@@ -39,6 +39,7 @@ import org.keycloak.locale.LocaleSelectorProvider;
 import org.keycloak.models.AuthenticatedClientSessionModel;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.Constants;
+import org.keycloak.models.KeycloakContext;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
@@ -231,28 +232,6 @@ public class LogoutEndpoint {
             }
         }
 
-        AuthenticationSessionModel logoutSession = AuthenticationManager.createOrJoinLogoutSession(session, realm, new AuthenticationSessionManager(session), null, true, true);
-        session.getContext().setAuthenticationSession(logoutSession);
-        if (uiLocales != null) {
-            logoutSession.setClientNote(LocaleSelectorProvider.CLIENT_REQUEST_LOCALE, uiLocales);
-        }
-        if (validatedRedirectUri != null) {
-            logoutSession.setAuthNote(OIDCLoginProtocol.LOGOUT_REDIRECT_URI, validatedRedirectUri);
-        }
-        if (state != null) {
-            logoutSession.setAuthNote(OIDCLoginProtocol.LOGOUT_STATE_PARAM, state);
-        }
-        if (initiatingIdp != null) {
-            logoutSession.setAuthNote(AuthenticationManager.LOGOUT_INITIATING_IDP, initiatingIdp);
-        }
-        if (idToken != null) {
-            logoutSession.setAuthNote(OIDCLoginProtocol.LOGOUT_VALIDATED_ID_TOKEN_SESSION_STATE, idToken.getSessionState());
-            logoutSession.setAuthNote(OIDCLoginProtocol.LOGOUT_VALIDATED_ID_TOKEN_ISSUED_AT, String.valueOf(idToken.getIat()));
-        }
-
-        LoginFormsProvider loginForm = session.getProvider(LoginFormsProvider.class)
-                .setAuthenticationSession(logoutSession);
-
         UserSessionModel userSession = null;
 
         // Check if we have session in the browser. If yes and it is different session than referenced by id_token_hint, the confirmation should be displayed
@@ -273,6 +252,29 @@ public class LogoutEndpoint {
         if (userSession == null && idToken != null && idToken.getSessionState() != null) {
             userSession = session.sessions().getUserSession(realm, idToken.getSessionState());
         }
+
+        AuthenticationSessionModel logoutSession = AuthenticationManager.createOrJoinLogoutSession(session, realm,
+                new AuthenticationSessionManager(session), userSession, true, true);
+        session.getContext().setAuthenticationSession(logoutSession);
+        if (uiLocales != null) {
+            logoutSession.setClientNote(LocaleSelectorProvider.CLIENT_REQUEST_LOCALE, uiLocales);
+        }
+        if (validatedRedirectUri != null) {
+            logoutSession.setAuthNote(OIDCLoginProtocol.LOGOUT_REDIRECT_URI, validatedRedirectUri);
+        }
+        if (state != null) {
+            logoutSession.setAuthNote(OIDCLoginProtocol.LOGOUT_STATE_PARAM, state);
+        }
+        if (initiatingIdp != null) {
+            logoutSession.setAuthNote(AuthenticationManager.LOGOUT_INITIATING_IDP, initiatingIdp);
+        }
+        if (idToken != null) {
+            logoutSession.setAuthNote(OIDCLoginProtocol.LOGOUT_VALIDATED_ID_TOKEN_SESSION_STATE, idToken.getSessionState());
+            logoutSession.setAuthNote(OIDCLoginProtocol.LOGOUT_VALIDATED_ID_TOKEN_ISSUED_AT, String.valueOf(idToken.getIat()));
+        }
+
+        LoginFormsProvider loginForm = session.getProvider(LoginFormsProvider.class)
+                .setAuthenticationSession(logoutSession);
 
         // Try to figure user because of localization
         if (userSession != null) {
@@ -411,8 +413,19 @@ public class LogoutEndpoint {
                 userSession = session.sessions().getUserSession(realm, userSessionIdFromIdToken);
 
                 if (userSession == null) {
+                    userSession = session.sessions().getOfflineUserSession(realm, userSessionIdFromIdToken);
+                }
+
+                if (userSession == null) {
                     event.event(EventType.LOGOUT);
                     event.error(Errors.SESSION_EXPIRED);
+                    KeycloakContext context = session.getContext();
+                    AuthenticationSessionModel authSession = context.getAuthenticationSession();
+
+                    if (authSession != null) {
+                        // no valid session, make sure the current root auth session is also deleted and restart cookies
+                        new AuthenticationSessionManager(session).removeAuthenticationSession(authSession.getRealm(), authSession, true);
+                    }
                 } else {
                     Integer idTokenIssuedAt = Integer.parseInt(idTokenIssuedAtStr);
                     checkTokenIssuedAt(idTokenIssuedAt, userSession);
@@ -490,6 +503,10 @@ public class LogoutEndpoint {
             session.clientPolicy().triggerOnEvent(new LogoutRequestContext(form));
             refreshToken = form.getFirst(OAuth2Constants.REFRESH_TOKEN);
         } catch (ClientPolicyException cpe) {
+            event.detail(Details.REASON, Details.CLIENT_POLICY_ERROR);
+            event.detail(Details.CLIENT_POLICY_ERROR, cpe.getError());
+            event.detail(Details.CLIENT_POLICY_ERROR_DETAIL, cpe.getErrorDetail());
+            event.error(cpe.getError());
             throw new CorsErrorResponseException(cors, cpe.getError(), cpe.getErrorDetail(), cpe.getErrorStatus());
         }
 

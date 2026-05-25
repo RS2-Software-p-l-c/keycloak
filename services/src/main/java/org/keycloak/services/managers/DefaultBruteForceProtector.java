@@ -89,12 +89,12 @@ public class DefaultBruteForceProtector implements BruteForceProtector {
         userLoginFailure.incrementFailures();
         logger.debugv("new num failures: {0}", userLoginFailure.getNumFailures());
 
-        int waitSeconds = 0;
-        if(!(realm.isPermanentLockout() && realm.getMaxTemporaryLockouts() == 0)) {
-            if(RealmRepresentation.BruteForceStrategy.MULTIPLE.equals(realm.getBruteForceStrategy())) {
-                waitSeconds = realm.getWaitIncrementSeconds() *  (userLoginFailure.getNumFailures() / realm.getFailureFactor());
+        long waitSeconds = 0L;
+        if (!(realm.isPermanentLockout() && realm.getMaxTemporaryLockouts() == 0)) {
+            if (RealmRepresentation.BruteForceStrategy.MULTIPLE.equals(realm.getBruteForceStrategy())) {
+                waitSeconds = (long) realm.getWaitIncrementSeconds() *  ((long) userLoginFailure.getNumFailures() / realm.getFailureFactor());
             } else {
-                waitSeconds = realm.getWaitIncrementSeconds() * (1 + userLoginFailure.getNumFailures() - realm.getFailureFactor());
+                waitSeconds = (long) realm.getWaitIncrementSeconds() * ((long) 1 + userLoginFailure.getNumFailures() - realm.getFailureFactor());
             }
         }
 
@@ -116,10 +116,12 @@ public class DefaultBruteForceProtector implements BruteForceProtector {
             if (!quickLoginFailure) {
                 userLoginFailure.incrementTemporaryLockouts();
             }
-            if(quickLoginFailure || !realm.isPermanentLockout() || userLoginFailure.getNumTemporaryLockouts() <= realm.getMaxTemporaryLockouts()) {
-                int notBefore = (int) (failureTime / 1000) + waitSeconds;
+            if (quickLoginFailure || !realm.isPermanentLockout() || userLoginFailure.getNumTemporaryLockouts() <= realm.getMaxTemporaryLockouts()) {
+                long notBefore = (failureTime / 1000) + waitSeconds;
                 logger.debugv("set notBefore: {0}", notBefore);
-                userLoginFailure.setFailedLoginNotBefore(notBefore);
+                // Converting to int is workaround for the fact that "failedLoginNotBefore" is int in the model. Should be fine as user would be considered temporarily disabled with Integer.MAX_VALUE
+                int notBeforeInt = notBefore > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) notBefore;
+                userLoginFailure.setFailedLoginNotBefore(notBeforeInt);
                 sendEvent(session, realm, userLoginFailure, EventType.USER_DISABLED_BY_TEMPORARY_LOCKOUT);
             }
         }
@@ -213,7 +215,7 @@ public class DefaultBruteForceProtector implements BruteForceProtector {
             if (success) {
                 success(s, realm, user.getId());
             } else {
-                failure(s, realm, user.getId(), clientConnection.getRemoteAddr(), Time.currentTimeMillis());
+                failure(s, realm, user.getId(), clientConnection.getRemoteHost(), Time.currentTimeMillis());
             }
         }));
     }
@@ -223,7 +225,7 @@ public class DefaultBruteForceProtector implements BruteForceProtector {
         UserLoginFailureModel userLoginFailure = getUserFailureModel(session, realm, user.getId());
 
         if (userLoginFailure != null) {
-            int currTime = (int) (Time.currentTimeMillis() / 1000);
+            long currTime = Time.currentTimeMillis() / 1000;
             int failedLoginNotBefore = userLoginFailure.getFailedLoginNotBefore();
             if (currTime < failedLoginNotBefore) {
                 logger.debugv("Current: {0} notBefore: {1}", currTime, failedLoginNotBefore);
@@ -250,8 +252,12 @@ public class DefaultBruteForceProtector implements BruteForceProtector {
 
     @Override
     public void cleanUpPermanentLockout(KeycloakSession session, RealmModel realm, UserModel user) {
-        if (DISABLED_BY_PERMANENT_LOCKOUT.equals(user.getFirstAttribute(DISABLED_REASON))) {
+        if (DISABLED_BY_PERMANENT_LOCKOUT.equals(user.getFirstAttribute(DISABLED_REASON)) || isPermanentlyLockedOut(session, realm, user)) {
             user.removeAttribute(DISABLED_REASON);
+
+            if (!isTemporarilyDisabled(session, realm, user)) {
+                session.loginFailures().removeUserLoginFailure(realm, user.getId());
+            }
         }
     }
 
@@ -294,6 +300,11 @@ public class DefaultBruteForceProtector implements BruteForceProtector {
         @Override
         public UriInfo getUri() {
             return uriInfo;
+        }
+
+        @Override
+        public boolean isProxyTrusted() {
+            return true;
         }
     }
 

@@ -237,6 +237,33 @@ public void testClientCredentials() throws Exception {
 }
 ```
 
+
+# Test Suites
+
+A `@Suite` can supply configuration to be used when running tests from the suite. For example:
+
+```java
+@Suite
+@SelectClasses(MyTest.class)
+public class MyTestSuite {
+
+    @BeforeSuite
+    public static void beforeSuite() {
+        SuiteSupport.startSuite()
+                .registerServerConfig(MyTestSuiteServerConfig.class)
+                .includedSuppliers("server", "remote");
+    }
+
+    @AfterSuite
+    public static void afterSuite() {
+        SuiteSupport.stopSuite();
+    }
+}
+```
+
+The above example adds some additional Keycloak server configuration, as well as limiting what server suppliers can be used for the suite.
+
+
 # Running tests
 
 Tests can be run from your favourite IDE, or from the command-line using Maven. Simply run the tests and the framework
@@ -254,7 +281,7 @@ There are a few options on how to configure the test framework, with the followi
 
 * System properties
 * Environment variables
-* `.env` file in the current working directory
+* `.env.test` file in the project hierarchy
 * A properties file specified with `kc.test.config` system property or `KC_TEST_CONFIG` environment variable
 
 ### Using system properties
@@ -291,16 +318,19 @@ KC_TEST_BROWSER=firefox mvn test
 
 As with system properties, using environment variables within the IDE can be cumbersome.
 
-### Using `.env` file
+### Using `.env.test` file
 
-When running tests from an IDE using the `.env` file is very convenient, especially as this can be added to `.gitignore`
+When running tests from an IDE using the `.env.test` file is very convenient, especially as this can be added to `.gitignore`
 allowing developers to quickly have their own personal preference when running tests.
 
-Example `.env` file:
+Example `.env.test` file:
 
 ```
 KC_TEST_BROWSER=firefox
 ```
+
+For multi-modal Maven projects the `.env.test` file can be located in the current module, or one of its parent modules.
+This allows sharing configuration across multiple test modules.
 
 ### Using a properties file
 
@@ -333,6 +363,13 @@ Valid values:
 | embedded     | Runs a Keycloak server embedded in the same JVM process                                                |
 | remote       | Connects to a remote Keycloak server. Requires manually configuring the server as needed for the test. |
 
+Configuration:
+
+| Value                                             | Description                                                            |
+|---------------------------------------------------|------------------------------------------------------------------------|
+| `kc.test.server.config` / `KC_TEST_SERVER_CONFIG` | The name of a KeycloakServerConfig class to use when running the tests |
+
+
 ### Database
 
 Option: `kc.test.database` / `KC_TEST_DATABASE`
@@ -346,7 +383,9 @@ Valid values:
 | mariadb  | MariaDB test container                  |
 | mssql    | Microsoft SQL Server test container     |
 | mysql    | MySQL test container                    |
+| oracle   | Oracle test container                   |
 | postgres | PostgreSQL test container               |
+| tidb     | TiDb test container                     |
 
 Configuration:
 
@@ -366,3 +405,17 @@ Valid values:
 | chrome-headless  | Chrome WebDriver without UI  |
 | firefox          | Firefox WebDriver            |
 | firefox-headless | Firefox WebDriver without UI |
+
+### Supplier configuration
+
+#### Set the supplier
+
+Option: `kc.test.<value type alias>` / `KC_TEST_<value type alias>`
+
+#### Setting included suppliers
+
+Option: `kc.test.<value type alias>.suppliers.included` / `KC_TEST_<value type alias>_SUPPLIERS_INCLUDED`
+
+#### Setting excluded suppliers
+
+Option: `kc.test.<value type alias>.suppliers.excluded` / `KC_TEST_<value type alias>_SUPPLIERS_EXCLUDED`

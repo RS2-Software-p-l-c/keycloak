@@ -1,11 +1,15 @@
 package org.keycloak.testframework.realm;
 
+import org.keycloak.models.credential.OTPCredentialModel;
+import org.keycloak.models.utils.HmacOTP;
+import org.keycloak.models.utils.ModelToRepresentation;
 import org.keycloak.representations.idm.CredentialRepresentation;
+import org.keycloak.representations.idm.FederatedIdentityRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
 
-import java.util.HashMap;
-import java.util.LinkedList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 public class UserConfigBuilder {
 
@@ -23,6 +27,11 @@ public class UserConfigBuilder {
 
     public static UserConfigBuilder update(UserRepresentation rep) {
         return new UserConfigBuilder(rep);
+    }
+
+    public UserConfigBuilder id(String id) {
+        rep.setId(id);
+        return this;
     }
 
     public UserConfigBuilder enabled(boolean enabled) {
@@ -46,8 +55,8 @@ public class UserConfigBuilder {
         return this;
     }
 
-    public UserConfigBuilder emailVerified() {
-        rep.setEmailVerified(true);
+    public UserConfigBuilder emailVerified(boolean verified) {
+        rep.setEmailVerified(verified);
         return this;
     }
 
@@ -62,13 +71,12 @@ public class UserConfigBuilder {
     }
 
     public UserConfigBuilder clientRoles(String client, String... roles) {
-        if (rep.getClientRoles() == null) {
-            rep.setClientRoles(new HashMap<>());
-        }
-        if (!rep.getClientRoles().containsKey(client)) {
-            rep.getClientRoles().put(client, new LinkedList<>());
-        }
-        rep.getClientRoles().get(client).addAll(List.of(roles));
+        rep.setClientRoles(Collections.combine(rep.getClientRoles(), client, roles));
+        return this;
+    }
+
+    public UserConfigBuilder requiredActions(String... requiredActions) {
+        rep.setRequiredActions(Collections.combine(rep.getRequiredActions(), requiredActions));
         return this;
     }
 
@@ -77,8 +85,55 @@ public class UserConfigBuilder {
         return this;
     }
 
+    public UserConfigBuilder attribute(String key, String... value) {
+        rep.setAttributes(Collections.combine(rep.getAttributes(), key, value));
+        return this;
+    }
+
+    public UserConfigBuilder attributes(Map<String, List<String>> attributes) {
+        rep.setAttributes(Collections.combine(rep.getAttributes(), attributes));
+        return this;
+    }
+
+    public UserConfigBuilder federatedLink(String identityProvider, String federatedUserId, String federatedUsername) {
+        FederatedIdentityRepresentation federatedIdentity = new FederatedIdentityRepresentation();
+        federatedIdentity.setUserId(federatedUserId);
+        federatedIdentity.setUserName(federatedUsername);
+        federatedIdentity.setIdentityProvider(identityProvider);
+
+        rep.setFederatedIdentities(Collections.combine(rep.getFederatedIdentities(), federatedIdentity));
+        return this;
+    }
+
+    public UserConfigBuilder totpSecret(String totpSecret) {
+        rep.setCredentials(Collections.combine(rep.getCredentials(), ModelToRepresentation.toRepresentation(
+                OTPCredentialModel.createTOTP(totpSecret, 6, 30, HmacOTP.HMAC_SHA1))));
+        rep.setTotp(true);
+        return this;
+    }
+
+    /**
+     * Best practice is to use other convenience methods when configuring a user, but while the framework is under
+     * active development there may not be a way to perform all updates required. In these cases this method allows
+     * applying any changes to the underlying representation.
+     *
+     * @param update
+     * @return this
+     * @deprecated
+     */
+    public UserConfigBuilder update(UserUpdate... update) {
+        Arrays.stream(update).forEach(u -> u.update(rep));
+        return this;
+    }
+
     public UserRepresentation build() {
         return rep;
+    }
+
+    public interface UserUpdate {
+
+        void update(UserRepresentation client);
+
     }
 
 }

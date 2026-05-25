@@ -44,9 +44,8 @@ public class ExternalInfinispanTest {
             "--cache-remote-username=keycloak",
             "--cache-remote-password=Password1!",
             "--cache-remote-tls-enabled=false",
-            "--spi-connections-infinispan-quarkus-site-name=ISPN",
+            "--spi-cache-embedded-default-site-name=ISPN",
             "--spi-load-balancer-check-remote-poll-interval=500",
-            "-Dkc.cache-remote-create-caches=true",
             "--verbose"
     })
     void testLoadBalancerCheckFailureWithMultiSite() {
@@ -62,9 +61,8 @@ public class ExternalInfinispanTest {
             "--cache-remote-username=keycloak",
             "--cache-remote-password=Password1!",
             "--cache-remote-tls-enabled=false",
-            "--spi-connections-infinispan-quarkus-site-name=ISPN",
+            "--spi-cache-embedded-default-site-name=ISPN",
             "--spi-load-balancer-check-remote-poll-interval=500",
-            "-Dkc.cache-remote-create-caches=true",
             "--verbose"
     })
     void testLoadBalancerCheckFailureWithRemoteOnlyCaches() {
@@ -93,6 +91,17 @@ public class ExternalInfinispanTest {
             "--verbose"
     })
     void testSiteNameAsSystemProperty(CLIResult cliResult) {
-        cliResult.assertMessage("System property jboss.site.name is in use. Use --spi-connections-infinispan-quarkus-site-name config option instead");
+        cliResult.assertMessage("System property jboss.site.name is in use. Use --spi-cache-embedded-default-site-name config option instead");
+    }
+
+    @Test
+    @Launch({
+            "start-dev",
+            "--cache=ispn",
+            "-Djboss.node.name=ISPN",
+            "--verbose"
+    })
+    void testNodeNameAsSystemProperty(CLIResult cliResult) {
+        cliResult.assertMessage("System property jboss.node.name is in use. Use --spi-cache-embedded-default-node-name config option instead");
     }
 }

@@ -18,7 +18,7 @@
 package org.keycloak.quarkus.runtime.configuration.mappers;
 
 import org.keycloak.common.Profile;
-import org.keycloak.quarkus.runtime.Environment;
+import org.keycloak.config.TracingOptions;
 import org.keycloak.quarkus.runtime.cli.PropertyException;
 import org.keycloak.quarkus.runtime.configuration.Configuration;
 import org.keycloak.utils.StringUtil;
@@ -26,10 +26,12 @@ import org.keycloak.utils.StringUtil;
 import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.util.List;
 
 import static org.keycloak.config.TracingOptions.TRACING_COMPRESSION;
 import static org.keycloak.config.TracingOptions.TRACING_ENABLED;
 import static org.keycloak.config.TracingOptions.TRACING_ENDPOINT;
+import static org.keycloak.config.TracingOptions.TRACING_INFINISPAN_ENABLED;
 import static org.keycloak.config.TracingOptions.TRACING_JDBC_ENABLED;
 import static org.keycloak.config.TracingOptions.TRACING_PROTOCOL;
 import static org.keycloak.config.TracingOptions.TRACING_RESOURCE_ATTRIBUTES;
@@ -38,15 +40,13 @@ import static org.keycloak.config.TracingOptions.TRACING_SAMPLER_TYPE;
 import static org.keycloak.config.TracingOptions.TRACING_SERVICE_NAME;
 import static org.keycloak.quarkus.runtime.configuration.mappers.PropertyMapper.fromOption;
 
-public class TracingPropertyMappers {
+public class TracingPropertyMappers implements PropertyMapperGrouping {
     private static final String OTEL_FEATURE_ENABLED_MSG = "'opentelemetry' feature is enabled";
     private static final String TRACING_ENABLED_MSG = "Tracing is enabled";
 
-    private TracingPropertyMappers() {
-    }
-
-    public static PropertyMapper<?>[] getMappers() {
-        return new PropertyMapper[]{
+    @Override
+    public List<PropertyMapper<?>> getPropertyMappers() {
+        return List.of(
                 fromOption(TRACING_ENABLED)
                         .isEnabled(TracingPropertyMappers::isFeatureEnabled, OTEL_FEATURE_ENABLED_MSG)
                         .to("quarkus.otel.enabled") // enable/disable whole OTel, tracing is enabled by default
@@ -92,8 +92,13 @@ public class TracingPropertyMappers {
                         .mapFrom(TRACING_ENABLED)
                         .isEnabled(TracingPropertyMappers::isTracingEnabled, TRACING_ENABLED_MSG)
                         .to("quarkus.datasource.jdbc.telemetry")
+                        .build(),
+                fromOption(TRACING_INFINISPAN_ENABLED)
+                        .mapFrom(TracingOptions.TRACING_ENABLED)
+                        .to("kc.spi-cache-embedded--default--tracing-enabled")
+                        .isEnabled(TracingPropertyMappers::isTracingAndEmbeddedInfinispanEnabled, "tracing and embedded Infinispan is enabled")
                         .build()
-        };
+        );
     }
 
     private static void validateEndpoint(String value) {
@@ -113,11 +118,12 @@ public class TracingPropertyMappers {
 
         try {
             var ratio = Double.parseDouble(value);
-            if (ratio <= 0.0 || ratio > 1.0) {
+            // note: 0.0 is a legal value, see https://quarkus.io/guides/opentelemetry-tracing#sampler
+            if (ratio < 0.0 || ratio > 1.0) {
                 throw new NumberFormatException();
             }
         } catch (NumberFormatException e) {
-            throw new PropertyException("Ratio in 'tracing-sampler-ratio' option must be a double value in interval <0,1).");
+            throw new PropertyException("Ratio in 'tracing-sampler-ratio' option must be a double value in interval [0,1].");
         }
     }
 
@@ -129,8 +135,8 @@ public class TracingPropertyMappers {
         return Configuration.isTrue(TRACING_ENABLED);
     }
 
-    public static boolean isTracingJdbcEnabled() {
-        return Configuration.isTrue(TRACING_JDBC_ENABLED);
+    public static boolean isTracingAndEmbeddedInfinispanEnabled() {
+        return Configuration.isTrue(TRACING_ENABLED) && CachingPropertyMappers.cacheSetToInfinispan();
     }
 
     private static boolean isValidUrl(String url) {

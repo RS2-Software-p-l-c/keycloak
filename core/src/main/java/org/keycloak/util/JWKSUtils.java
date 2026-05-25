@@ -53,6 +53,7 @@ public class JWKSUtils {
     static {
         JWK_THUMBPRINT_REQUIRED_MEMBERS.put(KeyType.RSA, new String[] { RSAPublicJWK.MODULUS, RSAPublicJWK.PUBLIC_EXPONENT });
         JWK_THUMBPRINT_REQUIRED_MEMBERS.put(KeyType.EC, new String[] { ECPublicJWK.CRV, ECPublicJWK.X, ECPublicJWK.Y });
+        JWK_THUMBPRINT_REQUIRED_MEMBERS.put(KeyType.OKP, new String[] { OKPPublicJWK.CRV, OKPPublicJWK.X });
     }
 
     /**
@@ -78,7 +79,7 @@ public class JWKSUtils {
             } else if ((requestedUse.asString().equals(jwk.getPublicKeyUse()) || (jwk.getPublicKeyUse() == null && useRequestedUseWhenNull))
                     && parser.isKeyTypeSupported(jwk.getKeyType())) {
                 try {
-                    KeyWrapper keyWrapper = wrap(jwk, parser);
+                    KeyWrapper keyWrapper = wrap(jwk, parser, false);
                     keyWrapper.setUse(getKeyUse(requestedUse.asString()));
                     result.add(keyWrapper);
                 } catch (RuntimeException e) {
@@ -116,26 +117,32 @@ public class JWKSUtils {
     }
 
     public static KeyWrapper getKeyWrapper(JWK jwk) {
+        return getKeyWrapper(jwk, false);
+    }
+
+    public static KeyWrapper getKeyWrapper(JWK jwk, boolean skipPublicKey) {
         JWKParser parser = JWKParser.create(jwk);
         if (parser.isKeyTypeSupported(jwk.getKeyType())) {
-            return wrap(jwk, parser);
+            return wrap(jwk, parser, skipPublicKey);
         } else {
             return null;
         }
     }
 
-    private static KeyWrapper wrap(JWK jwk, JWKParser parser) {
+    private static KeyWrapper wrap(JWK jwk, JWKParser parser, boolean skipPublicKey) {
         KeyWrapper keyWrapper = new KeyWrapper();
         keyWrapper.setKid(jwk.getKeyId());
         if (jwk.getAlgorithm() != null) {
             keyWrapper.setAlgorithm(jwk.getAlgorithm());
         }
-        if (jwk.getOtherClaims().get(OKPPublicJWK.CRV) != null) {
-            keyWrapper.setCurve((String) jwk.getOtherClaims().get(OKPPublicJWK.CRV));
+        if (jwk.getOtherClaim(OKPPublicJWK.CRV, String.class) != null) {
+            keyWrapper.setCurve(jwk.getOtherClaim(OKPPublicJWK.CRV, String.class));
         }
         keyWrapper.setType(jwk.getKeyType());
         keyWrapper.setUse(getKeyUse(jwk.getPublicKeyUse()));
-        keyWrapper.setPublicKey(parser.toPublicKey());
+        if (!skipPublicKey) {
+            keyWrapper.setPublicKey(parser.toPublicKey());
+        }
         return keyWrapper;
     }
 
@@ -144,20 +151,29 @@ public class JWKSUtils {
     }
 
     // TreeMap uses the natural ordering of the keys.
-    // Therefore, it follows the way of hash value calculation for a public key defined by RFC 7678
+    // Therefore, it follows the way of hash value calculation for a public key defined by RFC 7638
     public static String computeThumbprint(JWK key, String hashAlg)  {
-        Map<String, String> members = new TreeMap<>();
-        members.put(JWK.KEY_TYPE, key.getKeyType());
+        String kty = key.getKeyType();
+        String[] requiredMembers = JWK_THUMBPRINT_REQUIRED_MEMBERS.get(kty);
 
-        for (String member : JWK_THUMBPRINT_REQUIRED_MEMBERS.get(key.getKeyType())) {
-            members.put(member, (String) key.getOtherClaims().get(member));
+        // e.g. `oct`, see RFC 7638 Section 3.2
+        if (requiredMembers == null) {
+            throw new UnsupportedOperationException("Unsupported key type: " + kty);
         }
 
+        Map<String, String> members = new TreeMap<>();
+        members.put(JWK.KEY_TYPE, kty);
+
         try {
+            for (String member : requiredMembers) {
+                members.put(member, key.getOtherClaim(member, String.class));
+            }
+
             byte[] bytes = JsonSerialization.writeValueAsBytes(members);
             byte[] hash = HashUtils.hash(hashAlg, bytes);
             return Base64Url.encode(hash);
         } catch (IOException ex) {
+            logger.debugf(ex, "Failed to compute JWK thumbprint for key '%s'.", key.getKeyId());
             return null;
         }
     }

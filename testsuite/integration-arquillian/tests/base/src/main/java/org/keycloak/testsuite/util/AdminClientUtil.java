@@ -59,18 +59,18 @@ public class AdminClientUtil {
 
     public static Keycloak createAdminClient(boolean ignoreUnknownProperties, String authServerContextRoot) throws Exception {
         return createAdminClient(ignoreUnknownProperties, authServerContextRoot, MASTER, ADMIN, ADMIN,
-            Constants.ADMIN_CLI_CLIENT_ID, null, null);
+            Constants.ADMIN_CLI_CLIENT_ID, null, null, false);
 
     }
 
     public static Keycloak createAdminClient(boolean ignoreUnknownProperties, String realmName, String username,
         String password, String clientId, String clientSecret) throws CertificateException, NoSuchAlgorithmException, KeyStoreException, IOException, KeyManagementException {
         return createAdminClient(ignoreUnknownProperties, getAuthServerContextRoot(), realmName, username, password,
-            clientId, clientSecret, null);
+            clientId, clientSecret, null, false);
     }
 
     public static Keycloak createAdminClient(boolean ignoreUnknownProperties, String authServerContextRoot, String realmName,
-        String username, String password, String clientId, String clientSecret, String scope)
+        String username, String password, String clientId, String clientSecret, String scope, boolean useDPoP)
         throws CertificateException, NoSuchAlgorithmException, KeyStoreException, IOException, KeyManagementException {
 
         ResteasyClient resteasyClient = createResteasyClient(ignoreUnknownProperties, null);
@@ -83,7 +83,9 @@ public class AdminClientUtil {
                 .clientId(clientId)
                 .clientSecret(clientSecret)
                 .resteasyClient(resteasyClient)
-                .scope(scope).build();
+                .scope(scope)
+                .useDPoP(useDPoP)
+                .build();
     }
 
     public static Keycloak createAdminClientWithClientCredentials(String realmName, String clientId, String clientSecret, String scope)
@@ -137,12 +139,7 @@ public class AdminClientUtil {
     public static ResteasyClient createResteasyClient(boolean ignoreUnknownProperties, Boolean followRedirects) throws CertificateException, NoSuchAlgorithmException, KeyStoreException, IOException, KeyManagementException {
         ResteasyClientBuilder resteasyClientBuilder = (ResteasyClientBuilder) ResteasyClientBuilder.newBuilder();
 
-        if ("true".equals(System.getProperty("auth.server.ssl.required"))) {
-            File truststore = new File(PROJECT_BUILD_DIRECTORY, "dependency/keystore/keycloak.truststore");
-            resteasyClientBuilder.sslContext(getSSLContextWithTruststore(truststore, "secret"));
-
-            System.setProperty("javax.net.ssl.trustStore", truststore.getAbsolutePath());
-        }
+        resteasyClientBuilder.sslContext(getSSLContextWithTruststore());
 
         // We need to ignore unknown JSON properties e.g. in the adapter configuration representation
         // during adapter backward compatibility testing
@@ -197,6 +194,19 @@ public class AdminClientUtil {
                 .loadTrustMaterial(file, password == null ? null : password.toCharArray())
                 .build();
         return theContext;
+    }
+
+    public static SSLContext getSSLContextWithTruststore() {
+        try {
+            if ("true".equals(System.getProperty("auth.server.ssl.required"))) {
+                File truststore = new File(PROJECT_BUILD_DIRECTORY, "dependency/keystore/keycloak.truststore");
+                System.setProperty("javax.net.ssl.trustStore", truststore.getAbsolutePath());
+                return getSSLContextWithTruststore(truststore, "secret");
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        return null;
     }
 
     private static SSLContext getSSLContextWithTruststoreAndKeystore(

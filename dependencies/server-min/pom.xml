@@ -21,14 +21,14 @@
 	<parent>
 		<artifactId>keycloak-dependencies-parent</artifactId>
 		<groupId>org.keycloak</groupId>
-		<version>26.1.4</version>
+		<version>26.4.7</version>
 	</parent>
 	<modelVersion>4.0.0</modelVersion>
 
 	<artifactId>keycloak-dependencies-server-min</artifactId>
     <packaging>pom</packaging>
     <name>Keycloak Dependencies Server Min</name>
-	<description />
+    <description>Keycloak Dependencies Server Min</description>
 
     <dependencies>
         <dependency>

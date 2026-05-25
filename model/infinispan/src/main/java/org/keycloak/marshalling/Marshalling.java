@@ -17,8 +17,12 @@
 
 package org.keycloak.marshalling;
 
+import java.util.List;
+
 import org.infinispan.client.hotrod.configuration.ConfigurationBuilder;
+import org.infinispan.commons.util.ServiceFinder;
 import org.infinispan.configuration.global.GlobalConfigurationBuilder;
+import org.infinispan.protostream.SerializationContextInitializer;
 
 /**
  * Ids of the protostream type.
@@ -41,9 +45,23 @@ import org.infinispan.configuration.global.GlobalConfigurationBuilder;
  * <p>
  * Docs: <a href="https://protobuf.dev/programming-guides/proto3/">Language Guide (proto 3)</a>
  */
+@SuppressWarnings("unused")
 public final class Marshalling {
 
     public static final String PROTO_SCHEMA_PACKAGE = "keycloak";
+
+    private static List<SerializationContextInitializer> SCHEMAS;
+
+    public static List<SerializationContextInitializer> getSchemas() {
+        if (SCHEMAS == null) {
+            setSchemas(ServiceFinder.load(SerializationContextInitializer.class).stream().toList());
+        }
+        return SCHEMAS;
+    }
+
+    public static void setSchemas(List<SerializationContextInitializer> schemas) {
+        SCHEMAS = List.copyOf(schemas);
+    }
 
     private Marshalling() {
     }
@@ -163,13 +181,18 @@ public final class Marshalling {
     public static final int PERMISSION_TICKET_REMOVED_EVENT = 65613;
     public static final int PERMISSION_TICKET_UPDATED_EVENT = 65614;
 
+    public static final int RELOAD_CERTIFICATE_FUNCTION = 65615;
+
+    public static final int EMBEDDED_CLIENT_SESSION_KEY = 65616;
+    public static final int CLIENT_SESSION_USER_FILTER = 65617;
+    public static final int REMOVE_KEY_BI_CONSUMER = 65618;
+
     public static void configure(GlobalConfigurationBuilder builder) {
-        builder.serialization()
-                .addContextInitializer(KeycloakModelSchema.INSTANCE);
+        getSchemas().forEach(builder.serialization()::addContextInitializer);
     }
 
     public static void configure(ConfigurationBuilder builder) {
-        builder.addContextInitializer(KeycloakModelSchema.INSTANCE);
+        getSchemas().forEach(builder::addContextInitializer);
     }
 
     public static String protoEntity(Class<?> clazz) {

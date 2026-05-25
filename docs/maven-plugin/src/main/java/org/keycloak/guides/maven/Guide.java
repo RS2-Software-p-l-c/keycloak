@@ -1,12 +1,21 @@
 package org.keycloak.guides.maven;
 
+import java.nio.file.Path;
+
 public class Guide {
 
     private String template;
     private String id;
     private String title;
     private String summary;
-    private int priority;
+    private int priority = Integer.MAX_VALUE;
+    private boolean tileVisible = true;
+    private Path root;
+    private Path path;
+
+    public static String toId(String path) {
+        return path.replace("/", "-").replace("\\", "-").replace(".adoc", "");
+    }
 
     public String getTemplate() {
         return template;
@@ -46,5 +55,29 @@ public class Guide {
 
     public void setPriority(int priority) {
         this.priority = priority;
+    }
+
+    public boolean isTileVisible() {
+        return tileVisible;
+    }
+
+    public void setTileVisible(boolean tileVisible) {
+        this.tileVisible = tileVisible;
+    }
+
+    public Path getRoot() {
+        return root;
+    }
+
+    public void setRoot(Path root) {
+        this.root = root;
+    }
+
+    public Path getPath() {
+        return path;
+    }
+
+    public void setPath(Path path) {
+        this.path = path;
     }
 }

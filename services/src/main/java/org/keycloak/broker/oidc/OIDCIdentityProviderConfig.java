@@ -32,7 +32,8 @@ public class OIDCIdentityProviderConfig extends OAuth2IdentityProviderConfig {
     public static final String USE_JWKS_URL = "useJwksUrl";
     public static final String VALIDATE_SIGNATURE = "validateSignature";
     public static final String IS_ACCESS_TOKEN_JWT = "isAccessTokenJWT";
-    public static final String ISSUER = "issuer";
+    public static final String SUPPORTS_CLIENT_ASSERTIONS = "supportsClientAssertions";
+    public static final String SUPPORTS_CLIENT_ASSERTION_REUSE = "supportsClientAssertionReuse";
 
     public OIDCIdentityProviderConfig(IdentityProviderModel identityProviderModel) {
         super(identityProviderModel);
@@ -166,6 +167,26 @@ public class OIDCIdentityProviderConfig extends OAuth2IdentityProviderConfig {
             // ignore it and use default
             return 0;
         }
+    }
+
+    public boolean isDisableTypeClaimCheck() {
+        return Boolean.parseBoolean(getConfig().get("disableTypeClaimCheck"));
+    }
+
+    public void setDisableTypeClaimCheck(boolean disableTypeClaimCheck) {
+        if (disableTypeClaimCheck) {
+            getConfig().put("disableTypeClaimCheck", Boolean.TRUE.toString());
+        } else {
+            getConfig().remove("disableTypeClaimCheck");
+        }
+    }
+
+    public boolean isSupportsClientAssertions() {
+        return Boolean.parseBoolean(getConfig().get(SUPPORTS_CLIENT_ASSERTIONS));
+    }
+
+    public boolean isSupportsClientAssertionReuse() {
+        return Boolean.parseBoolean(getConfig().get(SUPPORTS_CLIENT_ASSERTION_REUSE));
     }
 
     @Override

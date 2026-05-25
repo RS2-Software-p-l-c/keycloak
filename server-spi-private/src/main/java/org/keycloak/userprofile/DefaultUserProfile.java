@@ -19,6 +19,8 @@
 
 package org.keycloak.userprofile;
 
+import static org.keycloak.models.UserModel.DISABLED_REASON;
+import static org.keycloak.models.UserModel.IS_TEMP_ADMIN_ATTR_NAME;
 import static org.keycloak.userprofile.UserProfileUtil.createUserProfileMetadata;
 import static org.keycloak.userprofile.UserProfileUtil.isRootAttribute;
 
@@ -28,17 +30,22 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.keycloak.common.util.CollectionUtil;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.ModelException;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.models.UserModel.RequiredAction;
 import org.keycloak.models.utils.ModelToRepresentation;
 import org.keycloak.representations.idm.AbstractUserRepresentation;
+import org.keycloak.services.managers.BruteForceProtector;
+import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.storage.ReadOnlyException;
 import org.keycloak.utils.StringUtil;
 
@@ -125,9 +132,7 @@ public final class DefaultUserProfile implements UserProfile {
                     continue;
                 }
 
-                boolean ignoreEmptyValue = !removeAttributes && updatedValue.isEmpty();
-
-                if (isCustomAttribute(name) && ignoreEmptyValue) {
+                if (isIgnoreAttributeUpdate(removeAttributes, updatedValue, name)) {
                     continue;
                 }
 
@@ -188,6 +193,23 @@ public final class DefaultUserProfile implements UserProfile {
         return user;
     }
 
+    private boolean isIgnoreAttributeUpdate(boolean removeAttributes, List<String> updatedValue, String name) {
+        boolean ignoreEmptyValue = !removeAttributes && updatedValue.isEmpty();
+
+        if (isCustomAttribute(name) && ignoreEmptyValue) {
+            return true;
+        }
+
+        if (UserModel.EMAIL.equals(name)) {
+            AuthenticationSessionModel authSession = session.getContext().getAuthenticationSession();
+            // do not set email when during an authentication flow if there is a pending update email action
+            Stream<String> actions = Optional.ofNullable(user.getRequiredActionsStream()).orElse(Stream.empty());
+            return authSession != null && actions.anyMatch(RequiredAction.UPDATE_EMAIL.name()::equals);
+        }
+
+        return false;
+    }
+
     private boolean isCustomAttribute(String name) {
         return !isRootAttribute(name);
     }
@@ -245,6 +267,21 @@ public final class DefaultUserProfile implements UserProfile {
             }
         }
 
+        setAttributeIfExists(user, DISABLED_REASON, attributesRep);
+        setAttributeIfExists(user, IS_TEMP_ADMIN_ATTR_NAME, attributesRep);
+
+        RealmModel realm = session.getContext().getRealm();
+
+        if (realm.isBruteForceProtected() && !attributesRep.containsKey(DISABLED_REASON)) {
+            BruteForceProtector protector = session.getProvider(BruteForceProtector.class);
+            boolean lockedOut = protector.isPermanentlyLockedOut(session, realm, user);
+
+            if (lockedOut) {
+                rep.setEnabled(false);
+                attributesRep.put(DISABLED_REASON, List.of(BruteForceProtector.DISABLED_BY_PERMANENT_LOCKOUT));
+            }
+        }
+
         rep.setId(user.getId());
         rep.setAttributes(attributesRep.isEmpty() ? null : attributesRep);
         rep.setUserProfileMetadata(createUserProfileMetadata(session, this));
@@ -272,5 +309,15 @@ public final class DefaultUserProfile implements UserProfile {
         rep.setLastName(null);
 
         return rep;
+    }
+
+    private void setAttributeIfExists(UserModel user, String name, Map<String, List<String>> attributes) {
+        List<String> values = user.getAttributes().get(name);
+
+        if (values == null) {
+            return;
+        }
+
+        attributes.put(name, values);
     }
 }

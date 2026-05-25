@@ -21,13 +21,13 @@
     <parent>
         <artifactId>keycloak-testsuite-pom</artifactId>
         <groupId>org.keycloak</groupId>
-        <version>26.1.4</version>
+        <version>26.4.7</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>keycloak-testsuite-utils</artifactId>
     <name>Keycloak TestSuite Utils</name>
-    <description />
+    <description>Keycloak TestSuite Utils</description>
 
     <properties>
         <keycloak.additionalClasspathElement>NON_EXISTENT_PATH_OVERRIDE_ON_COMMAND_LINE</keycloak.additionalClasspathElement>
@@ -259,7 +259,7 @@
         </dependency>
         <dependency>
             <groupId>com.oracle.database.jdbc</groupId>
-            <artifactId>ojdbc11</artifactId>
+            <artifactId>ojdbc17</artifactId>
             <version>${oracle-jdbc.version}</version>
             <scope>compile</scope>
         </dependency>

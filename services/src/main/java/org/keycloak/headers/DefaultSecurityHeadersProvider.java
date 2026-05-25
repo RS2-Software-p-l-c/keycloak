@@ -30,6 +30,8 @@ import jakarta.ws.rs.core.MultivaluedMap;
 import java.util.Collections;
 import java.util.Map;
 
+import static jakarta.ws.rs.HttpMethod.HEAD;
+import static jakarta.ws.rs.HttpMethod.OPTIONS;
 import static org.keycloak.models.BrowserSecurityHeaders.CONTENT_SECURITY_POLICY;
 
 public class DefaultSecurityHeadersProvider implements SecurityHeadersProvider {
@@ -87,7 +89,6 @@ public class DefaultSecurityHeadersProvider implements SecurityHeadersProvider {
     private void addGenericHeaders(MultivaluedMap<String, Object> headers) {
         addHeader(BrowserSecurityHeaders.STRICT_TRANSPORT_SECURITY, headers);
         addHeader(BrowserSecurityHeaders.X_CONTENT_TYPE_OPTIONS, headers);
-        addHeader(BrowserSecurityHeaders.X_XSS_PROTECTION, headers);
         addHeader(BrowserSecurityHeaders.REFERRER_POLICY, headers);
     }
 
@@ -95,7 +96,6 @@ public class DefaultSecurityHeadersProvider implements SecurityHeadersProvider {
         addHeader(BrowserSecurityHeaders.STRICT_TRANSPORT_SECURITY, headers);
         addHeader(BrowserSecurityHeaders.X_FRAME_OPTIONS, headers);
         addHeader(BrowserSecurityHeaders.X_CONTENT_TYPE_OPTIONS, headers);
-        addHeader(BrowserSecurityHeaders.X_XSS_PROTECTION, headers);
         addHeader(BrowserSecurityHeaders.REFERRER_POLICY, headers);
     }
 
@@ -145,14 +145,21 @@ public class DefaultSecurityHeadersProvider implements SecurityHeadersProvider {
             }
             int status = responseContext.getStatus();
             if (status == 201 || status == 204 ||
-                status == 301 || status == 302 || status == 303 || status == 307 || status == 308 ||
+                status == 301 || status == 302 || status == 303 || status == 304 || status == 307 || status == 308 ||
                 status == 400 || status == 401 || status == 403 || status == 404) {
                 return true;
             }
-            if (requestContext.getMethod().equalsIgnoreCase("OPTIONS")) {
-                return true;
+
+            String method = requestContext.getMethod().toUpperCase();
+
+            switch (method) {
+                case OPTIONS:
+                    return true;
+                case HEAD:
+                    return status == 200;
             }
         }
+
         return false;
     }
 

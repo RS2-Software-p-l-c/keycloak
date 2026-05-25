@@ -36,7 +36,6 @@ import static org.junit.Assert.assertArrayEquals;
  * produces byte-for-byte identical output to the legacy {@code javax.crypto.Cipher} UNWRAP_MODE path
  * (which simulates what XMLCipher does internally).
  */
-@Tag("Feature: saml-decryption-key-spi, Property 3: Default provider equivalence with legacy decryption")
 public class DefaultSamlDecryptionProviderEquivalencePropertyTest {
 
     // Pre-generate RSA key pairs since they are expensive to create.
@@ -56,16 +55,13 @@ public class DefaultSamlDecryptionProviderEquivalencePropertyTest {
     }
 
     /**
-     * Property 3: Default provider equivalence with legacy decryption (RSA-OAEP)
+     * Verifies equivalence with legacy decryption using RSA-OAEP.
      *
      * For any valid encrypted symmetric key produced by the XML Encryption standard wrapping process,
-     * the DefaultSamlDecryptionProvider.unwrapKey() output SHALL be byte-for-byte identical to the
+     * the DefaultSamlDecryptionProvider.unwrapKey() output is byte-for-byte identical to the
      * key bytes produced by the legacy XMLCipher.UNWRAP_MODE path using the same private key.
-     *
-     * Tests RSA-OAEP algorithm (http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p).
      */
     @Property(tries = 100)
-    @Tag("Feature: saml-decryption-key-spi, Property 3: Default provider equivalence with legacy decryption")
     void equivalenceWithLegacy_RSA_OAEP(
             @ForAll("aesKeyBits") int aesKeySize,
             @ForAll("rsaKeyPairChoice") KeyPair rsaKeyPair,
@@ -96,12 +92,9 @@ public class DefaultSamlDecryptionProviderEquivalencePropertyTest {
     }
 
     /**
-     * Property 3: Default provider equivalence with legacy decryption (RSA v1.5)
-     *
-     * Tests RSA v1.5 algorithm (http://www.w3.org/2001/04/xmlenc#rsa-1_5).
+     * Verifies equivalence with legacy decryption using RSA v1.5.
      */
     @Property(tries = 100)
-    @Tag("Feature: saml-decryption-key-spi, Property 3: Default provider equivalence with legacy decryption")
     void equivalenceWithLegacy_RSA_v1dot5(
             @ForAll("aesKeyBits") int aesKeySize,
             @ForAll("rsaKeyPairChoice") KeyPair rsaKeyPair,

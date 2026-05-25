@@ -33,7 +33,6 @@ import static org.junit.Assert.*;
  * Property-based test for {@link DefaultSamlDecryptionProvider#unwrapKey(String, byte[])}
  * verifying that invalid inputs produce descriptive errors.
  */
-@Tag("Feature: saml-decryption-key-spi, Property 2: Invalid inputs produce descriptive errors")
 public class DefaultSamlDecryptionProviderInvalidInputPropertyTest {
 
     private static final KeyPair RSA_2048;
@@ -61,7 +60,6 @@ public class DefaultSamlDecryptionProviderInvalidInputPropertyTest {
      * with a message about "null or empty".
      */
     @Property(tries = 100)
-    @Tag("Feature: saml-decryption-key-spi, Property 2: Invalid inputs produce descriptive errors")
     void nullAlgorithmUri_throwsDescriptiveError(
             @ForAll("validEncryptedBytes") byte[] encryptedBytes) {
         try {
@@ -82,7 +80,6 @@ public class DefaultSamlDecryptionProviderInvalidInputPropertyTest {
      * with a message about "null or empty".
      */
     @Property(tries = 100)
-    @Tag("Feature: saml-decryption-key-spi, Property 2: Invalid inputs produce descriptive errors")
     void emptyAlgorithmUri_throwsDescriptiveError(
             @ForAll("validEncryptedBytes") byte[] encryptedBytes) {
         try {
@@ -103,7 +100,6 @@ public class DefaultSamlDecryptionProviderInvalidInputPropertyTest {
      * about "Unsupported".
      */
     @Property(tries = 100)
-    @Tag("Feature: saml-decryption-key-spi, Property 2: Invalid inputs produce descriptive errors")
     void unsupportedAlgorithmUri_throwsDescriptiveError(
             @ForAll("unsupportedAlgorithmUris") String unsupportedUri,
             @ForAll("validEncryptedBytes") byte[] encryptedBytes) {
@@ -125,7 +121,6 @@ public class DefaultSamlDecryptionProviderInvalidInputPropertyTest {
      * with a message about "null or empty".
      */
     @Property(tries = 100)
-    @Tag("Feature: saml-decryption-key-spi, Property 2: Invalid inputs produce descriptive errors")
     void nullEncryptedBytes_throwsDescriptiveError(
             @ForAll("validAlgorithmUris") String algorithmUri) {
         try {
@@ -146,7 +141,6 @@ public class DefaultSamlDecryptionProviderInvalidInputPropertyTest {
      * with a message about "null or empty".
      */
     @Property(tries = 100)
-    @Tag("Feature: saml-decryption-key-spi, Property 2: Invalid inputs produce descriptive errors")
     void emptyEncryptedBytes_throwsDescriptiveError(
             @ForAll("validAlgorithmUris") String algorithmUri) {
         try {
@@ -168,7 +162,6 @@ public class DefaultSamlDecryptionProviderInvalidInputPropertyTest {
      * about "Failed to unwrap".
      */
     @Property(tries = 100)
-    @Tag("Feature: saml-decryption-key-spi, Property 2: Invalid inputs produce descriptive errors")
     void corruptedEncryptedBytes_throwsDescriptiveError(
             @ForAll("validAlgorithmUris") String algorithmUri,
             @ForAll("corruptedBytes") byte[] corruptedBytes) {

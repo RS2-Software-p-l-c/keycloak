@@ -43,7 +43,6 @@ import static org.junit.Assert.assertEquals;
 /**
  * Property-based test for end-to-end assertion decryption via the SPI path.
  */
-@Tag("Feature: saml-decryption-key-spi, Property 4: End-to-end assertion decryption preserves content")
 public class XMLEncryptionUtilSpiPropertyTest {
 
     private static final KeyPair RSA_2048;
@@ -59,15 +58,14 @@ public class XMLEncryptionUtilSpiPropertyTest {
     }
 
     /**
-     * Property 4: End-to-end assertion decryption preserves content
+     * Verifies end-to-end assertion decryption preserves content.
      *
      * For any valid XML assertion content, encrypting it with a random AES key
      * (itself wrapped with an RSA public key) and then decrypting via
      * XMLEncryptionUtil.decryptElementInDocument() using the SPI provider path
-     * SHALL produce a DOM element whose text content is identical to the original.
+     * produces a DOM element whose text content is identical to the original.
      */
     @Property(tries = 100)
-    @Tag("Feature: saml-decryption-key-spi, Property 4: End-to-end assertion decryption preserves content")
     void endToEndDecryptionPreservesContent(
             @ForAll("validXmlTextContent") String originalContent,
             @ForAll("aesKeyBits") int aesKeySize) throws Exception {

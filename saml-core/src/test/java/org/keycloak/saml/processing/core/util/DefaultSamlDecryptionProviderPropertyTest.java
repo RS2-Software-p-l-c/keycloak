@@ -33,7 +33,6 @@ import static org.junit.Assert.assertArrayEquals;
 /**
  * Property-based test for {@link DefaultSamlDecryptionProvider#unwrapKey(String, byte[])}.
  */
-@Tag("Feature: saml-decryption-key-spi, Property 1: Key unwrapping round-trip")
 public class DefaultSamlDecryptionProviderPropertyTest {
 
     // Pre-generate RSA key pairs since they are expensive to create.
@@ -55,16 +54,13 @@ public class DefaultSamlDecryptionProviderPropertyTest {
     }
 
     /**
-     * Property 1: Key unwrapping round-trip
+     * Verifies key unwrapping round-trip with RSA-OAEP.
      *
      * For any valid AES symmetric key (128, 192, or 256 bits) and any supported RSA key pair,
      * encrypting (wrapping) the symmetric key with the public key and then calling unwrapKey()
-     * on the provider with the resulting ciphertext SHALL produce the original symmetric key bytes.
-     *
-     * Tests RSA-OAEP algorithm (http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p).
+     * on the provider with the resulting ciphertext produces the original symmetric key bytes.
      */
     @Property(tries = 100)
-    @Tag("Feature: saml-decryption-key-spi, Property 1: Key unwrapping round-trip")
     void unwrapKeyRoundTrip_RSA_OAEP(
             @ForAll("aesKeyBits") int aesKeySize,
             @ForAll("rsaKeyPairChoice") KeyPair rsaKeyPair,
@@ -89,12 +85,9 @@ public class DefaultSamlDecryptionProviderPropertyTest {
     }
 
     /**
-     * Property 1: Key unwrapping round-trip (RSA v1.5 variant)
-     *
-     * Tests RSA v1.5 algorithm (http://www.w3.org/2001/04/xmlenc#rsa-1_5).
+     * Verifies key unwrapping round-trip with RSA v1.5.
      */
     @Property(tries = 100)
-    @Tag("Feature: saml-decryption-key-spi, Property 1: Key unwrapping round-trip")
     void unwrapKeyRoundTrip_RSA_v1dot5(
             @ForAll("aesKeyBits") int aesKeySize,
             @ForAll("rsaKeyPairChoice") KeyPair rsaKeyPair,

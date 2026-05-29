@@ -352,6 +352,14 @@ public class XMLEncryptionUtil {
             try {
                 // Attempt SPI-based decryption when session is available
                 if (session != null) {
+                    // Populate session with decryption keys from the locator so the
+                    // DefaultSamlDecryptionProviderFactory can access them.
+                    // Custom providers (e.g., KMS-backed) may ignore these attributes.
+                    List<PrivateKey> locatedKeys = decryptionKeyLocator.getKeys(encryptedData);
+                    if (locatedKeys != null && !locatedKeys.isEmpty()) {
+                        session.setAttribute("saml.decryption.keys", locatedKeys);
+                    }
+
                     SamlDecryptionProvider provider = session.getProvider(SamlDecryptionProvider.class);
                     if (provider != null) {
                         String algorithm = encryptedKey.getEncryptionMethod().getAlgorithm();

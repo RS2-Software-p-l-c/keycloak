@@ -32,10 +32,17 @@ public interface SamlDecryptionProvider extends Provider {
      * Unwraps an encrypted symmetric key.
      *
      * @param algorithmUri the XML Encryption algorithm URI
-     *                     (e.g., "http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p")
+     *                     (e.g., "http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p"
+     *                     or "http://www.w3.org/2009/xmlenc11#rsa-oaep")
      * @param encryptedKeyBytes the encrypted symmetric key bytes (from EncryptedKey/CipherValue)
+     * @param digestAlgorithm the digest algorithm URI from the EncryptionMethod (may be null,
+     *                        defaults to SHA-1 for OAEP). Example:
+     *                        "http://www.w3.org/2001/04/xmlenc#sha256"
+     * @param mgfAlgorithm the mask generation function algorithm URI (may be null,
+     *                     defaults to MGF1 with the digest algorithm). Example:
+     *                     "http://www.w3.org/2009/xmlenc11#mgf1sha256"
      * @return the decrypted symmetric key bytes
      * @throws RuntimeException if the unwrapping operation fails
      */
-    byte[] unwrapKey(String algorithmUri, byte[] encryptedKeyBytes);
+    byte[] unwrapKey(String algorithmUri, byte[] encryptedKeyBytes, String digestAlgorithm, String mgfAlgorithm);
 }

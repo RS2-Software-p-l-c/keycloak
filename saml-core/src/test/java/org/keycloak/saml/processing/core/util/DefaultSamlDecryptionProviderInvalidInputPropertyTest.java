@@ -63,7 +63,7 @@ public class DefaultSamlDecryptionProviderInvalidInputPropertyTest {
     void nullAlgorithmUri_throwsDescriptiveError(
             @ForAll("validEncryptedBytes") byte[] encryptedBytes) {
         try {
-            PROVIDER.unwrapKey(null, encryptedBytes);
+            PROVIDER.unwrapKey(null, encryptedBytes, null, null);
             fail("Expected RuntimeException for null algorithm URI");
         } catch (RuntimeException e) {
             assertNotNull("Exception message should not be null", e.getMessage());
@@ -83,7 +83,7 @@ public class DefaultSamlDecryptionProviderInvalidInputPropertyTest {
     void emptyAlgorithmUri_throwsDescriptiveError(
             @ForAll("validEncryptedBytes") byte[] encryptedBytes) {
         try {
-            PROVIDER.unwrapKey("", encryptedBytes);
+            PROVIDER.unwrapKey("", encryptedBytes, null, null);
             fail("Expected RuntimeException for empty algorithm URI");
         } catch (RuntimeException e) {
             assertNotNull("Exception message should not be null", e.getMessage());
@@ -104,7 +104,7 @@ public class DefaultSamlDecryptionProviderInvalidInputPropertyTest {
             @ForAll("unsupportedAlgorithmUris") String unsupportedUri,
             @ForAll("validEncryptedBytes") byte[] encryptedBytes) {
         try {
-            PROVIDER.unwrapKey(unsupportedUri, encryptedBytes);
+            PROVIDER.unwrapKey(unsupportedUri, encryptedBytes, null, null);
             fail("Expected RuntimeException for unsupported algorithm URI: " + unsupportedUri);
         } catch (RuntimeException e) {
             assertNotNull("Exception message should not be null", e.getMessage());
@@ -124,7 +124,7 @@ public class DefaultSamlDecryptionProviderInvalidInputPropertyTest {
     void nullEncryptedBytes_throwsDescriptiveError(
             @ForAll("validAlgorithmUris") String algorithmUri) {
         try {
-            PROVIDER.unwrapKey(algorithmUri, null);
+            PROVIDER.unwrapKey(algorithmUri, null, null, null);
             fail("Expected RuntimeException for null encrypted bytes");
         } catch (RuntimeException e) {
             assertNotNull("Exception message should not be null", e.getMessage());
@@ -144,7 +144,7 @@ public class DefaultSamlDecryptionProviderInvalidInputPropertyTest {
     void emptyEncryptedBytes_throwsDescriptiveError(
             @ForAll("validAlgorithmUris") String algorithmUri) {
         try {
-            PROVIDER.unwrapKey(algorithmUri, new byte[0]);
+            PROVIDER.unwrapKey(algorithmUri, new byte[0], null, null);
             fail("Expected RuntimeException for empty encrypted bytes");
         } catch (RuntimeException e) {
             assertNotNull("Exception message should not be null", e.getMessage());
@@ -166,7 +166,7 @@ public class DefaultSamlDecryptionProviderInvalidInputPropertyTest {
             @ForAll("validAlgorithmUris") String algorithmUri,
             @ForAll("corruptedBytes") byte[] corruptedBytes) {
         try {
-            PROVIDER.unwrapKey(algorithmUri, corruptedBytes);
+            PROVIDER.unwrapKey(algorithmUri, corruptedBytes, null, null);
             fail("Expected RuntimeException for corrupted encrypted bytes");
         } catch (RuntimeException e) {
             assertNotNull("Exception message should not be null", e.getMessage());

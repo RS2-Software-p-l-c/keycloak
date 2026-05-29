@@ -79,7 +79,7 @@ public class DefaultSamlDecryptionProviderPropertyTest {
 
         // Unwrap using the provider
         DefaultSamlDecryptionProvider provider = new DefaultSamlDecryptionProvider(Collections.singletonList(rsaKeyPair.getPrivate()));
-        byte[] unwrappedKeyBytes = provider.unwrapKey(XMLCipher.RSA_OAEP, wrappedKeyBytes);
+        byte[] unwrappedKeyBytes = provider.unwrapKey(XMLCipher.RSA_OAEP, wrappedKeyBytes, null, null);
 
         assertArrayEquals(originalKeyBytes, unwrappedKeyBytes);
     }
@@ -106,7 +106,7 @@ public class DefaultSamlDecryptionProviderPropertyTest {
 
         // Unwrap using the provider
         DefaultSamlDecryptionProvider provider = new DefaultSamlDecryptionProvider(Collections.singletonList(rsaKeyPair.getPrivate()));
-        byte[] unwrappedKeyBytes = provider.unwrapKey(XMLCipher.RSA_v1dot5, wrappedKeyBytes);
+        byte[] unwrappedKeyBytes = provider.unwrapKey(XMLCipher.RSA_v1dot5, wrappedKeyBytes, null, null);
 
         assertArrayEquals(originalKeyBytes, unwrappedKeyBytes);
     }

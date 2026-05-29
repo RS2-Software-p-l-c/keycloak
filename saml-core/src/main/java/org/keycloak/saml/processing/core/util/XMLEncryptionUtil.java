@@ -363,9 +363,12 @@ public class XMLEncryptionUtil {
                     SamlDecryptionProvider provider = session.getProvider(SamlDecryptionProvider.class);
                     if (provider != null) {
                         String algorithm = encryptedKey.getEncryptionMethod().getAlgorithm();
+                        String digestAlgorithm = encryptedKey.getEncryptionMethod().getDigestAlgorithm();
+                        String mgfAlgorithm = encryptedKey.getEncryptionMethod().getMGFAlgorithm();
+
                         byte[] encryptedBytes = Base64.decodeBase64(
                                 encryptedKey.getCipherData().getCipherValue().getValue());
-                        byte[] decryptedKeyBytes = provider.unwrapKey(algorithm, encryptedBytes);
+                        byte[] decryptedKeyBytes = provider.unwrapKey(algorithm, encryptedBytes, digestAlgorithm, mgfAlgorithm);
 
                         SecretKeySpec secretKey = new SecretKeySpec(decryptedKeyBytes, 0, decryptedKeyBytes.length, "AES");
                         cipher = XMLCipher.getInstance();

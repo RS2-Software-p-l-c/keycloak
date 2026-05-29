@@ -151,7 +151,7 @@ public class SamlDecryptionSpiUnitTest {
 
         // If multi-key took precedence, unwrapping succeeds with the correct key
         byte[] unwrapped = provider.unwrapKey(
-                org.apache.xml.security.encryption.XMLCipher.RSA_OAEP, wrappedBytes);
+                org.apache.xml.security.encryption.XMLCipher.RSA_OAEP, wrappedBytes, null, null);
         assertArrayEquals(originalKeyBytes, unwrapped);
     }
 

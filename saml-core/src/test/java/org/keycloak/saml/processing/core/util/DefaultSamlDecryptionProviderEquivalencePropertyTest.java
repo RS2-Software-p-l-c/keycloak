@@ -79,7 +79,7 @@ public class DefaultSamlDecryptionProviderEquivalencePropertyTest {
 
         // Decrypt using DefaultSamlDecryptionProvider
         DefaultSamlDecryptionProvider provider = new DefaultSamlDecryptionProvider(Collections.singletonList(rsaKeyPair.getPrivate()));
-        byte[] providerResult = provider.unwrapKey(XMLCipher.RSA_OAEP, wrappedBytes);
+        byte[] providerResult = provider.unwrapKey(XMLCipher.RSA_OAEP, wrappedBytes, null, null);
 
         // Decrypt using legacy javax.crypto.Cipher in UNWRAP_MODE (simulates what XMLCipher does internally)
         Cipher legacyCipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-1AndMGF1Padding");
@@ -112,7 +112,7 @@ public class DefaultSamlDecryptionProviderEquivalencePropertyTest {
 
         // Decrypt using DefaultSamlDecryptionProvider
         DefaultSamlDecryptionProvider provider = new DefaultSamlDecryptionProvider(Collections.singletonList(rsaKeyPair.getPrivate()));
-        byte[] providerResult = provider.unwrapKey(XMLCipher.RSA_v1dot5, wrappedBytes);
+        byte[] providerResult = provider.unwrapKey(XMLCipher.RSA_v1dot5, wrappedBytes, null, null);
 
         // Decrypt using legacy javax.crypto.Cipher in UNWRAP_MODE (simulates what XMLCipher does internally)
         Cipher legacyCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");

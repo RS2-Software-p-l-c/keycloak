@@ -21,7 +21,7 @@
     <parent>
         <artifactId>keycloak-parent</artifactId>
         <groupId>org.keycloak</groupId>
-        <version>26.4.7</version>
+        <version>26.4.7-SAML-DECRYPTION-SPI-4</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
@@ -107,27 +107,6 @@
             <artifactId>jakarta.xml.ws-api</artifactId>
         </dependency>
 
-        <!-- Azure Key Vault -->
-        <dependency>
-            <groupId>com.azure</groupId>
-            <artifactId>azure-security-keyvault-keys</artifactId>
-            <version>4.8.8</version>
-            <optional>true</optional>
-        </dependency>
-        <dependency>
-            <groupId>com.azure</groupId>
-            <artifactId>azure-identity</artifactId>
-            <version>1.14.0</version>
-            <optional>true</optional>
-        </dependency>
-
-        <!-- Amazon KMS -->
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>kms</artifactId>
-            <version>2.28.24</version>
-            <optional>true</optional>
-        </dependency>
     </dependencies>
     <build>
         <resources>

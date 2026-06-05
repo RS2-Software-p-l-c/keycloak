@@ -50,6 +50,16 @@
         </dependency>
         <dependency>
             <groupId>org.keycloak</groupId>
+            <artifactId>keycloak-core</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.keycloak</groupId>
+            <artifactId>keycloak-server-spi</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.keycloak</groupId>
             <artifactId>keycloak-saml-core-public</artifactId>
         </dependency>
         <dependency>
@@ -77,6 +87,18 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik</artifactId>
+            <version>1.7.4</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.vintage</groupId>
+            <artifactId>junit-vintage-engine</artifactId>
+            <version>5.9.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>jakarta.xml.bind</groupId>
             <artifactId>jakarta.xml.bind-api</artifactId>
         </dependency>
@@ -85,27 +107,6 @@
             <artifactId>jakarta.xml.ws-api</artifactId>
         </dependency>
 
-        <!-- Azure Key Vault -->
-        <dependency>
-            <groupId>com.azure</groupId>
-            <artifactId>azure-security-keyvault-keys</artifactId>
-            <version>4.8.8</version>
-            <optional>true</optional>
-        </dependency>
-        <dependency>
-            <groupId>com.azure</groupId>
-            <artifactId>azure-identity</artifactId>
-            <version>1.14.0</version>
-            <optional>true</optional>
-        </dependency>
-
-        <!-- Amazon KMS -->
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>kms</artifactId>
-            <version>2.28.24</version>
-            <optional>true</optional>
-        </dependency>
     </dependencies>
     <build>
         <resources>

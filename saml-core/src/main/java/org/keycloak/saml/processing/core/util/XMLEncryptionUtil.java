@@ -18,7 +18,7 @@ package org.keycloak.saml.processing.core.util;
 
 import org.apache.xml.security.algorithms.JCEMapper;
 import org.apache.commons.codec.binary.Base64;
-import org.apache.commons.codec.binary.StringUtils;
+
 import org.apache.xml.security.encryption.EncryptedData;
 import org.apache.xml.security.encryption.EncryptedKey;
 import org.apache.xml.security.encryption.XMLCipher;
@@ -32,6 +32,7 @@ import org.keycloak.saml.common.PicketLinkLoggerFactory;
 import org.keycloak.saml.common.exceptions.ProcessingException;
 import org.keycloak.saml.common.util.DocumentUtil;
 import org.keycloak.saml.common.util.StringUtil;
+import org.keycloak.models.KeycloakSession;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -290,6 +291,27 @@ public class XMLEncryptionUtil {
      */
     public static Element decryptElementInDocument(Document documentWithEncryptedElement, DecryptionKeyLocator decryptionKeyLocator)
             throws DecryptionException {
+        return decryptElementInDocument(documentWithEncryptedElement, decryptionKeyLocator, null);
+    }
+
+    /**
+     * Decrypts an encrypted element inside a document. When a {@link KeycloakSession} is provided,
+     * it attempts to use the configured {@link SamlDecryptionProvider} for key unwrapping.
+     * If no provider is available or no session is provided, it falls back to the legacy
+     * {@link DecryptionKeyLocator} behavior.
+     *
+     * @param documentWithEncryptedElement document containing encrypted element
+     * @param decryptionKeyLocator decryption key locator (used as fallback)
+     * @param session optional KeycloakSession for SPI-based decryption (may be null)
+     *
+     * @return the document with the encrypted element replaced by the data element
+     *
+     * @throws DecryptionException when decrypting was not successful
+     */
+    public static Element decryptElementInDocument(Document documentWithEncryptedElement,
+                                                   DecryptionKeyLocator decryptionKeyLocator,
+                                                   KeycloakSession session)
+            throws DecryptionException {
         if (documentWithEncryptedElement == null)
             throw logger.nullArgumentError("Input document is null");
 
@@ -326,35 +348,47 @@ public class XMLEncryptionUtil {
         if (encryptedData != null && encryptedKey != null) {
             boolean success = false;
             final Exception enclosingThrowable = new RuntimeException("Cannot decrypt element in document");
-            List<PrivateKey> encryptionKeys;
-            encryptionKeys = decryptionKeyLocator.getKeys(encryptedData);
 
             try {
-                String encAlgoURL = encryptedData.getEncryptionMethod().getAlgorithm();
+                // Attempt SPI-based decryption when session is available
+                if (session != null) {
+                    // Populate session with decryption keys from the locator so the
+                    // DefaultSamlDecryptionProviderFactory can access them.
+                    // Custom providers (e.g., KMS-backed) may ignore these attributes.
+                    List<PrivateKey> locatedKeys = decryptionKeyLocator.getKeys(encryptedData);
+                    if (locatedKeys != null && !locatedKeys.isEmpty()) {
+                        session.setAttribute("saml.decryption.keys", locatedKeys);
+                    }
 
-                var awsKeyId = System.getenv("ENC_AWS_KMS_KEY_ID");
-                var azureKeyId = System.getenv("ENC_AZURE_VAULT_KEY_ID");
-                var azureClientId = System.getenv("ENC_AZURE_VAULT_CLIENT_ID");
+                    SamlDecryptionProvider provider = session.getProvider(SamlDecryptionProvider.class);
+                    if (provider != null) {
+                        String algorithm = encryptedKey.getEncryptionMethod().getAlgorithm();
+                        String digestAlgorithm = encryptedKey.getEncryptionMethod().getDigestAlgorithm();
+                        String mgfAlgorithm = encryptedKey.getEncryptionMethod().getMGFAlgorithm();
 
-                if (!StringUtil.isNullOrEmpty(awsKeyId)) {
-                    AmazonKMS amazonKMS = new AmazonKMS(awsKeyId);
-                    amazonKMS.setClient();
+                        byte[] encryptedBytes = Base64.decodeBase64(
+                                encryptedKey.getCipherData().getCipherValue().getValue());
+                        byte[] decryptedKeyBytes = provider.unwrapKey(algorithm, encryptedBytes, digestAlgorithm, mgfAlgorithm);
 
-                    decryptedDoc = decryptUsingHsm(encryptedKey, documentWithEncryptedElement, encDataElement, amazonKMS);
-                    success = true;
-                } else if (!StringUtil.isNullOrEmpty(azureKeyId)) {
-                    AzureKeyVault azureKeyVault;
+                        SecretKeySpec secretKey = new SecretKeySpec(decryptedKeyBytes, 0, decryptedKeyBytes.length, "AES");
+                        cipher = XMLCipher.getInstance();
+                        cipher.init(XMLCipher.DECRYPT_MODE, secretKey);
+                        decryptedDoc = cipher.doFinal(documentWithEncryptedElement, encDataElement);
+                        success = true;
+                    }
+                }
+            } catch (Exception e) {
+                // When a session-provided SPI provider fails, propagate immediately
+                // without falling back to legacy logic
+                throw new DecryptionException(e);
+            }
 
-                    if (StringUtil.isNullOrEmpty(azureClientId))
-                        azureKeyVault = new AzureKeyVault(azureKeyId);
-                    else
-                        azureKeyVault = new AzureKeyVault(azureClientId, System.getenv("ENC_AZURE_VAULT_CLIENT_SECRET"), System.getenv("ENC_AZURE_VAULT_TENANT_ID"), System.getenv("ENC_AZURE_VAULT_KEY_ID"));
+            try {
+                // Fall back to legacy DecryptionKeyLocator logic only when no session/provider was used
+                if (!success) {
+                    String encAlgoURL = encryptedData.getEncryptionMethod().getAlgorithm();
+                    List<PrivateKey> encryptionKeys = decryptionKeyLocator.getKeys(encryptedData);
 
-                    azureKeyVault.setClient();
-
-                    decryptedDoc = decryptUsingHsm(encryptedKey, documentWithEncryptedElement, encDataElement, azureKeyVault);
-                    success = true;
-                } else {
                     for (PrivateKey privateKey : encryptionKeys) {
                         XMLCipher keyCipher = XMLCipher.getInstance();
                         keyCipher.init(XMLCipher.UNWRAP_MODE, privateKey);
@@ -474,14 +508,4 @@ public class XMLEncryptionUtil {
         return null;
     }
 
-    private static Document decryptUsingHsm(EncryptedKey encryptedKey, Document documentWithEncryptedElement, Element encDataElement, HSM<?> hsm) throws Exception {
-        var encryptedBytes = Base64.decodeBase64(encryptedKey.getCipherData().getCipherValue().getValue());
-        var decryptedKey = hsm.unwrapKey(encryptedKey.getEncryptionMethod().getAlgorithm(), encryptedBytes);
-
-        var encryptionKey = new SecretKeySpec(decryptedKey, 0, decryptedKey.length, "AES");
-        var cipher = XMLCipher.getInstance();
-        cipher.init(XMLCipher.DECRYPT_MODE, encryptionKey);
-
-        return cipher.doFinal(documentWithEncryptedElement, encDataElement);
-    }
 }

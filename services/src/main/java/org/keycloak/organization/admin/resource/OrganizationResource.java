@@ -44,7 +44,6 @@ import org.keycloak.representations.idm.OrganizationRepresentation;
 import org.keycloak.services.ErrorResponse;
 import org.keycloak.services.resources.KeycloakOpenAPI;
 import org.keycloak.services.resources.admin.AdminEventBuilder;
-import org.keycloak.services.resources.admin.permissions.AdminPermissionEvaluator;
 
 @Extension(name = KeycloakOpenAPI.Profiles.ADMIN, value = "")
 public class OrganizationResource {
@@ -53,14 +52,12 @@ public class OrganizationResource {
     private final OrganizationProvider provider;
     private final AdminEventBuilder adminEvent;
     private final OrganizationModel organization;
-    private final AdminPermissionEvaluator auth;
 
-    public OrganizationResource(KeycloakSession session, OrganizationModel organization, AdminEventBuilder adminEvent, AdminPermissionEvaluator auth) {
+    public OrganizationResource(KeycloakSession session, OrganizationModel organization, AdminEventBuilder adminEvent) {
         this.session = session;
         this.provider = session == null ? null : session.getProvider(OrganizationProvider.class);
         this.organization = organization;
         this.adminEvent = adminEvent.resource(ResourceType.ORGANIZATION);
-        this.auth = auth;
     }
 
     @GET
@@ -76,7 +73,6 @@ public class OrganizationResource {
     @Tag(name = KeycloakOpenAPI.Admin.Tags.ORGANIZATIONS)
     @Operation(summary = "Deletes the organization")
     public Response delete() {
-        auth.realm().requireManageRealm();
 
         boolean removed = provider.remove(organization);
         if (removed) {
@@ -92,7 +88,6 @@ public class OrganizationResource {
     @Tag(name = KeycloakOpenAPI.Admin.Tags.ORGANIZATIONS)
     @Operation(summary = "Updates the organization")
     public Response update(OrganizationRepresentation organizationRep) {
-        auth.realm().requireManageRealm();
 
         try {
             OrganizationsValidation.validateUrl(organizationRep.getRedirectUrl());
@@ -106,7 +101,7 @@ public class OrganizationResource {
 
     @Path("members")
     public OrganizationMemberResource members() {
-        return new OrganizationMemberResource(session, organization, adminEvent, auth);
+        return new OrganizationMemberResource(session, organization, adminEvent);
     }
 
     @Path("identity-providers")

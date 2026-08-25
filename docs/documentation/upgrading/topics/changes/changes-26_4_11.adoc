@@ -1,0 +1,66 @@
+== Breaking changes
+
+Breaking changes are identified as those that might require changes for existing users to their configurations or applications.
+In minor or patch releases, {project_name} will only introduce breaking changes to fix bugs.
+
+=== Stricter access control for managing permission tickets
+
+In order to improve security, the access control for managing permission tickets has been made stricter where
+only users (or service accounts) granted with the `uma-protection` role can manage permission tickets for a given
+resource server. The only exception is the resource server itself, which can manage its permission tickets without the `uma-protection` role.
+
+=== Stricter access control for listing realm and client roles
+
+In order to improve security, the access control for listing realm and client roles has been made stricter, and granting
+only the `query-*` role to an administrator is no longer sufficient to list roles.
+
+Instead, the administrator must have explicit permissions to view or manage the realm or client for which they want to list roles, or by
+having the `view-realm` or `manage-realm` role for realm roles, or `view-clients` or `manage-clients` role for client roles.
+
+=== Stricter access control for fetching user profile configuration and metadata
+
+In order to improve security, the access control for fetching user profile configuration and metadata from a realm has been made stricter,
+and it is no longer possible to fetch this information if the administrator is granted with any administrative role.
+
+Instead, the administrator must have explicit permissions to view or manage users, or by
+having the `view-realm`, or `manage-realm`, or `view-users`, or `manage-users`, or `query-users` roles.
+
+== Notable changes
+
+Notable changes may include internal behavior changes that prevent common misconfigurations, bugs that are fixed, or changes to simplify running {project_name}.
+It also lists significant changes to internal APIs.
+
+=== Maximum length of the parameters in the OIDC token endpoint
+
+When the OIDC token endpoint request (or OAuth2 token endpoint request) is sent, a new limit exists for the maximum length of every OIDC/OAuth2 parameter. The maximum length of each parameter is 4,000 characters,
+which is aligned with the same limit, which already exists for the parameters sent to OIDC/OAuth authentication request.
+
+If you want to increase or lower those numbers, start the server with the option `req-params-default-max-size` for the default maximum length of the
+OIDC/OAuth2 parameters or you can use something such as `req-params-max-size` for one specific parameter. For more details, see the `login-protocol` provider configuration in the link:{allproviderconfigguide_link}[{allproviderconfigguide_name}].
+
+// ------------------------ Notable changes ------------------------ //
+////
+== Notable changes
+
+Notable changes may include internal behavior changes that prevent common misconfigurations, bugs that are fixed, or changes to simplify running {project_name}.
+
+=== <TODO>
+////
+
+// ------------------------ Deprecated features ------------------------ //
+////
+== Deprecated features
+
+The following sections provide details on deprecated features.
+
+=== <TODO>
+////
+
+// ------------------------ Removed features ------------------------ //
+////
+== Removed features
+
+The following features have been removed from this release.
+
+=== <TODO>
+////

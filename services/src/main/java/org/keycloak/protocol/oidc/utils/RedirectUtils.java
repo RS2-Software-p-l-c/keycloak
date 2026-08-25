@@ -18,7 +18,9 @@
 package org.keycloak.protocol.oidc.utils;
 
 import org.jboss.logging.Logger;
+import org.keycloak.OAuth2Constants;
 import org.keycloak.common.util.KeycloakUriBuilder;
+import org.keycloak.common.util.MultivaluedHashMap;
 import org.keycloak.common.util.UriUtils;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.Constants;
@@ -32,6 +34,7 @@ import java.net.URI;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
@@ -42,6 +45,22 @@ import java.util.regex.Pattern;
 public class RedirectUtils {
 
     public static final Set<String> LOOPBACK_INTERFACES = new HashSet<>(Arrays.asList("localhost", "127.0.0.1", "[::1]"));
+
+    private static final Set<String> FORBIDDEN_OIDC_PARAMS = Set.of(
+                                                                     OAuth2Constants.CODE,
+                                                                     OAuth2Constants.ID_TOKEN,
+                                                                     OAuth2Constants.ACCESS_TOKEN,
+                                                                     OAuth2Constants.TOKEN_TYPE,
+                                                                     OAuth2Constants.EXPIRES_IN,
+                                                                     OAuth2Constants.STATE,
+                                                                     OAuth2Constants.ISSUER,
+                                                                     OAuth2Constants.ERROR,
+                                                                     OAuth2Constants.ERROR_DESCRIPTION,
+                                                                     OAuth2Constants.SESSION_STATE,
+                                                                     OAuth2Constants.RESPONSE,
+                                                                     Constants.KC_ACTION,
+                                                                     Constants.KC_ACTION_STATUS
+                                                                   );
 
     private static final Logger logger = Logger.getLogger(RedirectUtils.class);
 
@@ -92,6 +111,11 @@ public class RedirectUtils {
                 return null;
             }
 
+            // Check for HTTP Parameter Pollution - forbidden OIDC response parameters in redirect URI
+            if (containsForbiddenOidcParameters(originalRedirect)){
+                return null;
+            }
+
             // check if the passed URI allows wildcards
             boolean allowWildcards = areWildcardsAllowed(originalRedirect);
 
@@ -132,6 +156,24 @@ public class RedirectUtils {
         }
     }
 
+    private static boolean containsForbiddenOidcParameters(URI originalRedirect) {
+        String query = originalRedirect.getRawQuery();
+        if (query != null && !query.isEmpty()) {
+            MultivaluedHashMap<String, String> params =UriUtils.decodeQueryString(query);
+            for (String paramName : params.keySet()) {
+                if (FORBIDDEN_OIDC_PARAMS.contains(paramName.toLowerCase(Locale.ROOT))) {
+                    logger.warnf("Redirect URI rejected: contains forbidden OIDC parameter '%s' in query string: scheme=%s, host=%s, path=%s",
+                            paramName,
+                            originalRedirect.getScheme(),
+                            originalRedirect.getHost(),
+                            originalRedirect.getPath());
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private static URI toUri(String redirectUri) {
         URI uri = null;
         if (redirectUri != null) {
@@ -148,11 +190,12 @@ public class RedirectUtils {
 
     // any access to parent folder /../ is unsafe with or without encoding
     private final static Pattern UNSAFE_PATH_PATTERN = Pattern.compile(
-            "(/|%2[fF]|%5[cC]|\\\\)(%2[eE]|\\.){2}(/|%2[fF]|%5[cC]|\\\\)|(/|%2[fF]|%5[cC]|\\\\)(%2[eE]|\\.){2}$");
+            "(/|%2[fF]|%5[cC]|\\\\)(%2[eE]|\\.){2}(/|%2[fF]|%5[cC]|\\\\|;)|(/|%2[fF]|%5[cC]|\\\\)(%2[eE]|\\.){2}$");
 
     private static boolean areWildcardsAllowed(URI redirectUri) {
-        // wildcars are only allowed if no user-info and no unsafe pattern in path
+        // wildcars are only allowed if no user-info and no unparsed authority and no unsafe pattern in path
         return redirectUri.getRawUserInfo() == null
+                && !(redirectUri.getRawAuthority() != null && redirectUri.getRawUserInfo() == null && redirectUri.getHost() == null && redirectUri.getPort() == -1)
                 && (redirectUri.getRawPath() == null || !UNSAFE_PATH_PATTERN.matcher(redirectUri.getRawPath()).find());
     }
 
@@ -177,22 +220,57 @@ public class RedirectUtils {
             if ("*".equals(validRedirect)) {
                 // the valid redirect * is a full wildcard for http(s) even if the redirect URI does not allow wildcards
                 return validRedirect;
-            } else if (validRedirect.endsWith("*") && !validRedirect.contains("?") && allowWildcards) {
-                // strip off the query or fragment components - we don't check them when wildcards are effective
-                int idx = redirect.indexOf('?');
-                if (idx == -1) {
-                    idx = redirect.indexOf('#');
+            } else {
+                String validRedirectWildcard = allowWildcards ? checkValidRedirectWildcard(validRedirect) : null;
+                if (validRedirectWildcard != null) {
+                    // strip off the query or fragment components - we don't check them when wildcards are effective
+                    int idx = redirect.indexOf('?');
+                    if (idx == -1) {
+                        idx = redirect.indexOf('#');
+                    }
+                    String r = idx == -1 ? redirect : redirect.substring(0, idx);
+                    // strip off *
+                    int length = validRedirectWildcard.length() - 1;
+                    validRedirectWildcard = validRedirectWildcard.substring(0, length);
+                    if (r.startsWith(validRedirectWildcard)) {
+                        return validRedirectWildcard;
+                    }
+                    // strip off trailing '/'
+                    if (length - 1 > 0 && validRedirectWildcard.charAt(length - 1) == '/') {
+                        length--;
+                    }
+                    validRedirectWildcard = validRedirectWildcard.substring(0, length);
+                    if (validRedirectWildcard.equals(r)) {
+                        return validRedirectWildcard;
+                    }
+                } else if (validRedirect.equals(redirect)) {
+                    return validRedirect;
                 }
-                String r = idx == -1 ? redirect : redirect.substring(0, idx);
-                // strip off *
-                int length = validRedirect.length() - 1;
-                validRedirect = validRedirect.substring(0, length);
-                if (r.startsWith(validRedirect)) return validRedirect;
-                // strip off trailing '/'
-                if (length - 1 > 0 && validRedirect.charAt(length - 1) == '/') length--;
-                validRedirect = validRedirect.substring(0, length);
-                if (validRedirect.equals(r)) return validRedirect;
-            } else if (validRedirect.equals(redirect)) return validRedirect;
+            }
+        }
+        return null;
+    }
+
+    private static String checkValidRedirectWildcard(String validRedirect) {
+        if (!validRedirect.endsWith("*") || validRedirect.contains("?") || validRedirect.contains("#")) {
+            return null; // no wildcard as before
+        }
+        KeycloakUriBuilder uriBuilder = KeycloakUriBuilder.fromUri(validRedirect, false);
+        if (uriBuilder.getPath() != null) {
+            return validRedirect; // wildcard valid on path
+        }
+        if (uriBuilder.getAuthority() != null) {
+            if (uriBuilder.getAuthority().equals("*") || uriBuilder.getAuthority().endsWith(":*")) {
+                return validRedirect; // on authority just full wildcard or on port
+            } else {
+                // treat the wildcard after the authority
+                validRedirect = validRedirect.substring(0, validRedirect.length() - 1);
+                validRedirect = validRedirect + "/*";
+                return validRedirect;
+            }
+        }
+        if (uriBuilder.getSsp() != null) {
+            return validRedirect; // wildcard valid on SSP
         }
         return null;
     }

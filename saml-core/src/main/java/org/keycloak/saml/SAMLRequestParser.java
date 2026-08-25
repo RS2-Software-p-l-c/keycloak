@@ -25,11 +25,13 @@ import org.keycloak.saml.common.PicketLinkLoggerFactory;
 import org.keycloak.saml.common.constants.GeneralConstants;
 import org.keycloak.saml.processing.api.saml.v2.request.SAML2Request;
 import org.keycloak.saml.processing.api.saml.v2.response.SAML2Response;
+import org.keycloak.saml.processing.api.util.DeflateUtil;
 import org.keycloak.saml.processing.core.saml.v2.common.SAMLDocumentHolder;
 import org.keycloak.saml.processing.web.util.PostBindingUtil;
 import org.keycloak.saml.processing.web.util.RedirectBindingUtil;
 
 import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
@@ -42,26 +44,17 @@ public class SAMLRequestParser {
     protected static Logger log = Logger.getLogger(SAMLRequestParser.class);
 
     public static SAMLDocumentHolder parseRequestRedirectBinding(String samlMessage) {
-        InputStream is;
-        try {
-            is = RedirectBindingUtil.base64DeflateDecode(samlMessage);
-        } catch (IOException e) {
-            logger.samlBase64DecodingError(e);
-            return null;
-        }
-        if (log.isDebugEnabled()) {
-            String message = null;
-            try {
-                message = StreamUtil.readString(is, GeneralConstants.SAML_CHARSET);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-            log.debug("SAML Redirect Binding");
-            log.debug(message);
-            is = new ByteArrayInputStream(message.getBytes(GeneralConstants.SAML_CHARSET));
+        return parseRequestRedirectBinding(samlMessage, DeflateUtil.DEFAULT_MAX_INFLATING_SIZE);
+    }
 
-        }
-        try {
+    public static SAMLDocumentHolder parseRequestRedirectBinding(String samlMessage, long maxInflatingSize) {
+        try (InputStream is = RedirectBindingUtil.base64DeflateDecode(samlMessage, maxInflatingSize)) {
+            if (log.isDebugEnabled()) {
+                String message = StreamUtil.readString(is, GeneralConstants.SAML_CHARSET);
+                log.debug("SAML Redirect Binding");
+                log.debug(message);
+                return SAML2Request.getSAML2ObjectFromStream(new ByteArrayInputStream(message.getBytes(GeneralConstants.SAML_CHARSET)));
+            }
             return SAML2Request.getSAML2ObjectFromStream(is);
         } catch (Exception e) {
             logger.samlBase64DecodingError(e);
@@ -110,27 +103,20 @@ public class SAMLRequestParser {
     }
 
     public static SAMLDocumentHolder parseResponseRedirectBinding(String samlMessage) {
-        InputStream is;
-        try {
-            is = RedirectBindingUtil.base64DeflateDecode(samlMessage);
-        } catch (IOException e) {
-            logger.samlBase64DecodingError(e);
-            return null;
-        }
-        if (log.isDebugEnabled()) {
-            String message = null;
-            try {
-                message = StreamUtil.readString(is, GeneralConstants.SAML_CHARSET);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-            log.debug("SAML Redirect Binding");
-            log.debug(message);
-            is = new ByteArrayInputStream(message.getBytes(GeneralConstants.SAML_CHARSET));
+        return parseResponseRedirectBinding(samlMessage, DeflateUtil.DEFAULT_MAX_INFLATING_SIZE);
+    }
 
-        }
-        SAML2Response response = new SAML2Response();
-        try {
+    public static SAMLDocumentHolder parseResponseRedirectBinding(String samlMessage, long maxInflatingSize) {
+        try (InputStream is = RedirectBindingUtil.base64DeflateDecode(samlMessage, maxInflatingSize)) {
+            if (log.isDebugEnabled()) {
+                String message = StreamUtil.readString(is, GeneralConstants.SAML_CHARSET);
+                log.debug("SAML Redirect Binding");
+                log.debug(message);
+                SAML2Response response = new SAML2Response();
+                response.getSAML2ObjectFromStream(new ByteArrayInputStream(message.getBytes(GeneralConstants.SAML_CHARSET)));
+                return response.getSamlDocumentHolder();
+            }
+            SAML2Response response = new SAML2Response();
             response.getSAML2ObjectFromStream(is);
             return response.getSamlDocumentHolder();
         } catch (Exception e) {

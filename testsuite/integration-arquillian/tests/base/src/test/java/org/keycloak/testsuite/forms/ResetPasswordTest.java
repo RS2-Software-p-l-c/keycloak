@@ -18,7 +18,19 @@ package org.keycloak.testsuite.forms;
 
 import org.hamcrest.MatcherAssert;
 import org.hamcrest.Matchers;
+
+import java.io.Closeable;
+import java.io.IOException;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import jakarta.mail.MessagingException;
+import jakarta.mail.internet.MimeMessage;
+
 import org.jboss.arquillian.drone.api.annotation.Drone;
+import org.keycloak.TokenVerifier;
 import org.keycloak.admin.client.resource.ClientResource;
 import org.keycloak.admin.client.resource.UserResource;
 import org.keycloak.authentication.actiontoken.resetcred.ResetCredentialsActionToken;
@@ -27,11 +39,14 @@ import org.jboss.arquillian.graphene.page.Page;
 import org.keycloak.common.constants.ServiceAccountConstants;
 import org.keycloak.common.util.MultivaluedHashMap;
 import org.keycloak.common.util.KeycloakUriBuilder;
+import org.keycloak.common.util.UriUtils;
 import org.keycloak.events.Details;
 import org.keycloak.events.Errors;
 import org.keycloak.events.EventType;
 import org.keycloak.models.AuthenticationExecutionModel;
 import org.keycloak.models.Constants;
+import org.keycloak.models.DefaultActionTokenKey;
+import org.keycloak.models.SingleUseObjectProvider;
 import org.keycloak.models.credential.PasswordCredentialModel;
 import org.keycloak.models.utils.DefaultAuthenticationFlows;
 import org.keycloak.models.utils.SystemClientUtil;
@@ -60,6 +75,7 @@ import org.keycloak.testsuite.pages.LoginPage;
 import org.keycloak.testsuite.pages.LoginPasswordResetPage;
 import org.keycloak.testsuite.pages.LoginPasswordUpdatePage;
 import org.keycloak.testsuite.pages.LogoutConfirmPage;
+import org.keycloak.testsuite.pages.SelectAuthenticatorPage;
 import org.keycloak.testsuite.pages.VerifyEmailPage;
 import org.keycloak.testsuite.updaters.ClientAttributeUpdater;
 import org.keycloak.testsuite.util.BrowserTabUtil;
@@ -78,22 +94,15 @@ import org.keycloak.testsuite.util.WaitUtils;
 import org.keycloak.testsuite.util.AccountHelper;
 import org.keycloak.testsuite.util.TestAppHelper;
 
-import jakarta.mail.MessagingException;
-import jakarta.mail.internet.MimeMessage;
-
-import java.io.Closeable;
-import java.io.IOException;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
-
 import org.junit.*;
 import org.openqa.selenium.By;
+import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.firefox.FirefoxDriver;
 import org.openqa.selenium.htmlunit.HtmlUnitDriver;
+
+import static org.keycloak.protocol.oidc.par.endpoints.ParEndpoint.REQUEST_URI_PREFIX;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.endsWith;
@@ -111,6 +120,9 @@ public class ResetPasswordTest extends AbstractTestRealmKeycloakTest {
 
     @Rule
     public InfinispanTestTimeServiceRule ispnTestTimeService = new InfinispanTestTimeServiceRule(this);
+
+    @Page
+    SelectAuthenticatorPage selectAuthenticatorPage;
 
     @Drone
     @SecondBrowser
@@ -343,6 +355,35 @@ public class ResetPasswordTest extends AbstractTestRealmKeycloakTest {
     @Test
     public void resetPasswordTwice() throws IOException, MessagingException {
         String changePasswordUrl = resetPassword("login-test");
+        events.clear();
+
+        assertSecondPasswordResetFails(changePasswordUrl, oauth.getClientId()); // KC_RESTART doesn't exist, it was deleted after first successful reset-password flow was finished
+    }
+
+    @Test
+    public void resetPasswordTwiceWithPARRequestInBetween() throws Exception {
+        String changePasswordUrl = resetPassword("login-test");
+        events.clear();
+
+        // Try to create manually the cache key from actionToken
+        String queryString = changePasswordUrl.substring(changePasswordUrl.indexOf("?") + 1);
+        MultivaluedHashMap<String, String> params = UriUtils.decodeQueryString(queryString);
+        String key = params.getFirst(Constants.KEY);
+        TokenVerifier<DefaultActionTokenKey> tokenVerifier = TokenVerifier.create(key, DefaultActionTokenKey.class);
+        DefaultActionTokenKey aToken = tokenVerifier.getToken();
+        String serializedKey1 = aToken.serializeKey();
+        String serializedKey2 = serializedKey1 + SingleUseObjectProvider.REVOKED_KEY;
+
+        // Try to send PAR request with manually created requestUri related to the manually created serialized keys
+        String state = "testSuccessfulSinglePar";
+        oauth.loginForm()
+                .requestUri(REQUEST_URI_PREFIX + serializedKey1)
+                .state(state)
+                .open();
+        oauth.loginForm()
+                .requestUri(REQUEST_URI_PREFIX + serializedKey2)
+                .state(state)
+                .open();
         events.clear();
 
         assertSecondPasswordResetFails(changePasswordUrl, oauth.getClientId()); // KC_RESTART doesn't exist, it was deleted after first successful reset-password flow was finished
@@ -1530,5 +1571,41 @@ public class ResetPasswordTest extends AbstractTestRealmKeycloakTest {
             WaitUtils.waitUntilElement(appPage.getAccountLink()).is().clickable();
             appPage.assertCurrent();
         }
+    }
+
+    private void submitForm(String action, String name, String value) {
+        ((JavascriptExecutor) driver).executeScript(
+                "var form = document.createElement('form');" +
+                "document.body.appendChild(form);" +
+                "form.method = 'POST';" +
+                "form.action ='"+ action + "';" +
+                "var element1 = document.createElement('input');" +
+                "element1.name='" + name +"';" +
+                "element1.value='" + value + "';" +
+                "form.appendChild(element1);" +
+                "form.submit();");
+    }
+
+    @Test
+    public void resetPasswordTryAnotherWay() throws Exception {
+        oauth.openLoginForm();
+        loginPage.resetPassword();
+        resetPasswordPage.assertCurrent();
+        String resetPasswordUrl = driver.getCurrentUrl();
+
+        // force a tryAnotherWay to set AUTHENTICATION_SELECTOR_SCREEN_DISPLAYED
+        submitForm(resetPasswordPage.getFormUrl(), "tryAnotherWay", "on");
+        selectAuthenticatorPage.assertCurrent();
+
+        // now execute the email action to send the email
+        WebElement form = driver.findElement(By.id("kc-select-credential-form"));
+        submitForm(form.getDomAttribute("action"), "username", "login-test");
+        loginPage.assertCurrent();
+        assertEquals("You should receive an email shortly with further instructions.", loginPage.getSuccessMessage());
+
+        // back to reset credential and check we are still waiting the email
+        driver.navigate().to(resetPasswordUrl);
+        loginPage.assertCurrent();
+        assertEquals("You should receive an email shortly with further instructions.", loginPage.getSuccessMessage());
     }
 }

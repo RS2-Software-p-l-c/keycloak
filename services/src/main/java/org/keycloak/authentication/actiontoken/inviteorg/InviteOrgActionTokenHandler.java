@@ -36,6 +36,7 @@ import org.keycloak.models.OrganizationModel;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.organization.OrganizationProvider;
+import org.keycloak.organization.utils.Organizations;
 import org.keycloak.protocol.oidc.OIDCLoginProtocol;
 import org.keycloak.services.Urls;
 import org.keycloak.services.managers.AuthenticationManager;
@@ -74,6 +75,11 @@ public class InviteOrgActionTokenHandler extends AbstractActionTokenHandler<Invi
     @Override
     public Response preHandleToken(InviteOrgActionToken token, ActionTokenContext<InviteOrgActionToken> tokenContext) {
         KeycloakSession session = tokenContext.getSession();
+
+        if (!Organizations.isEnabled(session)) {
+            return disabledOrganizationResponse(tokenContext, token);
+        }
+
         OrganizationProvider orgProvider = session.getProvider(OrganizationProvider.class);
         AuthenticationSessionModel authSession = tokenContext.getAuthenticationSession();
 
@@ -95,6 +101,11 @@ public class InviteOrgActionTokenHandler extends AbstractActionTokenHandler<Invi
     public Response handleToken(InviteOrgActionToken token, ActionTokenContext<InviteOrgActionToken> tokenContext) {
         UserModel user = tokenContext.getAuthenticationSession().getAuthenticatedUser();
         KeycloakSession session = tokenContext.getSession();
+
+        if (!Organizations.isEnabled(session)) {
+            return disabledOrganizationResponse(tokenContext, token);
+        }
+
         OrganizationProvider orgProvider = session.getProvider(OrganizationProvider.class);
         AuthenticationSessionModel authSession = tokenContext.getAuthenticationSession();
         EventBuilder event = tokenContext.getEvent();
@@ -104,40 +115,18 @@ public class InviteOrgActionTokenHandler extends AbstractActionTokenHandler<Invi
         OrganizationModel organization = orgProvider.getById(token.getOrgId());
 
         if (organization == null) {
-            event.user(user).error(Errors.ORG_NOT_FOUND);
-            return session.getProvider(LoginFormsProvider.class)
-                    .setAuthenticationSession(authSession)
-                    .setInfo(Messages.ORG_NOT_FOUND, token.getOrgId())
-                    .createInfoPage();
+            return invalidOrganizationResponse(tokenContext, token);
         }
 
         if (organization.isMember(user)) {
-            event.user(user).error(Errors.USER_ORG_MEMBER_ALREADY);
-            return session.getProvider(LoginFormsProvider.class)
-                    .setAuthenticationSession(authSession)
-                    .setInfo(Messages.ORG_MEMBER_ALREADY, user.getUsername())
-                    .setAttribute("pageRedirectUri", organization.getRedirectUrl())
-                    .createInfoPage();
+            return alreadyMemberResponse(organization, user, tokenContext, token);
         }
 
-        final UriInfo uriInfo = tokenContext.getUriInfo();
-        final RealmModel realm = tokenContext.getRealm();
+        UriInfo uriInfo = tokenContext.getUriInfo();
+        RealmModel realm = tokenContext.getRealm();
 
         if (tokenContext.isAuthenticationSessionFresh()) {
-            // Update the authentication session in the token
-            String authSessionEncodedId = AuthenticationSessionCompoundId.fromAuthSession(authSession).getEncodedId();
-            token.setCompoundAuthenticationSessionId(authSessionEncodedId);
-            UriBuilder builder = Urls.actionTokenBuilder(uriInfo.getBaseUri(), token.serialize(session, realm, uriInfo),
-                    authSession.getClient().getClientId(), authSession.getTabId(), AuthenticationProcessor.getClientData(session, authSession));
-            String confirmUri = builder.build(realm.getName()).toString();
-
-            return session.getProvider(LoginFormsProvider.class)
-                    .setAuthenticationSession(authSession)
-                    .setSuccess(Messages.CONFIRM_ORGANIZATION_MEMBERSHIP, organization.getName())
-                    .setAttribute("messageHeader", Messages.CONFIRM_ORGANIZATION_MEMBERSHIP_TITLE)
-                    .setAttribute(Constants.TEMPLATE_ATTR_ACTION_URI, confirmUri)
-                    .setAttribute(OrganizationModel.ORGANIZATION_NAME_ATTRIBUTE, organization.getName())
-                    .createInfoPage();
+            return confirmMembershipResponse(organization, user, tokenContext, token);
         }
 
         // if we made it this far then go ahead and add the user to the organization
@@ -168,5 +157,77 @@ public class InviteOrgActionTokenHandler extends AbstractActionTokenHandler<Invi
         }
 
         return AuthenticationManager.redirectToRequiredActions(session, realm, authSession, uriInfo, nextAction);
+    }
+
+    private Response disabledOrganizationResponse(ActionTokenContext<InviteOrgActionToken> tokenContext, InviteOrgActionToken token) {
+        EventBuilder event = tokenContext.getEvent();
+        KeycloakSession session = tokenContext.getSession();
+        AuthenticationSessionModel authSession = tokenContext.getAuthenticationSession();
+
+        event.detail(Details.TOKEN_ID, token.getId())
+                .detail(Details.EMAIL, token.getEmail())
+                .detail(Details.ORG_ID, token.getOrgId())
+                .error(Errors.ORG_DISABLED);
+        return session.getProvider(LoginFormsProvider.class)
+                .setStatus(Status.BAD_REQUEST)
+                .setAuthenticationSession(authSession)
+                .setAttribute("messageHeader", Messages.STALE_INVITE_ORG_LINK)
+                .setInfo(Messages.ORG_DISABLED)
+                .createInfoPage();
+    }
+
+    private Response invalidOrganizationResponse(ActionTokenContext<InviteOrgActionToken> tokenContext, InviteOrgActionToken token) {
+        EventBuilder event = tokenContext.getEvent();
+        KeycloakSession session = tokenContext.getSession();
+        AuthenticationSessionModel authSession = tokenContext.getAuthenticationSession();
+
+        event.detail(Details.TOKEN_ID, token.getId())
+                .detail(Details.EMAIL, token.getEmail())
+                .detail(Details.ORG_ID, token.getOrgId())
+                .error(Errors.ORG_NOT_FOUND);
+        return session.getProvider(LoginFormsProvider.class)
+                .setStatus(Status.BAD_REQUEST)
+                .setAuthenticationSession(authSession)
+                .setAttribute("messageHeader", Messages.EXPIRED_ACTION)
+                .setInfo(Messages.ORG_NOT_FOUND, token.getOrgId())
+                .createInfoPage();
+    }
+
+    private Response alreadyMemberResponse(OrganizationModel organization, UserModel user, ActionTokenContext<InviteOrgActionToken> tokenContext, InviteOrgActionToken token) {
+        EventBuilder event = tokenContext.getEvent();
+        KeycloakSession session = tokenContext.getSession();
+        AuthenticationSessionModel authSession = tokenContext.getAuthenticationSession();
+
+        event.detail(Details.TOKEN_ID, token.getId())
+                .detail(Details.EMAIL, token.getEmail())
+                .detail(Details.ORG_ID, token.getOrgId())
+                .error(Errors.USER_ORG_MEMBER_ALREADY);
+        return session.getProvider(LoginFormsProvider.class)
+                .setStatus(Status.BAD_REQUEST)
+                .setAuthenticationSession(authSession)
+                .setAttribute("messageHeader", Messages.EXPIRED_ACTION)
+                .setInfo(Messages.ORG_MEMBER_ALREADY, user.getUsername(), organization.getName())
+                .setAttribute("pageRedirectUri", organization.getRedirectUrl())
+                .createInfoPage();
+    }
+
+    private Response confirmMembershipResponse(OrganizationModel organization, UserModel user, ActionTokenContext<InviteOrgActionToken> tokenContext, InviteOrgActionToken token) {
+        KeycloakSession session = tokenContext.getSession();
+        AuthenticationSessionModel authSession = tokenContext.getAuthenticationSession();
+        UriInfo uriInfo = tokenContext.getUriInfo();
+        String authSessionEncodedId = AuthenticationSessionCompoundId.fromAuthSession(authSession).getEncodedId();
+        token.setCompoundAuthenticationSessionId(authSessionEncodedId);
+        RealmModel realm = tokenContext.getRealm();
+        UriBuilder builder = Urls.actionTokenBuilder(uriInfo.getBaseUri(), token.serialize(session, realm, uriInfo),
+                authSession.getClient().getClientId(), authSession.getTabId(), AuthenticationProcessor.getClientData(session, authSession));
+        String confirmUri = builder.build(realm.getName()).toString();
+
+        return session.getProvider(LoginFormsProvider.class)
+                .setAuthenticationSession(authSession)
+                .setSuccess(Messages.CONFIRM_ORGANIZATION_MEMBERSHIP, organization.getName())
+                .setAttribute("messageHeader", Messages.CONFIRM_ORGANIZATION_MEMBERSHIP_TITLE)
+                .setAttribute(Constants.TEMPLATE_ATTR_ACTION_URI, confirmUri)
+                .setAttribute(OrganizationModel.ORGANIZATION_NAME_ATTRIBUTE, organization.getName())
+                .createInfoPage();
     }
 }

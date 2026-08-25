@@ -44,6 +44,7 @@ import org.keycloak.models.UserSessionModel;
 import org.keycloak.protocol.oidc.OIDCAdvancedConfigWrapper;
 import org.keycloak.protocol.oidc.TokenManager;
 import org.keycloak.protocol.oidc.utils.AuthorizeClientUtil;
+import org.keycloak.protocol.oidc.utils.ClientHostUtils;
 import org.keycloak.rar.AuthorizationRequestContext;
 import org.keycloak.representations.AccessToken;
 import org.keycloak.representations.AccessTokenResponse;
@@ -54,6 +55,7 @@ import org.keycloak.services.clientpolicy.ClientPolicyException;
 import org.keycloak.services.cors.Cors;
 import org.keycloak.services.util.AuthorizationContextUtil;
 import org.keycloak.services.util.MtlsHoKTokenUtil;
+import org.keycloak.sessions.RootAuthenticationSessionModel;
 import org.keycloak.util.TokenUtil;
 import org.keycloak.protocol.oidc.rar.AuthorizationDetailsProcessor;
 import org.keycloak.protocol.oidc.rar.AuthorizationDetailsResponse;
@@ -110,7 +112,7 @@ public abstract class OAuth2GrantTypeBase implements OAuth2GrantType {
     protected Response createTokenResponse(UserModel user, UserSessionModel userSession, ClientSessionContext clientSessionCtx,
         String scopeParam, boolean code, Function<TokenManager.AccessTokenResponseBuilder, ClientPolicyContext> clientPolicyContextGenerator) {
         clientSessionCtx.setAttribute(Constants.GRANT_TYPE, context.getGrantType());
-        AccessToken token = tokenManager.createClientAccessToken(session, realm, client, user, userSession, clientSessionCtx);
+        AccessToken token = tokenManager.createClientAccessToken(session, realm, client, user, userSession, clientSessionCtx, clientSessionCtx.isOfflineTokenRequested());
 
         TokenManager.AccessTokenResponseBuilder responseBuilder = tokenManager
             .responseBuilder(realm, client, event, session, userSession, clientSessionCtx).accessToken(token);
@@ -121,6 +123,13 @@ public abstract class OAuth2GrantTypeBase implements OAuth2GrantType {
                     && clientSessionCtx.getClientSession().getNote(AuthenticationProcessor.FIRST_OFFLINE_ACCESS) != null) {
                 // the online session can be removed if first created for offline access
                 session.sessions().removeUserSession(realm, userSession);
+                // also remove the root authentication session to prevent AUTH_SESSION_ID cookie reuse by a different user
+                // consistent with backchannel logout and logout endpoint which both clean up root auth sessions
+                logger.tracef("Removing root authentication session '%s' after first offline access", userSession.getId());
+                RootAuthenticationSessionModel rootAuthSession = session.authenticationSessions().getRootAuthenticationSession(realm, userSession.getId());
+                if (rootAuthSession != null) {
+                    session.authenticationSessions().removeRootAuthenticationSession(realm, rootAuthSession);
+                }
             }
         }
 
@@ -203,9 +212,21 @@ public abstract class OAuth2GrantTypeBase implements OAuth2GrantType {
                 clientSession.setNote(AdapterConstants.CLIENT_SESSION_STATE, adapterSessionId);
             }
 
-            String oldClientSessionHost = clientSession.getNote(AdapterConstants.CLIENT_SESSION_HOST);
-            if (!Objects.equals(adapterSessionHost, oldClientSessionHost)) {
-                clientSession.setNote(AdapterConstants.CLIENT_SESSION_HOST, adapterSessionHost);
+            if ((adapterSessionHost != null) && (!adapterSessionHost.trim().isEmpty())) {
+                // CVE-2026-4874 - client_session_host requires validation as an external field that is stored in client
+                // session and can be used to generate logout callback URL.
+                if (!ClientHostUtils.isHostAllowedForClient(adapterSessionHost, client, session)) {
+                    logger.warnf("Adapter Session '%s' not valid in ClientSession for client '%s'. Host is '%s' and has been removed.",
+                            adapterSessionId, client.getClientId(), adapterSessionHost);
+                    return;
+                }
+
+                String oldClientSessionHost = clientSession.getNote(AdapterConstants.CLIENT_SESSION_HOST);
+                if (!Objects.equals(adapterSessionHost, oldClientSessionHost)) {
+                    clientSession.setNote(AdapterConstants.CLIENT_SESSION_HOST, adapterSessionHost);
+                    logger.debugf("Adapter Session '%s' saved in ClientSession for client '%s'. Host is '%s'",
+                            adapterSessionId, client.getClientId(), adapterSessionHost);
+                }
             }
         }
     }

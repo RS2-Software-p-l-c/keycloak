@@ -71,6 +71,8 @@ import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.testsuite.admin.ApiUtil;
 import org.keycloak.testsuite.broker.KcOidcBrokerConfiguration;
 import org.keycloak.testsuite.organization.admin.AbstractOrganizationTest;
+import org.keycloak.testsuite.updaters.RealmAttributeUpdater;
+import org.keycloak.testsuite.util.ClientBuilder;
 import org.keycloak.testsuite.util.oauth.AccessTokenResponse;
 
 public class OrganizationOIDCProtocolMapperTest extends AbstractOrganizationTest {
@@ -270,14 +272,114 @@ public class OrganizationOIDCProtocolMapperTest extends AbstractOrganizationTest
         selectOrganizationPage.selectOrganization(orgB.getAlias());
         loginPage.login(memberPassword);
         AccessTokenResponse response = assertSuccessfulCodeGrant();
-        // for now, return the organization scope in the response and access token even though no organization is mapped into the token
-        // once we support the user to select an organization, the selected organization will be mapped
         assertThat(response.getScope(), containsString("organization"));
         AccessToken accessToken = oauth.verifyToken(response.getAccessToken());
         List<String> organizations = (List<String>) accessToken.getOtherClaims().get(OAuth2Constants.ORGANIZATION);
         assertThat(accessToken.getOtherClaims().keySet(), hasItem(OAuth2Constants.ORGANIZATION));
         assertThat(organizations.contains(orgA.getAlias()), is(false));
         assertThat(organizations.contains(orgB.getAlias()), is(true));
+
+        testRealm().users().get(member.getId()).logout();
+        loginPage.open(bc.consumerRealmName());
+        loginPage.loginUsername(member.getEmail());
+        selectOrganizationPage.assertCurrent();
+        assertTrue(selectOrganizationPage.isOrganizationButtonPresent(orgA.getAlias()));
+        assertTrue(selectOrganizationPage.isOrganizationButtonPresent(orgB.getAlias()));
+        orgB.setEnabled(false);
+        testRealm().organizations().get(orgB.getId()).update(orgB).close();
+        loginPage.open(bc.consumerRealmName());
+        loginPage.loginUsername(member.getEmail());
+        assertFalse(selectOrganizationPage.isCurrent());
+        loginPage.login(memberPassword);
+        response = assertSuccessfulCodeGrant();
+        assertThat(response.getScope(), containsString("organization"));
+        accessToken = oauth.verifyToken(response.getAccessToken());
+        organizations = (List<String>) accessToken.getOtherClaims().get(OAuth2Constants.ORGANIZATION);
+        assertThat(accessToken.getOtherClaims().keySet(), hasItem(OAuth2Constants.ORGANIZATION));
+        assertThat(organizations.contains(orgA.getAlias()), is(true));
+        assertThat(organizations.contains(orgB.getAlias()), is(false));
+    }
+
+    @Test
+    public void testOrganizationScopeSelectDisabledOrganization() {
+        OrganizationRepresentation orgA = createOrganization("orga", true);
+        MemberRepresentation member = addMember(testRealm().organizations().get(orgA.getId()), "member@" + orgA.getDomains().iterator().next().getName());
+        OrganizationRepresentation orgB = createOrganization("orgb", true);
+        testRealm().organizations().get(orgB.getId()).members().addMember(member.getId()).close();
+        oauth.client("broker-app", KcOidcBrokerConfiguration.CONSUMER_BROKER_APP_SECRET);
+        oauth.scope("organization");
+        loginPage.open(bc.consumerRealmName());
+        loginPage.loginUsername(member.getEmail());
+        assertTrue(selectOrganizationPage.isCurrent());
+        assertFalse(driver.getPageSource().contains("kc-select-try-another-way-form"));
+        assertTrue(selectOrganizationPage.isOrganizationButtonPresent(orgA.getAlias()));
+        assertTrue(selectOrganizationPage.isOrganizationButtonPresent(orgB.getAlias()));
+        selectOrganizationPage.selectOrganization(orgB.getAlias());
+        loginPage.login(memberPassword);
+        AccessTokenResponse response = assertSuccessfulCodeGrant();
+        assertThat(response.getScope(), containsString("organization"));
+        AccessToken accessToken = oauth.verifyToken(response.getAccessToken());
+        List<String> organizations = (List<String>) accessToken.getOtherClaims().get(OAuth2Constants.ORGANIZATION);
+        assertThat(accessToken.getOtherClaims().keySet(), hasItem(OAuth2Constants.ORGANIZATION));
+        assertThat(organizations.contains(orgA.getAlias()), is(false));
+        assertThat(organizations.contains(orgB.getAlias()), is(true));
+
+        testRealm().users().get(member.getId()).logout();
+        loginPage.open(bc.consumerRealmName());
+        loginPage.loginUsername(member.getEmail());
+        selectOrganizationPage.assertCurrent();
+        assertTrue(selectOrganizationPage.isOrganizationButtonPresent(orgA.getAlias()));
+        assertTrue(selectOrganizationPage.isOrganizationButtonPresent(orgB.getAlias()));
+        orgB.setEnabled(false);
+        testRealm().organizations().get(orgB.getId()).update(orgB).close();
+        loginPage.open(bc.consumerRealmName());
+        loginPage.loginUsername(member.getEmail());
+        assertFalse(selectOrganizationPage.isCurrent());
+        loginPage.login(memberPassword);
+        response = assertSuccessfulCodeGrant();
+        assertThat(response.getScope(), containsString("organization"));
+        accessToken = oauth.verifyToken(response.getAccessToken());
+        organizations = (List<String>) accessToken.getOtherClaims().get(OAuth2Constants.ORGANIZATION);
+        assertThat(accessToken.getOtherClaims().keySet(), hasItem(OAuth2Constants.ORGANIZATION));
+        assertThat(organizations.contains(orgA.getAlias()), is(true));
+        assertThat(organizations.contains(orgB.getAlias()), is(false));
+    }
+
+    @Test
+    public void testOrganizationScopeSpecifyDisabledOrganization() {
+        OrganizationRepresentation orgA = createOrganization("orga", true);
+        MemberRepresentation member = addMember(testRealm().organizations().get(orgA.getId()), "member@" + orgA.getDomains().iterator().next().getName());
+        OrganizationRepresentation orgB = createOrganization("orgb", true);
+        testRealm().organizations().get(orgB.getId()).members().addMember(member.getId()).close();
+        oauth.client("broker-app", KcOidcBrokerConfiguration.CONSUMER_BROKER_APP_SECRET);
+        oauth.scope("organization");
+        loginPage.open(bc.consumerRealmName());
+        loginPage.loginUsername(member.getEmail());
+        assertTrue(selectOrganizationPage.isCurrent());
+        assertFalse(driver.getPageSource().contains("kc-select-try-another-way-form"));
+        assertTrue(selectOrganizationPage.isOrganizationButtonPresent(orgA.getAlias()));
+        assertTrue(selectOrganizationPage.isOrganizationButtonPresent(orgB.getAlias()));
+        selectOrganizationPage.selectOrganization(orgB.getAlias());
+        loginPage.login(memberPassword);
+        AccessTokenResponse response = assertSuccessfulCodeGrant();
+        assertThat(response.getScope(), containsString("organization"));
+        AccessToken accessToken = oauth.verifyToken(response.getAccessToken());
+        List<String> organizations = (List<String>) accessToken.getOtherClaims().get(OAuth2Constants.ORGANIZATION);
+        assertThat(accessToken.getOtherClaims().keySet(), hasItem(OAuth2Constants.ORGANIZATION));
+        assertThat(organizations.contains(orgA.getAlias()), is(false));
+        assertThat(organizations.contains(orgB.getAlias()), is(true));
+
+        testRealm().users().get(member.getId()).logout();
+        loginPage.open(bc.consumerRealmName());
+        loginPage.loginUsername(member.getEmail());
+        selectOrganizationPage.assertCurrent();
+        assertTrue(selectOrganizationPage.isOrganizationButtonPresent(orgA.getAlias()));
+        assertTrue(selectOrganizationPage.isOrganizationButtonPresent(orgB.getAlias()));
+        orgB.setEnabled(false);
+        testRealm().organizations().get(orgB.getId()).update(orgB).close();
+        oauth.scope("organization:" + orgB.getAlias());
+        oauth.openLoginForm();
+        assertTrue(driver.getCurrentUrl().contains("Invalid+scopes%3A+openid+organization"));
     }
 
     @Test
@@ -670,6 +772,7 @@ public class OrganizationOIDCProtocolMapperTest extends AbstractOrganizationTest
         ClientRepresentation client = testRealm().clients().findByClientId("broker-app").get(0);
         client.setId(null);
         client.setClientId("broker-app2");
+        client.setProtocolMappers(null);
         testRealm().clients().create(client).close();
         // identity-first login will respect the organization provided in the scope even though the user email maps to a different organization
         oauth.client("broker-app", "broker-app-secret");
@@ -710,6 +813,7 @@ public class OrganizationOIDCProtocolMapperTest extends AbstractOrganizationTest
         ClientRepresentation client = testRealm().clients().findByClientId("broker-app").get(0);
         client.setId(null);
         client.setClientId("broker-app2");
+        client.setProtocolMappers(null);
         testRealm().clients().create(client).close();
         // identity-first login will respect the organization provided in the scope even though the user email maps to a different organization
         oauth.client("broker-app", "broker-app-secret");
@@ -739,6 +843,7 @@ public class OrganizationOIDCProtocolMapperTest extends AbstractOrganizationTest
         ClientRepresentation client = testRealm().clients().findByClientId("broker-app").get(0);
         client.setId(null);
         client.setClientId("broker-app2");
+        client.setProtocolMappers(null);
         testRealm().clients().create(client).close();
         // identity-first login will respect the organization provided in the scope even though the user email maps to a different organization
         oauth.client("broker-app", "broker-app-secret");
@@ -982,6 +1087,13 @@ public class OrganizationOIDCProtocolMapperTest extends AbstractOrganizationTest
         assertThat(organization, containsInAnyOrder("orga", "orgb"));
     }
 
+    private void assertResponseMissingOrganizationScopeAndClaims(AccessTokenResponse response) {
+        assertThat(response.getScope(), not(containsString("organization")));
+        AccessToken accessToken = oauth.verifyToken(response.getAccessToken());
+        assertThat(accessToken.getScope(), not(containsString("organization")));
+        assertThat(accessToken.getOtherClaims().keySet(), not(hasItem(OAuth2Constants.ORGANIZATION)));
+    }
+
     private AccessTokenResponse assertSuccessfulCodeGrant() {
         String code = oauth.parseLoginResponse().getCode();
         AccessTokenResponse response = oauth.doAccessTokenRequest(code);
@@ -1046,6 +1158,184 @@ public class OrganizationOIDCProtocolMapperTest extends AbstractOrganizationTest
         }
 
         orgScopeResource.getProtocolMappers().update(orgMapper.getId(), orgMapper);
+    }
+
+    @Test
+    public void testOrganizationClaimNotIssuedWhenOrganizationsDisabledCodeGrant() throws Exception {
+        OrganizationResource orgA = testRealm().organizations().get(createOrganization("orga").getId());
+        addMember(orgA);
+
+        // verify organization claim IS present when organizations are enabled (via password grant)
+        oauth.client("direct-grant", "password");
+        oauth.scope("openid organization:*");
+        AccessTokenResponse response = oauth.doPasswordGrantRequest(memberEmail, memberPassword);
+        assertThat(response.getStatusCode(), is(200));
+        AccessToken accessToken = TokenVerifier.create(response.getAccessToken(), AccessToken.class).getToken();
+        assertThat(accessToken.getOtherClaims().keySet(), hasItem(OAuth2Constants.ORGANIZATION));
+
+        // now disable organizations on the realm and test the code grant flow
+        // when organizations are disabled, the org authenticator skips (calls attempted()),
+        // so the standard username/password login form is shown
+        try (RealmAttributeUpdater rau = new RealmAttributeUpdater(testRealm())
+                .setOrganizationsEnabled(Boolean.FALSE)
+                .update()) {
+
+            oauth.client("broker-app", KcOidcBrokerConfiguration.CONSUMER_BROKER_APP_SECRET);
+            oauth.scope("organization:*");
+            loginPage.open(bc.consumerRealmName());
+            loginPage.login(memberEmail, memberPassword);
+
+            String code = oauth.parseLoginResponse().getCode();
+            response = oauth.doAccessTokenRequest(code);
+            assertThat(response.getStatusCode(), is(Status.OK.getStatusCode()));
+            assertResponseMissingOrganizationScopeAndClaims(response);
+        }
+    }
+
+    @Test
+    public void testOrganizationClaimNotIssuedWhenOrganizationsDisabledClientCredentials() throws Exception {
+        OrganizationRepresentation orgA = createOrganization("orga");
+
+        // create a client with service accounts enabled
+        ClientRepresentation serviceClient = ClientBuilder.create()
+                .clientId("service-account-org-test")
+                .secret("secret")
+                .serviceAccountsEnabled(true)
+                .build();
+        testRealm().clients().create(serviceClient).close();
+        ClientRepresentation createdClient = testRealm().clients().findByClientId("service-account-org-test").get(0);
+        getCleanup().addCleanup(() -> testRealm().clients().get(createdClient.getId()).remove());
+
+        // add the organization scope as optional client scope to the service account client
+        ClientScopeRepresentation orgScope = testRealm().clientScopes().findAll().stream()
+                .filter(s -> OIDCLoginProtocolFactory.ORGANIZATION.equals(s.getName()))
+                .findAny()
+                .orElseThrow();
+        testRealm().clients().get(createdClient.getId()).addOptionalClientScope(orgScope.getId());
+
+        // make the service account user a member of the organization
+        String serviceAccountUserId = testRealm().clients().get(createdClient.getId()).getServiceAccountUser().getId();
+        testRealm().organizations().get(orgA.getId()).members().addMember(serviceAccountUserId).close();
+
+        // first, verify organization claim IS present when organizations are enabled
+        oauth.client("service-account-org-test", "secret");
+        oauth.scope("openid organization:*");
+        AccessTokenResponse response = oauth.doClientCredentialsGrantAccessTokenRequest();
+        assertThat(response.getStatusCode(), is(200));
+        AccessToken accessToken = oauth.verifyToken(response.getAccessToken());
+        assertThat(accessToken.getOtherClaims().keySet(), hasItem(OAuth2Constants.ORGANIZATION));
+
+        // now disable organizations on the realm
+        try (RealmAttributeUpdater rau = new RealmAttributeUpdater(testRealm())
+                .setOrganizationsEnabled(Boolean.FALSE)
+                .update()) {
+
+            // attempt client credentials grant with organization scope — should not include organization claim
+            oauth.client("service-account-org-test", "secret");
+            oauth.scope("openid organization:*");
+            response = oauth.doClientCredentialsGrantAccessTokenRequest();
+            assertThat(response.getStatusCode(), is(200));
+            assertResponseMissingOrganizationScopeAndClaims(response);
+        }
+    }
+
+    @Test
+    public void testOrganizationClaimNotIssuedWhenOrganizationsDisabledPasswordGrant() throws Exception {
+        OrganizationResource orgA = testRealm().organizations().get(createOrganization("orga").getId());
+        addMember(orgA);
+
+        // verify organization claim IS present when organizations are enabled
+        oauth.client("direct-grant", "password");
+        oauth.scope("openid organization:*");
+        AccessTokenResponse response = oauth.doPasswordGrantRequest(memberEmail, memberPassword);
+        assertThat(response.getStatusCode(), is(200));
+        AccessToken accessToken = TokenVerifier.create(response.getAccessToken(), AccessToken.class).getToken();
+        assertThat(accessToken.getOtherClaims().keySet(), hasItem(OAuth2Constants.ORGANIZATION));
+
+        // now disable organizations on the realm
+        try (RealmAttributeUpdater rau = new RealmAttributeUpdater(testRealm())
+                .setOrganizationsEnabled(Boolean.FALSE)
+                .update()) {
+
+            // password grant with organization scope — should not include organization claim
+            oauth.client("direct-grant", "password");
+            oauth.scope("openid organization:*");
+            response = oauth.doPasswordGrantRequest(memberEmail, memberPassword);
+            assertThat(response.getStatusCode(), is(200));
+            assertResponseMissingOrganizationScopeAndClaims(response);
+        }
+    }
+
+    @Test
+    public void testOrganizationClaimNotIssuedOnRefreshWhenOrganizationsDisabled() throws Exception {
+        OrganizationResource orgA = testRealm().organizations().get(createOrganization("orga").getId());
+        addMember(orgA);
+
+        // get a token with organization claims while orgs are enabled
+        oauth.client("direct-grant", "password");
+        oauth.scope("openid organization:*");
+        AccessTokenResponse response = oauth.doPasswordGrantRequest(memberEmail, memberPassword);
+        assertThat(response.getStatusCode(), is(200));
+        assertThat(response.getRefreshToken(), notNullValue());
+        AccessToken accessToken = TokenVerifier.create(response.getAccessToken(), AccessToken.class).getToken();
+        assertThat(accessToken.getOtherClaims().keySet(), hasItem(OAuth2Constants.ORGANIZATION));
+
+        String refreshToken = response.getRefreshToken();
+
+        // disable organizations on the realm, then refresh the token
+        try (RealmAttributeUpdater rau = new RealmAttributeUpdater(testRealm())
+                .setOrganizationsEnabled(Boolean.FALSE)
+                .update()) {
+
+            // refresh should succeed but the new token should not contain organization claims
+            response = oauth.doRefreshTokenRequest(refreshToken);
+            assertThat(response.getStatusCode(), is(200));
+            assertResponseMissingOrganizationScopeAndClaims(response);
+        }
+    }
+
+    @Test
+    public void testOrganizationScopeFilteredButOtherScopesPreservedWhenOrganizationsDisabled() throws Exception {
+        OrganizationResource orgA = testRealm().organizations().get(createOrganization("orga").getId());
+        addMember(orgA);
+
+        // create a dedicated client with direct access grants and the "organization" optional scope
+        ClientRepresentation testClient = ClientBuilder.create()
+                .clientId("org-scope-test")
+                .secret("secret")
+                .directAccessGrants()
+                .build();
+        testRealm().clients().create(testClient).close();
+        ClientRepresentation createdClient = testRealm().clients().findByClientId("org-scope-test").get(0);
+        getCleanup().addCleanup(() -> testRealm().clients().get(createdClient.getId()).remove());
+
+        ClientScopeRepresentation orgScope = testRealm().clientScopes().findAll().stream()
+                .filter(s -> OIDCLoginProtocolFactory.ORGANIZATION.equals(s.getName()))
+                .findAny()
+                .orElseThrow();
+        testRealm().clients().get(createdClient.getId()).addOptionalClientScope(orgScope.getId());
+
+        // disable organizations on the realm
+        try (RealmAttributeUpdater rau = new RealmAttributeUpdater(testRealm())
+                .setOrganizationsEnabled(Boolean.FALSE)
+                .update()) {
+
+            // request the plain "organization" scope (ANY variant, resolved via allOptionalScopes)
+            // alongside other standard scopes
+            oauth.client("org-scope-test", "secret");
+            oauth.scope("openid email profile organization");
+            AccessTokenResponse response = oauth.doPasswordGrantRequest(memberEmail, memberPassword);
+            assertThat(response.getStatusCode(), is(200));
+
+            // organization scope should be stripped
+            assertThat(response.getScope(), not(containsString("organization")));
+            AccessToken accessToken = oauth.verifyToken(response.getAccessToken());
+            assertThat(accessToken.getOtherClaims().keySet(), not(hasItem(OAuth2Constants.ORGANIZATION)));
+
+            // but email and profile scopes should still be granted
+            assertThat(response.getScope(), containsString("email"));
+            assertThat(response.getScope(), containsString("profile"));
+        }
     }
 
     private void assertClaimNotMapped(String orgScope, OrganizationRepresentation orgARep, boolean grantScope) {

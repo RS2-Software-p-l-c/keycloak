@@ -64,6 +64,7 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserConsentModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.utils.ModelToRepresentation;
+import org.keycloak.organization.utils.Organizations;
 import org.keycloak.representations.account.ClientRepresentation;
 import org.keycloak.representations.account.ConsentRepresentation;
 import org.keycloak.representations.account.ConsentScopeRepresentation;
@@ -221,6 +222,9 @@ public class AccountRestService {
     @Path("/resources")
     public ResourcesService resources() {
         checkAccountApiEnabled();
+        if (!realm.isUserManagedAccessAllowed()) {
+            throw ErrorResponse.error("User-managed access not enabled", Response.Status.FORBIDDEN);
+        }
         auth.requireOneOf(AccountRoles.MANAGE_ACCOUNT, AccountRoles.VIEW_PROFILE);
         return new ResourcesService(session, user, auth, request);
     }
@@ -235,7 +239,7 @@ public class AccountRestService {
     @Path("/organizations")
     public OrganizationsResource organizations() {
         checkAccountApiEnabled();
-        if (!Profile.isFeatureEnabled(Feature.ORGANIZATION)) {
+        if (!Organizations.isEnabled(session)) {
             throw new NotFoundException();
         }
         auth.requireOneOf(AccountRoles.MANAGE_ACCOUNT, AccountRoles.VIEW_PROFILE);
@@ -495,7 +499,7 @@ public class AccountRestService {
 
     // TODO Logs
 
-    private static void checkAccountApiEnabled() {
+    public static void checkAccountApiEnabled() {
         if (!Profile.isFeatureEnabled(Profile.Feature.ACCOUNT_API)) {
             throw new NotFoundException();
         }

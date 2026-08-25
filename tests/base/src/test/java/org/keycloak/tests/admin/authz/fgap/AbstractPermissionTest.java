@@ -20,6 +20,7 @@ package org.keycloak.tests.admin.authz.fgap;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import jakarta.ws.rs.core.Response;
 
@@ -47,6 +48,7 @@ import org.keycloak.testframework.annotations.InjectRealm;
 import org.keycloak.testframework.injection.LifeCycle;
 import org.keycloak.testframework.realm.ManagedClient;
 import org.keycloak.testframework.realm.ManagedRealm;
+import org.keycloak.testframework.util.ApiUtil;
 
 public abstract class AbstractPermissionTest {
 
@@ -75,6 +77,11 @@ public abstract class AbstractPermissionTest {
     protected static void createPermission(ManagedClient client, ScopePermissionRepresentation permission, Response.Status expected) {
         try (Response response = getScopePermissionsResource(client).create(permission)) {
             assertEquals(expected.getStatusCode(), response.getStatus());
+            if (Response.Status.CREATED.equals(expected)) {
+                ScopePermissionRepresentation created = client.admin().authorization().permissions().scope().findByName(permission.getName());
+                assertNotNull(created);
+                permission.setId(created.getId());
+            }
         }
     }
 
@@ -218,5 +225,16 @@ public abstract class AbstractPermissionTest {
 
     protected ScopePermissionRepresentation createGroupPermission(GroupRepresentation group, Set<String> scopes, AbstractPolicyRepresentation... policies) {
         return createPermission(client, group.getId(), AdminPermissionsSchema.GROUPS_RESOURCE_TYPE, scopes, policies);
+    }
+
+    protected GroupRepresentation createGroup(String name) {
+        GroupRepresentation group = new GroupRepresentation();
+
+        group.setName(name);
+
+        try (Response response = realm.admin().groups().add(group)) {
+            group.setId(ApiUtil.getCreatedId(response));
+            return group;
+        }
     }
 }

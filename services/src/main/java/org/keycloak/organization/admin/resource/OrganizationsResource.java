@@ -230,6 +230,7 @@ public class OrganizationsResource {
             @PathParam("member-id") String memberId,
             @Parameter(description = "if false, return the full representation. Otherwise, only the basic fields are returned.")
             @QueryParam("briefRepresentation") @DefaultValue("true") boolean briefRepresentation) {
+        Organizations.checkEnabled(provider);
         return new OrganizationMemberResource(session, null, adminEvent, auth).getOrganizations(memberId, briefRepresentation);
     }
 }

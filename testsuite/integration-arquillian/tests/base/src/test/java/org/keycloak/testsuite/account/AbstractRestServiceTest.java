@@ -31,6 +31,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.keycloak.common.enums.AccountRestApiVersion;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.representations.account.SessionRepresentation;
 import org.keycloak.representations.idm.RealmRepresentation;
@@ -42,13 +43,16 @@ import org.keycloak.testsuite.util.ClientBuilder;
 import org.keycloak.testsuite.util.TokenUtil;
 import org.keycloak.testsuite.util.UserBuilder;
 
+import static org.hamcrest.CoreMatchers.containsString;
+import static org.hamcrest.MatcherAssert.assertThat;
+
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
  */
 public abstract class AbstractRestServiceTest extends AbstractTestRealmKeycloakTest {
 
     @Rule
-    public TokenUtil tokenUtil = new TokenUtil();
+    public TokenUtil tokenUtil = new TokenUtil("test-user@localhost", "password");
 
     @Rule
     public AssertEvents events = new AssertEvents(this);
@@ -133,6 +137,14 @@ public abstract class AbstractRestServiceTest extends AbstractTestRealmKeycloakT
     @Test
     @DisableFeature(value = ACCOUNT_API, skipRestart = true)
     public void testFeatureDoesntWorkWhenDisabled() {
+        checkIfFeatureWorks(false);
+    }
+
+    @Test
+    @DisableFeature(value = ACCOUNT_API, skipRestart = true)
+    public void testVersionedApiDoesntWorkWhenDisabled() {
+        apiVersion = AccountRestApiVersion.DEFAULT.getStrVersion();
+        assertThat(getAccountUrl(""), containsString(apiVersion));
         checkIfFeatureWorks(false);
     }
 

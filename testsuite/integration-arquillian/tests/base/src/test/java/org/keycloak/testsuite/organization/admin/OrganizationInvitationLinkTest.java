@@ -22,9 +22,12 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
 import static org.keycloak.services.messages.Messages.ORG_MEMBER_ALREADY;
 
 import java.io.IOException;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -37,6 +40,10 @@ import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import jakarta.ws.rs.core.Response;
 import java.time.Duration;
+
+import jakarta.ws.rs.core.UriBuilder;
+import org.apache.http.NameValuePair;
+import org.apache.http.client.utils.URLEncodedUtils;
 import org.hamcrest.Matchers;
 import org.jboss.arquillian.graphene.page.Page;
 import org.junit.Before;
@@ -45,6 +52,8 @@ import org.junit.Test;
 import org.keycloak.admin.client.resource.OrganizationResource;
 import org.keycloak.common.util.UriUtils;
 import org.keycloak.cookie.CookieType;
+import org.keycloak.jose.jws.JWSBuilder;
+import org.keycloak.jose.jws.JWSInput;
 import org.keycloak.models.AuthenticationExecutionModel;
 import org.keycloak.models.utils.DefaultAuthenticationFlows;
 import org.keycloak.representations.idm.AuthenticationExecutionRepresentation;
@@ -66,6 +75,7 @@ import org.keycloak.testsuite.util.MailUtils;
 import org.keycloak.testsuite.util.MailUtils.EmailBody;
 import org.keycloak.testsuite.util.oauth.OAuthClient;
 import org.keycloak.testsuite.util.UserBuilder;
+import org.keycloak.util.JsonSerialization;
 import org.openqa.selenium.By;
 
 public class OrganizationInvitationLinkTest extends AbstractOrganizationTest {
@@ -203,6 +213,41 @@ public class OrganizationInvitationLinkTest extends AbstractOrganizationTest {
         // authenticated to the account console
         Assert.assertTrue(driver.getPageSource().contains("Account Management"));
         Assert.assertNotNull(driver.manage().getCookieNamed(CookieType.IDENTITY.getName()));
+    }
+
+    @Test
+    public void testRegistrationUsingRegistrationEndpoint() throws Exception {
+        String email = "inviteduser@email";
+        String firstName = "Homer";
+        String lastName = "Simpson";
+
+        OrganizationResource organization = testRealm().organizations().get(createOrganization().getId());
+        organization.members().inviteUser(email, firstName, lastName).close();
+
+        URI link = URI.create(getInvitationLinkFromEmail());
+        NameValuePair tokenParam = URLEncodedUtils.parse(link, StandardCharsets.UTF_8).stream()
+                .filter((np) -> "token".equals(np.getName()))
+                .findAny().orElse(null);
+        assertThat(tokenParam, notNullValue());
+        JWSInput token = new JWSInput(tokenParam.getValue());
+        Map<String, String> tokenClaims = token.readJsonContent(Map.class);
+        tokenClaims.put("email", "myemail@some.org");
+        String modifiedToken = new JWSBuilder().content(JsonSerialization.writeValueAsString(tokenClaims).getBytes(StandardCharsets.UTF_8)).none();
+        modifiedToken = token.getEncodedHeader() + modifiedToken.substring(modifiedToken.indexOf('.'));
+        modifiedToken = modifiedToken + token.getEncodedSignature();
+
+        RealmRepresentation realm = testRealm().toRepresentation();
+        realm.setRegistrationAllowed(true);
+        testRealm().update(realm);
+        oauth.clientId("broker-app");
+        loginPage.open(realm.getRealm());
+        loginPage.clickRegister();
+        registerPage.assertCurrent();
+        String registerUrl = UriBuilder.fromUri(driver.getCurrentUrl())
+                .queryParam("token", modifiedToken)
+                .build().toString();
+        driver.navigate().to(registerUrl);
+        errorPage.assertCurrent();
     }
 
     @Test

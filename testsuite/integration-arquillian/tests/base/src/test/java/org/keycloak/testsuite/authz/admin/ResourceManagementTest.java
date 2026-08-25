@@ -174,7 +174,7 @@ public class ResourceManagementTest extends AbstractAuthorizationTest {
         permission.addResource(r1.getName());
         permission.addScope("GET");
 
-        getClientResource().authorization().permissions().scope().create(permission);
+        getClientResource().authorization().permissions().scope().create(permission).close();
 
         ResourceRepresentation r2 = new ResourceRepresentation();
 
@@ -190,7 +190,7 @@ public class ResourceManagementTest extends AbstractAuthorizationTest {
         permission.addResource(r2.getName());
         permission.addScope("GET");
 
-        getClientResource().authorization().permissions().scope().create(permission);
+        getClientResource().authorization().permissions().scope().create(permission).close();
 
         ResourceRepresentation rInstance = new ResourceRepresentation();
 
@@ -222,6 +222,8 @@ public class ResourceManagementTest extends AbstractAuthorizationTest {
         ResourceRepresentation newResource = createResource();
 
         try {
+            newResource.setId(null);
+            newResource.setOwner((ResourceOwnerRepresentation) null);
             doCreateResource(newResource);
             fail("Can not create resources with the same name and owner");
         } catch (Exception e) {
@@ -341,6 +343,22 @@ public class ResourceManagementTest extends AbstractAuthorizationTest {
         assertEquals(0, updated.getScopes().size());
     }
 
+    @Test
+    public void testFindResourceById() {
+        ResourceRepresentation resource = createResourceWithDefaultScopes();
+        resource.setId(null);
+        resource.setName("Another Resource");
+        resource.setOwner((String) null);
+        resource.setScopes(Set.of());
+        ResourceRepresentation anotherResource = doCreateResource(resource, findClientResource("another-resource-server-other").authorization().resources());
+
+        try {
+            getClientResource().authorization().resources().resource(anotherResource.getId()).toRepresentation();
+            fail("Should not find resource from another resource server");
+        } catch (NotFoundException ignore) {
+        }
+    }
+
     private ResourceRepresentation createResourceWithDefaultScopes() {
         ResourceRepresentation resource = createResource();
 
@@ -395,8 +413,10 @@ public class ResourceManagementTest extends AbstractAuthorizationTest {
     }
 
     protected ResourceRepresentation doCreateResource(ResourceRepresentation newResource) {
-        ResourcesResource resources = getClientResource().authorization().resources();
+        return doCreateResource(newResource, getClientResource().authorization().resources());
+    }
 
+    private ResourceRepresentation doCreateResource(ResourceRepresentation newResource, ResourcesResource resources) {
         try (Response response = resources.create(newResource)) {
 
             int status = response.getStatus();

@@ -50,6 +50,14 @@ public class ClusterConfigDistTest {
     }
 
     @Test
+    @Launch({ "start-dev", "--cache=ispn", "--cache-embedded-network-bind-address=127.0.0.2","--cache-embedded-network-bind-port=7802"})
+    void changeBindAddressAndPort(CLIResult result) {
+        result.assertClusteredCache();
+        result.assertMessage("physical addresses are `[127.0.0.2:7802]`");
+        result.assertMessage("ISPN000078: Starting JGroups channel `ISPN` with stack `jdbc-ping`");
+    }
+
+    @Test
     @Launch({ "start-dev", "--cache=ispn", "--cache-embedded-network-bind-address=127.0.0.1","--cache-embedded-network-bind-port=7801", "--cache-embedded-network-external-address=127.0.0.2", "--cache-embedded-network-external-port=7802"})
     void changeBindAndExternalAddress(CLIResult result) {
         result.assertClusteredCache();
@@ -207,6 +215,24 @@ public class ClusterConfigDistTest {
         result.assertNoMessage("JGroups Encryption enabled.");
         result.assertNoMessage("Starting JGroups certificate reload manager");
         result.assertNoMessage("Modifying the default cache configuration in the config file without setting cache-config-mutate=true is deprecated.");
+    }
+
+    @Test
+    @Launch({ "start-dev", "--cache=ispn", "--log-level=org.infinispan.remoting.transport.jgroups.JGroupsTransport:DEBUG" })
+    void testFD_SOCK2EnabledByDefault(CLIResult result) {
+        result.assertMessage(":FD_SOCK2");
+    }
+
+    @Test
+    @Launch({ "start-dev", "--cache=ispn", "--spi-cache-embedded--default--fd-sock-enabled=true", "--log-level=org.infinispan.remoting.transport.jgroups.JGroupsTransport:DEBUG" })
+    void testFD_SOCK2Enabled(CLIResult result) {
+        result.assertMessage(":FD_SOCK2");
+    }
+
+    @Test
+    @Launch({ "start-dev", "--cache=ispn", "--spi-cache-embedded--default--fd-sock-enabled=false", "--log-level=org.infinispan.remoting.transport.jgroups.JGroupsTransport:DEBUG" })
+    void testFD_SOCK2Disabled(CLIResult result) {
+        result.assertNoMessage(":FD_SOCK2");
     }
 
     public static class ConfigureCacheUsingAsyncEncryption implements Consumer<KeycloakDistribution> {

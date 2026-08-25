@@ -89,7 +89,7 @@ public class FederatedJWTClientAuthenticator extends AbstractClientAuthenticator
     }
 
     private ClientAssertionIdentityProvider getClientAssertionIdentityProvider(KeycloakSession session, IdentityProviderModel identityProviderModel) {
-        if (identityProviderModel == null) {
+        if (identityProviderModel == null || !identityProviderModel.isEnabled()) {
             return null;
         }
         IdentityProvider<?> identityProvider = IdentityBrokerService.getIdentityProvider(session, identityProviderModel);

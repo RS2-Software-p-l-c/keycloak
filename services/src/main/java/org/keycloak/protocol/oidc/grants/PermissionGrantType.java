@@ -17,10 +17,12 @@
 
 package org.keycloak.protocol.oidc.grants;
 
+import java.util.List;
+import java.util.Set;
+
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.Response;
 
-import java.util.List;
 
 import org.keycloak.OAuth2Constants;
 import org.keycloak.OAuthErrorException;
@@ -33,7 +35,6 @@ import org.keycloak.events.EventType;
 import org.keycloak.jose.jws.JWSInput;
 import org.keycloak.jose.jws.JWSInputException;
 import org.keycloak.models.ClientModel;
-import org.keycloak.models.KeycloakSession;
 import org.keycloak.representations.AccessToken;
 import org.keycloak.representations.AccessTokenResponse;
 import org.keycloak.representations.idm.authorization.AuthorizationRequest;
@@ -67,17 +68,15 @@ public class PermissionGrantType extends OAuth2GrantTypeBase {
             AccessToken accessToken = Tokens.getAccessToken(session);
 
             if (accessToken == null) {
-                try {
-                    // In case the access token is invalid because it's expired or the user is disabled, identify the client
-                    // from the access token anyway in order to set correct CORS headers.
-                    AccessToken invalidToken = new JWSInput(accessTokenString).readJsonContent(AccessToken.class);
-                    ClientModel client = realm.getClientByClientId(invalidToken.getIssuedFor());
-                    cors.allowedOrigins(session, client);
-                    event.client(client);
-                } catch (JWSInputException ignore) {
+                // This allows SPA clients to receive CORS headers on error responses (e.g. expired tokens, disabled users)
+                AccessToken signatureVerifiedToken = session.tokens().decode(accessTokenString, AccessToken.class);
+                if (signatureVerifiedToken != null) {
+                    ClientModel clientFromToken = realm.getClientByClientId(signatureVerifiedToken.getIssuedFor());
+                    cors.allowedOrigins(session, clientFromToken);
+                    event.client(clientFromToken);
                 }
                 event.error(Errors.INVALID_TOKEN);
-                throw new CorsErrorResponseException(cors, OAuthErrorException.INVALID_GRANT, "Invalid bearer token", Response.Status.UNAUTHORIZED);
+                throw new CorsErrorResponseException(cors, OAuthErrorException.INVALID_GRANT, "Invalid bearer token", Response.Status.BAD_REQUEST);
             }
 
             ClientModel client = realm.getClientByClientId(accessToken.getIssuedFor());
@@ -194,6 +193,11 @@ public class PermissionGrantType extends OAuth2GrantTypeBase {
     @Override
     public EventType getEventType() {
         return EventType.PERMISSION_TOKEN;
+    }
+
+    @Override
+    public Set<String> getTokenParameterNames() {
+        return Set.of("claim_token", "subject_token");
     }
 
 }

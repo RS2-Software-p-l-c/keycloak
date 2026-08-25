@@ -31,7 +31,7 @@
     </description>
     <groupId>org.keycloak</groupId>
     <artifactId>keycloak-parent</artifactId>
-    <version>26.4.7</version>
+    <version>26.4.15</version>
     <packaging>pom</packaging>
 
     <properties>
@@ -41,12 +41,12 @@
         <maven.compiler.target>17</maven.compiler.target>
         <maven.compiler.release>17</maven.compiler.release>
 
-        <project.version.npm>26.4.7</project.version.npm>
+        <project.version.npm>26.4.15</project.version.npm>
 
         <asciidoctor.plugin.version>1.5.8</asciidoctor.plugin.version>
 
-        <quarkus.version>3.27.1</quarkus.version>
-        <quarkus.build.version>3.27.1</quarkus.build.version>
+        <quarkus.version>3.27.5.1</quarkus.version>
+        <quarkus.build.version>3.27.5.1</quarkus.build.version>
         <jboss-logging-annotations.version>3.0.4.Final</jboss-logging-annotations.version> <!-- keep in sync with the version used by quarkus -->
 
         <project.build-time>${timestamp}</project.build-time>
@@ -110,7 +110,7 @@
         <log4j2-api.version>2.25.1</log4j2-api.version> <!-- Odd name needs to align with Quarkus -->
         <resteasy.version>6.2.12.Final</resteasy.version>
         <resteasy.undertow.version>${resteasy.version}</resteasy.undertow.version>
-        <owasp.html.sanitizer.version>20240325.1</owasp.html.sanitizer.version>
+        <owasp.html.sanitizer.version>20260101.1</owasp.html.sanitizer.version>
         <slf4j.version>2.0.6</slf4j.version>
         <sun.istack.version>3.0.10</sun.istack.version>
         <sun.saaj.version>2.0.1</sun.saaj.version>
@@ -161,7 +161,7 @@
         <postgresql.container>mirror.gcr.io/postgres:${postgresql.version}</postgresql.container>
         <aurora-postgresql.version>17.5</aurora-postgresql.version>
         <aws-jdbc-wrapper.version>2.5.6</aws-jdbc-wrapper.version>
-        <postgresql-jdbc.version>42.7.7</postgresql-jdbc.version>
+        <postgresql-jdbc.version>42.7.13</postgresql-jdbc.version>
         <mariadb.version>11.8</mariadb.version>
         <mariadb.container>mirror.gcr.io/mariadb:${mariadb.version}</mariadb.container>
         <mariadb-jdbc.version>3.5.6</mariadb-jdbc.version>
@@ -201,7 +201,7 @@
         <central.publishing.plugin.version>0.7.0</central.publishing.plugin.version>
         <nexus3.staging.plugin.version>1.0.7</nexus3.staging.plugin.version>
         <frontend.plugin.version>1.15.0</frontend.plugin.version>
-        <docker.maven.plugin.version>0.40.3</docker.maven.plugin.version>
+        <docker.maven.plugin.version>0.48.1</docker.maven.plugin.version>
         <verifier.plugin.version>1.1</verifier.plugin.version>
         <shade.plugin.version>3.4.1</shade.plugin.version>
         <smallrye.openapi.generator.plugin.version>3.6.2</smallrye.openapi.generator.plugin.version>

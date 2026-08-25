@@ -21,7 +21,7 @@
     <parent>
         <artifactId>keycloak-tests-parent</artifactId>
         <groupId>org.keycloak.tests</groupId>
-        <version>26.4.7</version>
+        <version>26.4.15</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
@@ -116,6 +116,11 @@
         <dependency>
             <groupId>org.keycloak.tests</groupId>
             <artifactId>keycloak-tests-custom-scripts</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.keycloak</groupId>
+            <artifactId>keycloak-client-registration-api</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>

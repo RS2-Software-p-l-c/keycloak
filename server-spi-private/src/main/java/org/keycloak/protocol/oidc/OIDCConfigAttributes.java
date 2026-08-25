@@ -93,6 +93,15 @@ public final class OIDCConfigAttributes {
     public static final String STANDARD_TOKEN_EXCHANGE_ENABLED = "standard.token.exchange.enabled";
     public static final String STANDARD_TOKEN_EXCHANGE_REFRESH_ENABLED = "standard.token.exchange.enableRefreshRequestedTokenType";
 
+    public static final String LOGO_URI = "logoUri";
+    public static final String TOS_URI = "tosUri";
+    public static final String POLICY_URI = "policyUri";
+    public static final String SECTOR_IDENTIFIER_URI = "sectorIdentifierUri";
+
+    public static final String ALLOW_TOKEN_INTROSPECTION_WITHOUT_AUDIENCE_CHECK = "allow.token.introspection.without.audience.check";
+
+    public static final String ALLOW_USERINFO_WITH_LIGHTWEIGHT_ACCESS_TOKEN = "allow.userinfo.with.lightweight.access.token";
+
     private OIDCConfigAttributes() {
     }
 

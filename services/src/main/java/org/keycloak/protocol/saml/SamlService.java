@@ -108,6 +108,7 @@ import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.sessions.CommonClientSessionModel;
 import org.keycloak.timer.ScheduledTask;
 import org.keycloak.transaction.AsyncResponseTransaction;
+import org.keycloak.utils.KeycloakSessionUtil;
 import org.keycloak.utils.MediaType;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -159,10 +160,12 @@ public class SamlService extends AuthorizationEndpointBase {
     public static final String ARTIFACT_RESOLUTION_SERVICE_PATH = "resolve";
 
     private final DestinationValidator destinationValidator;
+    private final long maxInflatingSize;
 
-    public SamlService(KeycloakSession session, EventBuilder event, DestinationValidator destinationValidator) {
+    public SamlService(KeycloakSession session, EventBuilder event, long maxInflatingSize, DestinationValidator destinationValidator) {
         super(session, event);
         this.destinationValidator = destinationValidator;
+        this.maxInflatingSize = maxInflatingSize;
     }
 
     public abstract class BindingProtocol {
@@ -204,7 +207,7 @@ public class SamlService extends AuthorizationEndpointBase {
             event.event(EventType.LOGOUT);
             SAMLDocumentHolder holder = extractResponseDocument(samlResponse);
 
-            if (! (holder.getSamlObject() instanceof StatusResponseType)) {
+            if (holder == null || !(holder.getSamlObject() instanceof StatusResponseType)) {
                 event.detail(Details.REASON, Errors.INVALID_SAML_RESPONSE);
                 event.error(Errors.INVALID_SAML_RESPONSE);
                 return error(session, null, Response.Status.BAD_REQUEST, Messages.INVALID_REQUEST);
@@ -413,6 +416,8 @@ public class SamlService extends AuthorizationEndpointBase {
                 logger.tracef("ArtifactResolutionRunnable scheduled, current transaction will be rolled back");
                 // Current transaction must be ignored due to asyncResponse.
                 session.getTransactionManager().rollback();
+                // Remove the thread local - this thread will be returned, but KeycloakBeanProducer will only fire after the response is resumed.
+                KeycloakSessionUtil.setKeycloakSession(null);
             } catch (URISyntaxException | ProcessingException | ParsingException | ConfigurationException e) {
                 event.event(EventType.LOGIN);
                 event.detail(Details.REASON, e.getMessage());
@@ -848,12 +853,12 @@ public class SamlService extends AuthorizationEndpointBase {
 
         @Override
         protected SAMLDocumentHolder extractRequestDocument(String samlRequest) {
-            return SAMLRequestParser.parseRequestRedirectBinding(samlRequest);
+            return SAMLRequestParser.parseRequestRedirectBinding(samlRequest, maxInflatingSize);
         }
 
         @Override
         protected SAMLDocumentHolder extractResponseDocument(String response) {
-            return SAMLRequestParser.parseResponseRedirectBinding(response);
+            return SAMLRequestParser.parseResponseRedirectBinding(response, maxInflatingSize);
         }
 
         @Override
@@ -1120,7 +1125,7 @@ public class SamlService extends AuthorizationEndpointBase {
     @NoCache
     @Consumes({"application/soap+xml",MediaType.TEXT_XML})
     public Response soapBinding(InputStream inputStream) {
-        SamlEcpProfileService bindingService = new SamlEcpProfileService(session, event, destinationValidator);
+        SamlEcpProfileService bindingService = new SamlEcpProfileService(session, event, maxInflatingSize, destinationValidator);
 
         return bindingService.authenticate(inputStream);
     }

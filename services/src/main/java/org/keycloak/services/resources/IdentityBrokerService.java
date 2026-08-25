@@ -126,11 +126,6 @@ import java.util.stream.Stream;
 
 import static org.keycloak.broker.provider.AbstractIdentityProvider.BROKER_REGISTERED_NEW_USER;
 
-/**
- * <p></p>
- *
- * @author Pedro Igor
- */
 public class IdentityBrokerService implements IdentityProvider.AuthenticationCallback {
 
     // Authentication session note, which references identity provider that is currently linked
@@ -298,7 +293,7 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
         }
 
 
-        IdentityProviderModel identityProviderModel = session.identityProviders().getByAlias(providerAlias);
+        IdentityProviderModel identityProviderModel = getIdentityProviderModel(session, providerAlias);
         if (identityProviderModel == null) {
             event.error(Errors.UNKNOWN_IDENTITY_PROVIDER);
             UriBuilder builder = UriBuilder.fromUri(redirectUri)
@@ -336,6 +331,16 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
         event.success();
 
         return performClientInitiatedAccountLogin(providerAlias, clientSessionCode);
+    }
+
+    private static IdentityProviderModel getIdentityProviderModel(KeycloakSession session, String providerAlias) {
+        IdentityProviderModel model = session.identityProviders().getByAlias(providerAlias);
+
+        if (model == null || !model.isEnabled()) {
+            throw new IdentityBrokerException("Identity Provider [" + providerAlias + "] not found.");
+        }
+
+        return model;
     }
 
     public Response performClientInitiatedAccountLogin(String providerAlias, ClientSessionCode<AuthenticationSessionModel> clientSessionCode) {
@@ -391,7 +396,7 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
 
             ClientSessionCode<AuthenticationSessionModel> clientSessionCode = new ClientSessionCode<>(session, realmModel, authSession);
             clientSessionCode.setAction(AuthenticationSessionModel.Action.AUTHENTICATE.name());
-            IdentityProviderModel identityProviderModel = session.identityProviders().getByAlias(providerAlias);
+            IdentityProviderModel identityProviderModel = getIdentityProviderModel(session, providerAlias);
             if (identityProviderModel == null) {
                 throw new IdentityBrokerException("Identity Provider [" + providerAlias + "] not found.");
             }
@@ -560,6 +565,12 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
             context.setToken(null);
         }
 
+        ClientModel client = authenticationSession.getClient();
+
+        if (!client.isEnabled()) {
+            return redirectToErrorPage(Status.BAD_REQUEST, Messages.CLIENT_NOT_FOUND, null, providerAlias);
+        }
+
         StatusResponseType loginResponse = (StatusResponseType) context.getContextData().get(SAMLEndpoint.SAML_LOGIN_RESPONSE);
         if (loginResponse != null) {
             for(Iterator<SamlAuthenticationPreprocessor> it = SamlSessionUtils.getSamlAuthenticationPreprocessorIterator(session); it.hasNext();) {
@@ -567,7 +578,7 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
             }
         }
 
-        session.getContext().setClient(authenticationSession.getClient());
+        session.getContext().setClient(client);
 
         context.getIdp().preprocessFederatedIdentity(session, realmModel, context);
         KeycloakSessionFactory sessionFactory = session.getKeycloakSessionFactory();
@@ -598,6 +609,11 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
         // Check if linking was requested (for example by kc_action) or if we're authenticating
         if (isDoingAccountLinking(authenticationSession, true, providerAlias)) {
             return performAccountLinking(authenticationSession, context, federatedIdentityModel, federatedUser);
+        }
+
+        if (identityProviderConfig.isLinkOnly()) {
+            event.error(Errors.NOT_ALLOWED);
+            return redirectToErrorPage(authenticationSession, Response.Status.BAD_REQUEST, Messages.COULD_NOT_SEND_AUTHENTICATION_REQUEST, providerAlias);
         }
 
         if (federatedUser == null) {
@@ -649,7 +665,7 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
             ctx.saveToAuthenticationSession(authenticationSession, AbstractIdpAuthenticator.BROKERED_CONTEXT_NOTE);
 
             URI redirect = LoginActionsService.firstBrokerLoginProcessor(session.getContext().getUri())
-                    .queryParam(Constants.CLIENT_ID, authenticationSession.getClient().getClientId())
+                    .queryParam(Constants.CLIENT_ID, client.getClientId())
                     .queryParam(Constants.TAB_ID, authenticationSession.getTabId())
                     .queryParam(Constants.CLIENT_DATA, AuthenticationProcessor.getClientData(session, authenticationSession))
                     .build(realmModel.getName());
@@ -1343,7 +1359,7 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
     }
 
     public static IdentityProvider<?> getIdentityProvider(KeycloakSession session, String alias) {
-        IdentityProviderModel identityProviderModel = session.identityProviders().getByAlias(alias);
+        IdentityProviderModel identityProviderModel = getIdentityProviderModel(session, alias);
         IdentityProvider<?> identityProvider = getIdentityProvider(session, identityProviderModel);
         if (identityProvider == null) {
             throw new IdentityBrokerException("Identity Provider [" + alias + "] not found.");
@@ -1373,7 +1389,7 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
     }
 
     private IdentityProviderModel getIdentityProviderConfig(String providerAlias) {
-        IdentityProviderModel model = session.identityProviders().getByAlias(providerAlias);
+        IdentityProviderModel model = getIdentityProviderModel(session, providerAlias);
         if (model == null) {
             throw new IdentityBrokerException("Configuration for identity provider [" + providerAlias + "] not found.");
         }

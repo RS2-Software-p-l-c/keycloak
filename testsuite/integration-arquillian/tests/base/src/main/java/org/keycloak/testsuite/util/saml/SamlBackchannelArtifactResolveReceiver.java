@@ -39,6 +39,7 @@ public class SamlBackchannelArtifactResolveReceiver implements AutoCloseable {
     private final ClientRepresentation samlClient;
     private final PublicKey publicKey;
     private final PrivateKey privateKey;
+    private String inResponseTo;
 
     public SamlBackchannelArtifactResolveReceiver(int port, ClientRepresentation samlClient, String publicKeyStr, String privateKeyStr) {
         this.samlClient = samlClient;
@@ -73,6 +74,10 @@ public class SamlBackchannelArtifactResolveReceiver implements AutoCloseable {
         return artifactResolve;
     }
 
+    public void setInResponseTo(String inResponseTo) {
+        this.inResponseTo = inResponseTo;
+    }
+
     @Override
     public void close() throws Exception {
         server.stop(0);
@@ -98,7 +103,10 @@ public class SamlBackchannelArtifactResolveReceiver implements AutoCloseable {
                 ResponseType loginResponse = loginResponseBuilder
                         .issuer(samlClient.getClientId())
                         .requestIssuer(artifactResolve.getIssuer().getValue())
-                        .requestID(artifactResolve.getID())
+                        .requestID(inResponseTo)
+                        .assertionExpiration(60)
+                        .subjectExpiration(60)
+                        .sessionExpiration(60)
                         .buildModel();
 
                 Document loginResponseBuilderAsDoc = loginResponseBuilder.buildDocument(loginResponse);

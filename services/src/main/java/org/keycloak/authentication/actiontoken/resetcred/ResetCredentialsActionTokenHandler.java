@@ -18,10 +18,13 @@ package org.keycloak.authentication.actiontoken.resetcred;
 
 import jakarta.ws.rs.core.Response;
 
+import org.keycloak.TokenVerifier;
 import org.keycloak.TokenVerifier.Predicate;
 import org.keycloak.authentication.AuthenticationProcessor;
 import org.keycloak.authentication.actiontoken.AbstractActionTokenHandler;
 import org.keycloak.authentication.actiontoken.ActionTokenContext;
+import org.keycloak.authentication.actiontoken.DefaultActionToken;
+import org.keycloak.authentication.actiontoken.ExplainedTokenVerificationException;
 import org.keycloak.authentication.actiontoken.TokenUtils;
 import org.keycloak.authentication.authenticators.broker.AbstractIdpAuthenticator;
 import org.keycloak.authentication.authenticators.broker.util.SerializedBrokeredIdentityContext;
@@ -31,9 +34,11 @@ import org.keycloak.models.UserModel;
 import org.keycloak.services.messages.Messages;
 import org.keycloak.services.resources.LoginActionsService;
 import org.keycloak.services.resources.LoginActionsServiceChecks.IsActionRequired;
+import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.sessions.CommonClientSessionModel.Action;
 
 import static org.keycloak.services.resources.LoginActionsService.RESET_CREDENTIALS_PATH;
+import static org.keycloak.services.resources.admin.UserResource.LATEST_RESET_PASSWORD_TOKEN;
 
 /**
  *
@@ -59,6 +64,8 @@ public class ResetCredentialsActionTokenHandler extends AbstractActionTokenHandl
 
             verifyEmail(tokenContext),
 
+            verifyLatestToken(tokenContext),
+
             new IsActionRequired(tokenContext, Action.AUTHENTICATE)
         );
     }
@@ -79,6 +86,32 @@ public class ResetCredentialsActionTokenHandler extends AbstractActionTokenHandl
     @Override
     public boolean canUseTokenRepeatedly(ResetCredentialsActionToken token, ActionTokenContext tokenContext) {
         return false;
+    }
+
+    /**
+     * Checks if for this user the current token is the latest token to be used to reset the password.
+     * If no, the token is set as expired.
+     *
+     * @param tokenContext  The current token.
+     * @return              true if the current token is the latest token to be used to reset the password.
+     */
+    private TokenVerifier.Predicate<DefaultActionToken> verifyLatestToken(ActionTokenContext<ResetCredentialsActionToken> tokenContext) {
+        return token -> {
+            AuthenticationSessionModel authSession = tokenContext.getAuthenticationSession();
+
+            if (authSession == null || authSession.getAuthenticatedUser() == null) {
+                throw new ExplainedTokenVerificationException(token, Errors.INVALID_TOKEN, Messages.INVALID_USER);
+            }
+
+            String latestToken = authSession.getAuthenticatedUser().getFirstAttribute(LATEST_RESET_PASSWORD_TOKEN);
+            String currentToken = token.serializeKey();
+
+            if (latestToken != null && !latestToken.equals(currentToken)) {
+                throw new ExplainedTokenVerificationException(token, Errors.EXPIRED_CODE, Messages.EXPIRED_ACTION);
+            }
+
+            return true;
+        };
     }
 
     public static class ResetCredsAuthenticationProcessor extends AuthenticationProcessor {

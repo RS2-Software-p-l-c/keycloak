@@ -63,6 +63,7 @@ import org.keycloak.saml.processing.core.parsers.saml.SAMLParser;
 import org.keycloak.saml.processing.core.parsers.util.SAMLParserUtil;
 import org.keycloak.saml.processing.core.saml.v2.common.SAMLDocumentHolder;
 import org.keycloak.saml.processing.core.saml.v2.writers.SAMLAssertionWriter;
+import org.keycloak.models.KeycloakSession;
 import org.keycloak.saml.processing.core.util.JAXPValidationUtil;
 import org.keycloak.saml.processing.core.util.XMLEncryptionUtil;
 import org.keycloak.saml.processing.core.util.XMLSignatureUtil;
@@ -620,6 +621,19 @@ public class AssertionUtil {
      * @return the assertion element as it was decrypted. This can be used in signature verification.
      */
     public static Element decryptAssertion(ResponseType responseType, XMLEncryptionUtil.DecryptionKeyLocator decryptionKeyLocator) throws ParsingException, ProcessingException, ConfigurationException {
+        return decryptAssertion(responseType, decryptionKeyLocator, null);
+    }
+    /**
+     * This method modifies the given responseType, and replaces the encrypted assertion with a decrypted version.
+     * When a {@link KeycloakSession} is provided, it uses the configured SamlDecryptionProvider for key unwrapping.
+     *
+     * @param responseType a response containing an encrypted assertion
+     * @param decryptionKeyLocator locator of keys suitable for decrypting encrypted element (used as fallback)
+     * @param session optional KeycloakSession for SPI-based decryption (may be null)
+     *
+     * @return the assertion element as it was decrypted. This can be used in signature verification.
+     */
+    public static Element decryptAssertion(ResponseType responseType, XMLEncryptionUtil.DecryptionKeyLocator decryptionKeyLocator, KeycloakSession session) throws ParsingException, ProcessingException, ConfigurationException {
         List<ResponseType.RTChoiceType> assertions = responseType.getAssertions();
         if (assertions.isEmpty()) {
             throw new ProcessingException("No encrypted assertion found.");
@@ -636,7 +650,7 @@ public class AssertionUtil {
         Node importedNode = newDoc.importNode(enc, true);
         newDoc.appendChild(importedNode);
 
-        Element decryptedDocumentElement = XMLEncryptionUtil.decryptElementInDocument(newDoc, decryptionKeyLocator);
+        Element decryptedDocumentElement = XMLEncryptionUtil.decryptElementInDocument(newDoc, decryptionKeyLocator, session);
         SAMLParser parser = SAMLParser.getInstance();
 
         JAXPValidationUtil.checkSchemaValidation(decryptedDocumentElement);
@@ -661,6 +675,19 @@ public class AssertionUtil {
      *
      */
     public static void decryptId(final ResponseType responseType, XMLEncryptionUtil.DecryptionKeyLocator decryptionKeyLocator) throws ConfigurationException, ProcessingException, ParsingException {
+        decryptId(responseType, decryptionKeyLocator, null);
+    }
+
+    /**
+     * This method modifies the given responseType, and replaces the encrypted id with a decrypted version.
+     * When a {@link KeycloakSession} is provided, it uses the configured SamlDecryptionProvider for key unwrapping.
+     *
+     * @param responseType a response containing an encrypted id
+     * @param decryptionKeyLocator locator of keys suitable for decrypting encrypted element (used as fallback)
+     * @param session optional KeycloakSession for SPI-based decryption (may be null)
+     *
+     */
+    public static void decryptId(final ResponseType responseType, XMLEncryptionUtil.DecryptionKeyLocator decryptionKeyLocator, KeycloakSession session) throws ConfigurationException, ProcessingException, ParsingException {
         final STSubType subTypeElement = getSubTypeElement(responseType);
         if(subTypeElement == null) {
             return;
@@ -673,7 +700,7 @@ public class AssertionUtil {
         Document newDoc = DocumentUtil.createDocument();
         Node importedNode = newDoc.importNode(encryptedElement, true);
         newDoc.appendChild(importedNode);
-        Element decryptedNameIdElement = XMLEncryptionUtil.decryptElementInDocument(newDoc, decryptionKeyLocator);
+        Element decryptedNameIdElement = XMLEncryptionUtil.decryptElementInDocument(newDoc, decryptionKeyLocator, session);
 
         final XMLEventReader xmlEventReader = StaxParserUtil.getXMLEventReader(DocumentUtil.getNodeAsStream(decryptedNameIdElement));
         NameIDType nameIDType = SAMLParserUtil.parseNameIDType(xmlEventReader);

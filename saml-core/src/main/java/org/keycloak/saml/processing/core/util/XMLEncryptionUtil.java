@@ -20,17 +20,22 @@ import java.security.Key;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.util.List;
+import java.util.Objects;
 import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
 import javax.xml.XMLConstants;
 import javax.xml.crypto.dsig.XMLSignature;
 import javax.xml.namespace.QName;
 
+import org.keycloak.saml.processing.core.saml.v2.util.DecryptionException;
 import org.keycloak.saml.common.PicketLinkLogger;
 import org.keycloak.saml.common.PicketLinkLoggerFactory;
 import org.keycloak.saml.common.exceptions.ProcessingException;
 import org.keycloak.saml.common.util.DocumentUtil;
 import org.keycloak.saml.common.util.StringUtil;
+import org.keycloak.models.KeycloakSession;
 
+import org.apache.commons.codec.binary.Base64;
 import org.apache.xml.security.algorithms.JCEMapper;
 import org.apache.xml.security.encryption.EncryptedData;
 import org.apache.xml.security.encryption.EncryptedKey;
@@ -74,7 +79,14 @@ public class XMLEncryptionUtil {
 
     public static final String DS_KEY_INFO = "ds:KeyInfo";
 
-    private static final String RSA_ENCRYPTION_SCHEME = XMLCipher.RSA_OAEP_11;
+    // RSA-OAEP-11 (SHA-256 digest + MGF1-SHA256) rather than the legacy rsa-oaep-mgf1p scheme.
+    // The legacy URI implies SHA-1/MGF1-SHA1, but the key was wrapped with a SHA-256 digest; with
+    // xmlsec 3.x the DigestMethod no longer round-trips for the mgf1p URI, so decryption defaulted
+    // to SHA-1 and failed with a padding error. RSA-OAEP-11 states the digest and MGF explicitly,
+    // so the wrap and unwrap parameters always agree.
+    private static final String RSA_ENCRYPTION_SCHEME = Objects.equals(System.getProperty("keycloak.saml.key_trans.rsa_v1.5"), "true")
+            ? XMLCipher.RSA_v1dot5
+            : XMLCipher.RSA_OAEP_11;
 
     /**
      * <p>
@@ -281,7 +293,28 @@ public class XMLEncryptionUtil {
      * @throws ProcessingException when decrypting was not successful
      */
     public static Element decryptElementInDocument(Document documentWithEncryptedElement, DecryptionKeyLocator decryptionKeyLocator)
-            throws ProcessingException {
+            throws DecryptionException {
+        return decryptElementInDocument(documentWithEncryptedElement, decryptionKeyLocator, null);
+    }
+
+    /**
+     * Decrypts an encrypted element inside a document. When a {@link KeycloakSession} is provided,
+     * it attempts to use the configured {@link SamlDecryptionProvider} for key unwrapping.
+     * If no provider is available or no session is provided, it falls back to the legacy
+     * {@link DecryptionKeyLocator} behavior.
+     *
+     * @param documentWithEncryptedElement document containing encrypted element
+     * @param decryptionKeyLocator decryption key locator (used as fallback)
+     * @param session optional KeycloakSession for SPI-based decryption (may be null)
+     *
+     * @return the document with the encrypted element replaced by the data element
+     *
+     * @throws DecryptionException when decrypting was not successful
+     */
+    public static Element decryptElementInDocument(Document documentWithEncryptedElement,
+                                                   DecryptionKeyLocator decryptionKeyLocator,
+                                                   KeycloakSession session)
+            throws DecryptionException {
         if (documentWithEncryptedElement == null)
             throw logger.nullArgumentError("Input document is null");
 
@@ -310,7 +343,7 @@ public class XMLEncryptionUtil {
                 encryptedData.getKeyInfo().add(encryptedKey);
             }
         } catch (XMLSecurityException e1) {
-            throw logger.processingError(e1);
+            throw new DecryptionException(e1);
         }
 
         Document decryptedDoc = null;
@@ -318,32 +351,66 @@ public class XMLEncryptionUtil {
         if (encryptedData != null && encryptedKey != null) {
             boolean success = false;
             final Exception enclosingThrowable = new RuntimeException("Cannot decrypt element in document");
-            List<PrivateKey> encryptionKeys;
-            encryptionKeys = decryptionKeyLocator.getKeys(encryptedData);
 
-            if (encryptionKeys == null || encryptionKeys.isEmpty()) {
-                throw logger.nullValueError("Key for EncryptedData not found.");
+            try {
+                // Attempt SPI-based decryption when session is available
+                if (session != null) {
+                    // Populate session with decryption keys from the locator so the
+                    // DefaultSamlDecryptionProviderFactory can access them.
+                    // Custom providers (e.g., KMS-backed) may ignore these attributes.
+                    List<PrivateKey> locatedKeys = decryptionKeyLocator.getKeys(encryptedData);
+                    if (locatedKeys != null && !locatedKeys.isEmpty()) {
+                        session.setAttribute("saml.decryption.keys", locatedKeys);
+                    }
+
+                    SamlDecryptionProvider provider = session.getProvider(SamlDecryptionProvider.class);
+                    if (provider != null) {
+                        String algorithm = encryptedKey.getEncryptionMethod().getAlgorithm();
+                        String digestAlgorithm = encryptedKey.getEncryptionMethod().getDigestAlgorithm();
+                        String mgfAlgorithm = encryptedKey.getEncryptionMethod().getMGFAlgorithm();
+
+                        byte[] encryptedBytes = Base64.decodeBase64(
+                                encryptedKey.getCipherData().getCipherValue().getValue());
+                        byte[] decryptedKeyBytes = provider.unwrapKey(algorithm, encryptedBytes, digestAlgorithm, mgfAlgorithm);
+
+                        SecretKeySpec secretKey = new SecretKeySpec(decryptedKeyBytes, 0, decryptedKeyBytes.length, "AES");
+                        cipher = XMLCipher.getInstance();
+                        cipher.init(XMLCipher.DECRYPT_MODE, secretKey);
+                        decryptedDoc = cipher.doFinal(documentWithEncryptedElement, encDataElement);
+                        success = true;
+                    }
+                }
+            } catch (Exception e) {
+                // When a session-provided SPI provider fails, propagate immediately
+                // without falling back to legacy logic
+                throw new DecryptionException(e);
             }
 
-            for (PrivateKey privateKey : encryptionKeys) {
-                try {
+            try {
+                // Fall back to legacy DecryptionKeyLocator logic only when no session/provider was used
+                if (!success) {
                     String encAlgoURL = encryptedData.getEncryptionMethod().getAlgorithm();
-                    XMLCipher keyCipher = XMLCipher.getInstance();
-                    keyCipher.init(XMLCipher.UNWRAP_MODE, privateKey);
-                    Key encryptionKey = keyCipher.decryptKey(encryptedKey, encAlgoURL);
-                    cipher = XMLCipher.getInstance();
-                    cipher.init(XMLCipher.DECRYPT_MODE, encryptionKey);
+                    List<PrivateKey> encryptionKeys = decryptionKeyLocator.getKeys(encryptedData);
 
-                    decryptedDoc = cipher.doFinal(documentWithEncryptedElement, encDataElement);
-                    success = true;
-                    break;
-                } catch (Exception e) {
-                    enclosingThrowable.addSuppressed(e);
+                    for (PrivateKey privateKey : encryptionKeys) {
+                        XMLCipher keyCipher = XMLCipher.getInstance();
+                        keyCipher.init(XMLCipher.UNWRAP_MODE, privateKey);
+                        Key encryptionKey = keyCipher.decryptKey(encryptedKey, encAlgoURL);
+
+                        cipher = XMLCipher.getInstance();
+                        cipher.init(XMLCipher.DECRYPT_MODE, encryptionKey);
+
+                        decryptedDoc = cipher.doFinal(documentWithEncryptedElement, encDataElement);
+                        success = true;
+                        break;
+                    }
                 }
+            } catch (Exception e) {
+                enclosingThrowable.addSuppressed(e);
             }
 
             if (!success) {
-                throw logger.processingError(enclosingThrowable);
+                throw new DecryptionException(enclosingThrowable);
             }
         }
 
@@ -411,7 +478,7 @@ public class XMLEncryptionUtil {
     /**
      * From the secret key, get the W3C XML Encryption URL
      *
-     * @param secretKey
+     * @param algo
      * @param keySize
      *
      * @return
@@ -443,4 +510,5 @@ public class XMLEncryptionUtil {
         }
         return null;
     }
+
 }

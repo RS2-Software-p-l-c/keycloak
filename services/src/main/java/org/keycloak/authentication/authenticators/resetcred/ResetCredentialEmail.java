@@ -49,6 +49,7 @@ import org.keycloak.models.DefaultActionTokenKey;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.SingleUseObjectProvider;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.utils.FormMessage;
 import org.keycloak.provider.ProviderConfigProperty;
@@ -61,6 +62,8 @@ import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.storage.StorageId;
 
 import org.jboss.logging.Logger;
+
+import static org.keycloak.services.resources.admin.UserResource.LATEST_RESET_PASSWORD_TOKEN;
 
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
@@ -116,6 +119,10 @@ public class ResetCredentialEmail implements Authenticator, AuthenticatorFactory
         // We send the secret in the email in a link as a query param.
         String authSessionEncodedId = AuthenticationSessionCompoundId.fromAuthSession(authenticationSession).getEncodedId();
         ResetCredentialsActionToken token = new ResetCredentialsActionToken(user.getId(), user.getEmail(), absoluteExpirationInSecs, authSessionEncodedId, authenticationSession.getClient().getClientId());
+
+        // Checks if for this user another resetPasswordToken exists. If yes expires this token, and updates the latest reset password token.
+        handleLatestResetPasswordToken(context, user, token);
+
         String link = UriBuilder
           .fromUri(context.getActionTokenUrl(token.serialize(context.getSession(), context.getRealm(), context.getUriInfo())))
           .build()
@@ -260,7 +267,7 @@ public class ResetCredentialEmail implements Authenticator, AuthenticatorFactory
         final String forceLogin = config != null? config.getConfig().get(FORCE_LOGIN) : null;
         if (forceLogin == null || FEDERATED_OPTION.equalsIgnoreCase(forceLogin)) {
             // default is only-federated, return true only for federated users
-            return !StorageId.isLocalStorage(user.getId()) || user.isFederated();
+            return !StorageId.isLocalStorage(user.getId()) || user.getFederationLink() != null;
         } else if (Boolean.TRUE.toString().equalsIgnoreCase(forceLogin)) {
             return Boolean.TRUE;
         } else if (Boolean.FALSE.toString().equalsIgnoreCase(forceLogin)) {
@@ -269,5 +276,25 @@ public class ResetCredentialEmail implements Authenticator, AuthenticatorFactory
             logger.warnf("Invalid value for force-login option: %s", forceLogin);
             throw new AuthenticationFlowException("Invalid value for force-login option: " + forceLogin, AuthenticationFlowError.INTERNAL_ERROR);
         }
+    }
+
+    /**
+     * Checks if for this user an older resetPasswordToken exists.
+     * If yes, expire the old token and update with the latest reset password token.
+     *
+     * @param context The AuthenticationFlowContext.
+     * @param user    The user attempting to reset the password.
+     * @param token   The token used for this reset password flow.
+     */
+    private static void handleLatestResetPasswordToken(AuthenticationFlowContext context, UserModel user, ResetCredentialsActionToken token) {
+        String resetPasswordTokenToInvalidate = user.getFirstAttribute(LATEST_RESET_PASSWORD_TOKEN);
+        if (resetPasswordTokenToInvalidate != null && !resetPasswordTokenToInvalidate.equals(token.serializeKey())) {
+            SingleUseObjectProvider singleUseObjectProvider = context.getSession().singleUseObjects();
+            Long resetPasswordTokenToInvalidateExp = ResetCredentialsActionToken.from(resetPasswordTokenToInvalidate).getExp();
+            //  Mark the token as invalidated
+            singleUseObjectProvider.put(resetPasswordTokenToInvalidate, resetPasswordTokenToInvalidateExp - Time.currentTime(), null);
+        }
+        // Update the user attribute to the latest reset password token
+        user.setSingleAttribute(LATEST_RESET_PASSWORD_TOKEN, token.serializeKey());
     }
 }

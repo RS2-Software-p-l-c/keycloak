@@ -279,20 +279,26 @@ public class ResetCredentialEmail implements Authenticator, AuthenticatorFactory
     }
 
     /**
-     * Checks if for this user an older resetPasswordToken exists.
-     * If yes, expire the old token and update with the latest reset password token.
+     * Checks if a previously issued reset password token exists for the user.
+     * If found and still active, invalidates it by adding it to the single-use object store
+     * for its remaining lifespan. Already-expired tokens are safely skipped.
      *
      * @param context The AuthenticationFlowContext.
-     * @param user    The user attempting to reset the password.
-     * @param token   The token used for this reset password flow.
+     * @param user    The user attempting to reset their password.
+     * @param token   The current token being evaluated/issued for the password reset flow.
      */
     private static void handleLatestResetPasswordToken(AuthenticationFlowContext context, UserModel user, ResetCredentialsActionToken token) {
         String resetPasswordTokenToInvalidate = user.getFirstAttribute(LATEST_RESET_PASSWORD_TOKEN);
         if (resetPasswordTokenToInvalidate != null && !resetPasswordTokenToInvalidate.equals(token.serializeKey())) {
             SingleUseObjectProvider singleUseObjectProvider = context.getSession().singleUseObjects();
             Long resetPasswordTokenToInvalidateExp = ResetCredentialsActionToken.from(resetPasswordTokenToInvalidate).getExp();
-            //  Mark the token as invalidated
-            singleUseObjectProvider.put(resetPasswordTokenToInvalidate, resetPasswordTokenToInvalidateExp - Time.currentTime(), null);
+
+            long remainingLifespan = resetPasswordTokenToInvalidateExp - (long) Time.currentTime();
+
+            // Only put into single-use cache if the token has not already expired
+            if (remainingLifespan > 0) {
+                singleUseObjectProvider.put(resetPasswordTokenToInvalidate, remainingLifespan, null);
+            }
         }
         // Update the user attribute to the latest reset password token
         user.setSingleAttribute(LATEST_RESET_PASSWORD_TOKEN, token.serializeKey());

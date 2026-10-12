@@ -293,14 +293,46 @@ public class ResetCredentialEmail implements Authenticator, AuthenticatorFactory
             SingleUseObjectProvider singleUseObjectProvider = context.getSession().singleUseObjects();
             Long resetPasswordTokenToInvalidateExp = ResetCredentialsActionToken.from(resetPasswordTokenToInvalidate).getExp();
 
-            long remainingLifespan = resetPasswordTokenToInvalidateExp - (long) Time.currentTime();
+            long remainingLifespan = remainingLifespanSeconds(resetPasswordTokenToInvalidateExp, Time.currentTime());
 
-            // Only put into single-use cache if the token has not already expired
-            if (remainingLifespan > 0) {
+            // Only put into single-use cache if the token has not already expired.
+            // SingleUseObjectProvider.put requires a positive lifespan and throws otherwise, so an
+            // already-expired token (remainingLifespan <= 0) must be skipped rather than invalidated.
+            if (shouldInvalidate(remainingLifespan)) {
                 singleUseObjectProvider.put(resetPasswordTokenToInvalidate, remainingLifespan, null);
             }
         }
         // Update the user attribute to the latest reset password token
         user.setSingleAttribute(LATEST_RESET_PASSWORD_TOKEN, token.serializeKey());
+    }
+
+    /**
+     * The remaining lifespan, in seconds, of a reset-password token given its expiry.
+     *
+     * <p>Computed in {@code long} space to avoid integer overflow for far-future expiries. The result
+     * is negative or zero once the token has expired.
+     *
+     * @param expirySeconds the token's expiry as an epoch-second timestamp
+     * @param nowSeconds    the current time as an epoch-second timestamp (e.g. {@link Time#currentTime()})
+     * @return the seconds remaining until expiry (&le; 0 if already expired)
+     */
+    static long remainingLifespanSeconds(long expirySeconds, long nowSeconds) {
+        return expirySeconds - nowSeconds;
+    }
+
+    /**
+     * Whether a previously issued reset-password token should still be invalidated via the single-use
+     * object store.
+     *
+     * <p>Only tokens with a positive remaining lifespan may be stored: {@link SingleUseObjectProvider#put}
+     * mandates a positive lifespan and throws {@link IllegalArgumentException} otherwise. An
+     * already-expired token needs no invalidation — it is unusable — so this returns {@code false} for a
+     * non-positive lifespan.
+     *
+     * @param remainingLifespanSeconds the token's remaining lifespan (see {@link #remainingLifespanSeconds})
+     * @return {@code true} iff the token is still active and must be invalidated
+     */
+    static boolean shouldInvalidate(long remainingLifespanSeconds) {
+        return remainingLifespanSeconds > 0;
     }
 }

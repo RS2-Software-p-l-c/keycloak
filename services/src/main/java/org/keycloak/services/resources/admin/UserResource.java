@@ -1370,10 +1370,15 @@ public class UserResource {
     ) {
         String tokenToInvalidate = user.getFirstAttribute(tokenAttributeName);
         if (tokenToInvalidate != null && !tokenToInvalidate.equals(token.serializeKey())) {
-            // Mark previous token as invalidated
             Long tokenToInvalidateExp = ExecuteActionsActionToken.from(tokenToInvalidate).getExp();
-            SingleUseObjectProvider singleUseObjectProvider = session.singleUseObjects();
-            singleUseObjectProvider.put(tokenToInvalidate, tokenToInvalidateExp - Time.currentTime(), null);
+            long remainingLifespan = tokenToInvalidateExp - Time.currentTime();
+
+            // Only put into single-use cache if the token has not already expired.
+            // SingleUseObjectProvider.put requires a positive lifespan and throws otherwise, so an
+            // already-expired token (remainingLifespan <= 0) must be skipped rather than invalidated.
+            if (remainingLifespan > 0) {
+                session.singleUseObjects().put(tokenToInvalidate, remainingLifespan, null);
+            }
         }
 
         // Update the user attribute to the latest reset action token

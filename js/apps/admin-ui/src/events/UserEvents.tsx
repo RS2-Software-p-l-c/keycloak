@@ -167,8 +167,8 @@ export const UserEvents = ({ user, client }: UserEventsProps) => {
   useFetch(
     () => adminClient.realms.getConfigEvents({ realm }),
     (events) => {
-      setUserEventsEnabled(events?.eventsEnabled!);
-      setEvents(localeSort(events?.enabledEventTypes || [], (e) => e));
+      setUserEventsEnabled(events.eventsEnabled!);
+      setEvents(localeSort(events.enabledEventTypes || [], (e) => e));
     },
     [],
   );
@@ -287,7 +287,9 @@ export const UserEvents = ({ user, client }: UserEventsProps) => {
                         onSelect={(selectedValue) => {
                           const option = selectedValue.toString() as EventType;
                           const changedValue = field.value.includes(option)
-                            ? field.value.filter((item) => item !== option)
+                            ? field.value.filter(
+                                (item: string) => item !== option,
+                              )
                             : [...field.value, option];
 
                           field.onChange(changedValue);
@@ -299,13 +301,15 @@ export const UserEvents = ({ user, client }: UserEventsProps) => {
                         aria-labelledby={"eventType"}
                         chipGroupComponent={
                           <ChipGroup>
-                            {field.value.map((chip) => (
+                            {field.value.map((chip: string) => (
                               <Chip
                                 key={chip}
                                 onClick={(event) => {
                                   event.stopPropagation();
                                   field.onChange(
-                                    field.value.filter((val) => val !== chip),
+                                    field.value.filter(
+                                      (val: string) => val !== chip,
+                                    ),
                                   );
                                 }}
                               >

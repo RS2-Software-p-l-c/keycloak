@@ -7,6 +7,7 @@ import {
   AlertVariant,
   Button,
   Checkbox,
+  Radio,
   FormGroup,
   PageSection,
 } from "@patternfly/react-core";
@@ -45,6 +46,7 @@ export const RealmSettingsEmailTab = ({
   const { t } = useTranslation();
   const { addAlert, addError } = useAlerts();
   const currentUser = useCurrentUser();
+  const canLinkToCurrentUserSettings = !!currentUser.realm && !!currentUser.id;
 
   const form = useForm<FormFields>({ defaultValues: realm });
   const { control, handleSubmit, watch, reset: resetForm, getValues } = form;
@@ -57,7 +59,13 @@ export const RealmSettingsEmailTab = ({
   const authenticationEnabled = useWatch({
     control,
     name: "smtpServer.auth",
-    defaultValue: "",
+    defaultValue: realm.smtpServer?.auth || "false",
+  });
+
+  const authType = useWatch({
+    control,
+    name: "smtpServer.authType",
+    defaultValue: realm.smtpServer?.authType || "basic",
   });
 
   const testConnection = async () => {
@@ -202,6 +210,7 @@ export const RealmSettingsEmailTab = ({
             <SwitchControl
               name="smtpServer.auth"
               label={t("authentication")}
+              data-testid="smtpServer.auth"
               defaultValue=""
               labelOn={t("enabled")}
               labelOff={t("disabled")}
@@ -217,36 +226,151 @@ export const RealmSettingsEmailTab = ({
                     required: t("required"),
                   }}
                 />
-                <PasswordControl
-                  name="smtpServer.password"
-                  label={t("password")}
-                  labelIcon={t("passwordHelp")}
-                  rules={{
-                    required: t("required"),
-                  }}
-                />
+                <FormGroup label={t("authenticationType")} fieldId="authType">
+                  <Controller
+                    name="smtpServer.authType"
+                    control={control}
+                    defaultValue="basic"
+                    render={({ field }) => (
+                      <>
+                        <Radio
+                          id="basicAuth"
+                          name="smtpServer.authType"
+                          data-testid="smtpServer.authType.basic"
+                          label={t("authenticationTypeBasicAuth")}
+                          value="basic"
+                          isChecked={field.value === "basic"}
+                          onChange={() => field.onChange("basic")}
+                        />
+                        <Radio
+                          id="tokenAuth"
+                          name="smtpServer.authType"
+                          data-testid="smtpServer.authType.token"
+                          label={t("authenticationTypeTokenAuth")}
+                          value="token"
+                          isChecked={field.value === "token"}
+                          onChange={() => field.onChange("token")}
+                        />
+                      </>
+                    )}
+                  />
+                </FormGroup>
+                {authType === "basic" && (
+                  <PasswordControl
+                    name="smtpServer.password"
+                    label={t("password")}
+                    labelIcon={t("passwordHelp")}
+                    rules={{
+                      required: t("required"),
+                    }}
+                  />
+                )}
+                {authType === "token" && (
+                  <>
+                    <TextControl
+                      name="smtpServer.authTokenUrl"
+                      label={t("authTokenUrl")}
+                      helperText={t("tokenTokenUrlHelp")}
+                      rules={{
+                        required: t("required"),
+                      }}
+                    />
+                    <TextControl
+                      name="smtpServer.authTokenScope"
+                      label={t("authTokenScope")}
+                      helperText={t("authTokenScopeHelp")}
+                      rules={{
+                        required: t("required"),
+                      }}
+                    />
+                    <TextControl
+                      name="smtpServer.authTokenClientId"
+                      label={t("authTokenClientId")}
+                      helperText={t("authTokenClientIdHelp")}
+                      rules={{
+                        required: t("required"),
+                      }}
+                    />
+                    <PasswordControl
+                      name="smtpServer.authTokenClientSecret"
+                      label={t("authTokenClientSecret")}
+                      labelIcon={t("authTokenClientSecretHelp")}
+                      rules={{
+                        required: t("required"),
+                      }}
+                    />
+                  </>
+                )}
               </>
             )}
-            {currentUser && (
-              <FormGroup id="descriptionTestConnection">
-                {currentUser.email ? (
-                  <Alert
-                    variant="info"
-                    component="h2"
-                    isInline
-                    title={t("testConnectionHint.withEmail", {
-                      email: currentUser.email,
-                    })}
-                  />
-                ) : (
-                  <Alert
-                    variant="warning"
-                    component="h2"
-                    isInline
-                    title={t("testConnectionHint.withoutEmail", {
-                      userName: currentUser.username,
-                    })}
-                    actionLinks={
+            <SwitchControl
+              name="smtpServer.allowutf8"
+              label={t("allowutf8")}
+              labelIcon={t("allowutf8Help")}
+              data-testid="smtpServer.allowutf8"
+              defaultValue=""
+              labelOn={t("enabled")}
+              labelOff={t("disabled")}
+              stringify
+            />
+            <TextControl
+              name="smtpServer.connectionTimeout"
+              label={t("smtpConnectionTimeout")}
+              labelIcon={t("smtpConnectionTimeoutHelp")}
+              type="number"
+              defaultValue={10000}
+              min={0}
+            />
+            <TextControl
+              name="smtpServer.timeout"
+              label={t("smtpSocketReadTimeout")}
+              labelIcon={t("smtpSocketReadTimeoutHelp")}
+              type="number"
+              defaultValue={10000}
+              min={0}
+            />
+            <TextControl
+              name="smtpServer.writeTimeout"
+              label={t("smtpSocketWriteTimeout")}
+              labelIcon={t("smtpSocketWriteTimeoutHelp")}
+              type="number"
+              defaultValue={10000}
+              min={0}
+            />
+            <Controller
+              name="smtpServer.debug"
+              control={control}
+              defaultValue="false"
+              render={({ field }) => (
+                <Checkbox
+                  id="kc-enable-debug"
+                  data-testid="enable-debug"
+                  label={t("enableDebugSMTP")}
+                  isChecked={field.value === "true"}
+                  onChange={(_event, value) => field.onChange("" + value)}
+                />
+              )}
+            />
+            <FormGroup id="descriptionTestConnection">
+              {currentUser.email ? (
+                <Alert
+                  variant="info"
+                  component="h2"
+                  isInline
+                  title={t("testConnectionHint.withEmail", {
+                    email: currentUser.email,
+                  })}
+                />
+              ) : (
+                <Alert
+                  variant="warning"
+                  component="h2"
+                  isInline
+                  title={t("testConnectionHint.withoutEmail", {
+                    userName: currentUser.username,
+                  })}
+                  actionLinks={
+                    canLinkToCurrentUserSettings ? (
                       <AlertActionLink
                         component={(props) => (
                           <Link
@@ -261,11 +385,11 @@ export const RealmSettingsEmailTab = ({
                       >
                         {t("testConnectionHint.withoutEmailAction")}
                       </AlertActionLink>
-                    }
-                  />
-                )}
-              </FormGroup>
-            )}
+                    ) : undefined
+                  }
+                />
+              )}
+            </FormGroup>
             <ActionGroup>
               <ActionListItem>
                 <Button
@@ -284,7 +408,7 @@ export const RealmSettingsEmailTab = ({
                   isDisabled={
                     !(
                       emailRegexPattern.test(watchFromValue) && watchHostValue
-                    ) || !currentUser?.email
+                    ) || !currentUser.email
                   }
                   aria-describedby="descriptionTestConnection"
                   isLoading={isTesting}

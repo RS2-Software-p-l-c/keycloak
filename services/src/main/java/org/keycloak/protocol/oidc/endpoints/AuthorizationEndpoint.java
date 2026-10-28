@@ -17,7 +17,19 @@
 
 package org.keycloak.protocol.oidc.endpoints;
 
-import org.jboss.logging.Logger;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.BiConsumer;
+
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.MultivaluedMap;
+import jakarta.ws.rs.core.Response;
+
 import org.keycloak.OAuth2Constants;
 import org.keycloak.authentication.AuthenticationProcessor;
 import org.keycloak.common.Profile;
@@ -31,14 +43,16 @@ import org.keycloak.models.AuthenticationFlowModel;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.Constants;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.OrganizationModel;
 import org.keycloak.organization.utils.Organizations;
 import org.keycloak.protocol.AuthorizationEndpointBase;
 import org.keycloak.protocol.oidc.OIDCAdvancedConfigWrapper;
 import org.keycloak.protocol.oidc.OIDCLoginProtocol;
 import org.keycloak.protocol.oidc.endpoints.request.AuthorizationEndpointRequest;
 import org.keycloak.protocol.oidc.endpoints.request.AuthorizationEndpointRequestParserProcessor;
-import org.keycloak.protocol.oidc.utils.AcrUtils;
+import org.keycloak.protocol.oidc.endpoints.request.RequestUriType;
 import org.keycloak.protocol.oidc.grants.device.endpoints.DeviceEndpoint;
+import org.keycloak.protocol.oidc.utils.AcrUtils;
 import org.keycloak.protocol.oidc.utils.OIDCRedirectUriBuilder;
 import org.keycloak.protocol.oidc.utils.OIDCResponseMode;
 import org.keycloak.protocol.oidc.utils.OIDCResponseType;
@@ -47,6 +61,7 @@ import org.keycloak.services.Urls;
 import org.keycloak.services.clientpolicy.ClientPolicyException;
 import org.keycloak.services.clientpolicy.context.AuthorizationRequestContext;
 import org.keycloak.services.clientpolicy.context.PreAuthorizationRequestContext;
+import org.keycloak.services.managers.AuthenticationSessionManager;
 import org.keycloak.services.messages.Messages;
 import org.keycloak.services.resources.LoginActionsService;
 import org.keycloak.services.util.CacheControlUtil;
@@ -54,18 +69,9 @@ import org.keycloak.services.util.LocaleUtil;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.util.TokenUtil;
 
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.MultivaluedMap;
-import jakarta.ws.rs.core.Response;
+import org.jboss.logging.Logger;
 
-import java.util.List;
-import java.util.Map;
-import java.util.function.BiConsumer;
-
+import static org.keycloak.protocol.oidc.OIDCLoginProtocol.logMessageForDeprecatedExcludeIssuerSwitch;
 import static org.keycloak.protocol.oidc.par.endpoints.ParEndpoint.PAR_DPOP_PROOF_JKT;
 
 /**
@@ -98,6 +104,7 @@ public class AuthorizationEndpoint extends AuthorizationEndpointBase {
 
     private AuthorizationEndpointRequest request;
     private String redirectUri;
+    private String invitationToken;
 
     public AuthorizationEndpoint(KeycloakSession session, EventBuilder event) {
         super(session, event);
@@ -137,6 +144,10 @@ public class AuthorizationEndpoint extends AuthorizationEndpointBase {
         try {
             session.clientPolicy().triggerOnEvent(new PreAuthorizationRequestContext(clientId, params));
         } catch (ClientPolicyException cpe) {
+            event.detail(Details.REASON, Details.CLIENT_POLICY_ERROR);
+            event.detail(Details.CLIENT_POLICY_ERROR, cpe.getError());
+            event.detail(Details.CLIENT_POLICY_ERROR_DETAIL, cpe.getErrorDetail());
+            event.error(cpe.getError());
             throw new ErrorPageException(session, authenticationSession, cpe.getErrorStatus(), cpe.getErrorDetail());
         }
         checkClient(clientId);
@@ -155,7 +166,7 @@ public class AuthorizationEndpoint extends AuthorizationEndpointBase {
             checker.checkRedirectUri();
             this.redirectUri = checker.getRedirectUri();
         } catch (AuthorizationEndpointChecker.AuthorizationCheckException ex) {
-            ex.throwAsErrorPageException(authenticationSession);
+            checker.throwAsErrorPageException(authenticationSession, ex);
         }
 
         try {
@@ -163,7 +174,7 @@ public class AuthorizationEndpoint extends AuthorizationEndpointBase {
             this.parsedResponseType = checker.getParsedResponseType();
             this.parsedResponseMode = checker.getParsedResponseMode();
         } catch (AuthorizationEndpointChecker.AuthorizationCheckException ex) {
-            OIDCResponseMode responseMode = null;
+            OIDCResponseMode responseMode;
             if (checker.isInvalidResponseType(ex)) {
                 responseMode = OIDCResponseMode.parseWhenInvalidResponseType(request.getResponseMode());
             } else {
@@ -178,10 +189,13 @@ public class AuthorizationEndpoint extends AuthorizationEndpointBase {
         try {
             checker.checkParRequired();
             checker.checkInvalidRequestMessage();
+            checker.checkAuthorizationDetails();
             checker.checkOIDCRequest();
             checker.checkValidScope();
+            checker.checkValidResource();
             checker.checkOIDCParams();
             checker.checkPKCEParams();
+            checker.checkProviderAddOns();
         } catch (AuthorizationEndpointChecker.AuthorizationCheckException ex) {
             return redirectErrorToClient(parsedResponseMode, ex.getError(), ex.getErrorDescription());
         }
@@ -193,13 +207,19 @@ public class AuthorizationEndpoint extends AuthorizationEndpointBase {
             request.setDpopJkt(dpopJkt);
         }
 
+        authenticationSession = createAuthenticationSession(client, request.getState());
+
         try {
-            session.clientPolicy().triggerOnEvent(new AuthorizationRequestContext(parsedResponseType, request, redirectUri, params));
+            session.clientPolicy().triggerOnEvent(new AuthorizationRequestContext(parsedResponseType, request, redirectUri, params, authenticationSession));
         } catch (ClientPolicyException cpe) {
+            event.detail(Details.REASON, Details.CLIENT_POLICY_ERROR);
+            event.detail(Details.CLIENT_POLICY_ERROR, cpe.getError());
+            event.detail(Details.CLIENT_POLICY_ERROR_DETAIL, cpe.getErrorDetail());
+            event.error(cpe.getError());
+            new AuthenticationSessionManager(session).removeAuthenticationSession(realm, authenticationSession, false);
             return redirectErrorToClient(parsedResponseMode, cpe.getError(), cpe.getErrorDetail());
         }
 
-        authenticationSession = createAuthenticationSession(client, request.getState());
         updateAuthenticationSession();
 
         // So back button doesn't work
@@ -207,7 +227,11 @@ public class AuthorizationEndpoint extends AuthorizationEndpointBase {
 
         // Add support for Initiating User Registration via OpenID Connect 1.0 via prompt=create
         // see: https://openid.net/specs/openid-connect-prompt-create-1_0.html#section-4.1
-        if (OIDCLoginProtocol.PROMPT_VALUE_CREATE.equals(params.getFirst(OAuth2Constants.PROMPT))) {
+        String promptValue = Optional
+                .ofNullable(params.getFirst(OAuth2Constants.PROMPT))
+                .orElseGet(() -> session.getContext().getAuthenticationSession().getClientNote(OAuth2Constants.PROMPT));
+
+        if (OIDCLoginProtocol.PROMPT_VALUE_CREATE.equals(promptValue)) {
             if (!Organizations.isRegistrationAllowed(session, realm)) {
                 throw new ErrorPageException(session, authenticationSession, Response.Status.BAD_REQUEST, Messages.REGISTRATION_NOT_ALLOWED);
             }
@@ -220,7 +244,7 @@ public class AuthorizationEndpoint extends AuthorizationEndpointBase {
             case FORGOT_CREDENTIALS:
                 return buildForgotCredential();
             case CODE:
-                return buildAuthorizationCodeAuthorizationResponse();
+                return buildAuthorizationCodeAuthorizationResponse(params.getFirst(OIDCLoginProtocol.REQUEST_URI_PARAM));
         }
 
         throw new RuntimeException("Unknown action " + action);
@@ -229,6 +253,7 @@ public class AuthorizationEndpoint extends AuthorizationEndpointBase {
     public AuthorizationEndpoint register(String tokenString) {
         event.event(EventType.REGISTER);
         action = Action.REGISTER;
+        invitationToken = tokenString;
 
         if (Profile.isFeatureEnabled(Profile.Feature.ORGANIZATION) && tokenString != null) {
             //this call should extract orgId from token and set the organization to the session context
@@ -313,6 +338,8 @@ public class AuthorizationEndpoint extends AuthorizationEndpointBase {
         OIDCAdvancedConfigWrapper clientConfig = OIDCAdvancedConfigWrapper.fromClientModel(client);
         if (!clientConfig.isExcludeIssuerFromAuthResponse()) {
             errorResponseBuilder.addParam(OAuth2Constants.ISSUER, Urls.realmIssuer(session.getContext().getUri().getBaseUri(), realm.getName()));
+        } else {
+            logMessageForDeprecatedExcludeIssuerSwitch();
         }
 
         return errorResponseBuilder.build();
@@ -323,7 +350,7 @@ public class AuthorizationEndpoint extends AuthorizationEndpointBase {
         authenticationSession.setRedirectUri(redirectUri);
         authenticationSession.setAction(AuthenticationSessionModel.Action.AUTHENTICATE.name());
         authenticationSession.setClientNote(OIDCLoginProtocol.RESPONSE_TYPE_PARAM, request.getResponseType());
-        authenticationSession.setClientNote(OIDCLoginProtocol.REDIRECT_URI_PARAM, request.getRedirectUriParam());
+        authenticationSession.setClientNote(OIDCLoginProtocol.REDIRECT_URI_PARAM, request.getRedirectUri());
         authenticationSession.setClientNote(OIDCLoginProtocol.ISSUER, Urls.realmIssuer(session.getContext().getUri().getBaseUri(), realm.getName()));
 
         performActionOnParameters(request, (paramName, paramValue) -> {if (paramValue != null) authenticationSession.setClientNote(paramName, paramValue);});
@@ -366,18 +393,50 @@ public class AuthorizationEndpoint extends AuthorizationEndpointBase {
             }
         }).min().ifPresent(loa -> authenticationSession.setClientNote(Constants.REQUESTED_LEVEL_OF_AUTHENTICATION, String.valueOf(loa)));
 
+
         if (request.getAdditionalReqParams() != null) {
             for (String paramName : request.getAdditionalReqParams().keySet()) {
                 authenticationSession.setClientNote(LOGIN_SESSION_NOTE_ADDITIONAL_REQ_PARAMS_PREFIX + paramName, request.getAdditionalReqParams().get(paramName));
             }
+
+            // Store authorization_details from authorization/PAR request for later processing
+            String authorizationDetails = request.getAdditionalReqParams().get(OAuth2Constants.AUTHORIZATION_DETAILS);
+            if (authorizationDetails != null) {
+                authenticationSession.setClientNote(OAuth2Constants.AUTHORIZATION_DETAILS, authorizationDetails);
+            }
+        }
+
+        // register() resolves the invitation before this session exists, so the request context is
+        // the only place holding it. Keep both the organization and the token for the rest of the
+        // authentication: the invitee may leave for an identity provider, and the link they follow
+        // to get there does not carry the token.
+        OrganizationModel organization = session.getContext().getOrganization();
+
+        if (organization != null) {
+            authenticationSession.setAuthNote(OrganizationModel.ORGANIZATION_ATTRIBUTE, organization.getId());
+        }
+
+        if (invitationToken != null) {
+            authenticationSession.setAuthNote(Organizations.INVITATION_TOKEN_NOTE, invitationToken);
         }
     }
 
-    private Response buildAuthorizationCodeAuthorizationResponse() {
+    private Response buildAuthorizationCodeAuthorizationResponse(String requestUri) {
         this.event.event(EventType.LOGIN);
         authenticationSession.setAuthNote(Details.AUTH_TYPE, CODE_AUTH_TYPE);
+        authenticationSession.setAuthNote(Constants.AUTHORIZATION_REQUEST_URI, requestUri);
 
-        return handleBrowserAuthenticationRequest(authenticationSession, new OIDCLoginProtocol(session, realm, session.getContext().getUri(), headers, event), TokenUtil.hasPrompt(request.getPrompt(), OIDCLoginProtocol.PROMPT_VALUE_NONE), false);
+        RequestUriType requestUriType = Optional.ofNullable(requestUri)
+                .map(AuthorizationEndpointRequestParserProcessor::getRequestUriType)
+                .orElse(null);
+
+        // Redirect if it is a PAR request because authentication may need a refresh (kerberos) and the single object is consumed now
+        boolean redirectToAuthFlow = requestUriType == RequestUriType.PAR;
+
+        OIDCLoginProtocol loginProtocol = new OIDCLoginProtocol(session, realm, session.getContext().getUri(), headers, event);
+        boolean isPassive = TokenUtil.hasPrompt(request.getPrompt(), OIDCLoginProtocol.PROMPT_VALUE_NONE);
+        Response response = handleBrowserAuthenticationRequest(authenticationSession, loginProtocol, isPassive, redirectToAuthFlow);
+        return response;
     }
 
     private Response buildRegister() {
@@ -428,6 +487,7 @@ public class AuthorizationEndpoint extends AuthorizationEndpointBase {
         paramAction.accept(OIDCLoginProtocol.PROMPT_PARAM, request.getPrompt());
         paramAction.accept(OIDCLoginProtocol.RESPONSE_MODE_PARAM, request.getResponseMode());
         paramAction.accept(OIDCLoginProtocol.SCOPE_PARAM, request.getScope());
+        paramAction.accept(OIDCLoginProtocol.RESOURCE_PARAM, request.getResource());
         paramAction.accept(OIDCLoginProtocol.STATE_PARAM, request.getState());
         paramAction.accept(OIDCLoginProtocol.DPOP_JKT, request.getDpopJkt());
     }

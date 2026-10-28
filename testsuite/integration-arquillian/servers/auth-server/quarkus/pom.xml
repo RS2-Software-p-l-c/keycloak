@@ -5,7 +5,7 @@
     <parent>
         <artifactId>integration-arquillian-servers-auth-server</artifactId>
         <groupId>org.keycloak.testsuite</groupId>
-        <version>26.1.4</version>
+        <version>26.8.0</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
@@ -201,7 +201,7 @@
                             <artifactItems>
                                 <artifactItem>
                                     <groupId>com.oracle.database.jdbc</groupId>
-                                    <artifactId>ojdbc11</artifactId>
+                                    <artifactId>ojdbc17</artifactId>
                                     <version>${oracle-jdbc.version}</version>
                                     <type>jar</type>
                                     <outputDirectory>${auth.server.home}/providers</outputDirectory>
@@ -235,6 +235,14 @@
                                 <artifactItem>
                                     <groupId>org.keycloak.testsuite</groupId>
                                     <artifactId>integration-arquillian-testsuite-providers-deployment</artifactId>
+                                    <version>${project.version}</version>
+                                    <type>jar</type>
+                                    <overWrite>false</overWrite>
+                                    <outputDirectory>${auth.server.home}/providers</outputDirectory>
+                                </artifactItem>
+                                <artifactItem>
+                                    <groupId>org.keycloak.testframework</groupId>
+                                    <artifactId>keycloak-test-framework-remote-providers</artifactId>
                                     <version>${project.version}</version>
                                     <type>jar</type>
                                     <overWrite>false</overWrite>

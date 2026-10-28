@@ -17,16 +17,6 @@
 
 package org.keycloak.events.jpa;
 
-import org.keycloak.events.Event;
-import org.keycloak.events.EventQuery;
-import org.keycloak.events.EventType;
-
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.TypedQuery;
-import jakarta.persistence.criteria.CriteriaBuilder;
-import jakarta.persistence.criteria.CriteriaQuery;
-import jakarta.persistence.criteria.Predicate;
-import jakarta.persistence.criteria.Root;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
@@ -34,6 +24,19 @@ import java.util.GregorianCalendar;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.stream.Stream;
+
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.TypedQuery;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Predicate;
+import jakarta.persistence.criteria.Root;
+
+import org.keycloak.events.Event;
+import org.keycloak.events.EventQuery;
+import org.keycloak.events.EventType;
+
+import org.hibernate.jpa.AvailableHints;
 
 import static org.keycloak.models.jpa.PaginationUtils.paginateQuery;
 import static org.keycloak.utils.StreamsUtil.closing;
@@ -90,8 +93,14 @@ public class JpaEventQuery implements EventQuery {
     }
 
     @Override
+    @Deprecated
     public EventQuery fromDate(Date fromDate) {
-        predicates.add(cb.greaterThanOrEqualTo(root.<Long>get("time"), fromDate.getTime()));
+        return fromDate(fromDate.getTime());
+    }
+
+    @Override
+    public EventQuery fromDate(long fromDate) {
+        predicates.add(cb.greaterThanOrEqualTo(root.get("time"), fromDate));
         return this;
     }
 
@@ -103,7 +112,12 @@ public class JpaEventQuery implements EventQuery {
         calendar.set(Calendar.MINUTE, 59);
         calendar.set(Calendar.SECOND, 59);
         calendar.set(Calendar.MILLISECOND, 999);
-        predicates.add(cb.lessThanOrEqualTo(root.<Long>get("time"), calendar.getTimeInMillis()));
+        return toDate(calendar.getTimeInMillis());
+    }
+
+    @Override
+    public EventQuery toDate(long toDate) {
+        predicates.add(cb.lessThanOrEqualTo(root.get("time"), toDate));
         return this;
     }
 
@@ -150,6 +164,7 @@ public class JpaEventQuery implements EventQuery {
         }
 
         TypedQuery<EventEntity> query = em.createQuery(cq);
+        query.setHint(AvailableHints.HINT_READ_ONLY, true);
 
         return closing(paginateQuery(query, firstResult, maxResults).getResultStream().map(JpaEventStoreProvider::convertEvent));
     }

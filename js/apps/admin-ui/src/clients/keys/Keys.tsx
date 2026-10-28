@@ -13,6 +13,7 @@ import {
   Text,
   TextContent,
 } from "@patternfly/react-core";
+import { SyncAltIcon } from "@patternfly/react-icons";
 import { saveAs } from "file-saver";
 import { useState } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
@@ -23,19 +24,25 @@ import { DefaultSwitchControl } from "../../components/SwitchControl";
 import { convertAttributeNameToForm } from "../../util";
 import useToggle from "../../utils/useToggle";
 import { FormFields } from "../ClientDetails";
-import { Certificate } from "./Certificate";
+import { KeyInfoArea } from "./Certificate";
 import { GenerateKeyDialog, getFileExtension } from "./GenerateKeyDialog";
 import { ImportFile, ImportKeyDialog } from "./ImportKeyDialog";
 
 type KeysProps = {
   save: () => void;
+  refresh: () => void;
   clientId: string;
   hasConfigureAccess?: boolean;
 };
 
 const attr = "jwt.credential";
 
-export const Keys = ({ clientId, save, hasConfigureAccess }: KeysProps) => {
+export const Keys = ({
+  clientId,
+  save,
+  refresh: refreshParent,
+  hasConfigureAccess,
+}: KeysProps) => {
   const { adminClient } = useAdminClient();
 
   const { t } = useTranslation();
@@ -51,7 +58,10 @@ export const Keys = ({ clientId, save, hasConfigureAccess }: KeysProps) => {
     useToggle();
   const [openImportKeys, toggleOpenImportKeys, setOpenImportKeys] = useToggle();
   const [key, setKey] = useState(0);
-  const refresh = () => setKey(key + 1);
+  const refresh = () => {
+    setKey(key + 1);
+    refreshParent();
+  };
 
   const useJwksUrl = useWatch({
     control,
@@ -60,13 +70,21 @@ export const Keys = ({ clientId, save, hasConfigureAccess }: KeysProps) => {
   });
 
   useFetch(
-    () => adminClient.clients.getKeyInfo({ id: clientId, attr }),
+    async () => {
+      try {
+        return await adminClient.clients.getKeyInfo({ id: clientId, attr });
+      } catch (error) {
+        addError("getKeyInfoError", error);
+        return {} as CertificateRepresentation;
+      }
+    },
     (info) => setKeyInfo(info),
     [key],
   );
 
   const generate = async (config: KeyStoreConfig) => {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-deprecated
       const keyStore = await adminClient.clients.generateAndDownloadKey(
         {
           id: clientId,
@@ -94,8 +112,7 @@ export const Keys = ({ clientId, save, hasConfigureAccess }: KeysProps) => {
         formData.append(key, value);
       }
 
-      formData.append("file", file.value!);
-
+      formData.append("file", file);
       await adminClient.clients.uploadCertificate(
         { id: clientId, attr },
         formData,
@@ -142,9 +159,9 @@ export const Keys = ({ clientId, save, hasConfigureAccess }: KeysProps) => {
             />
             {useJwksUrl !== "true" &&
               (keyInfo ? (
-                <Certificate plain keyInfo={keyInfo} />
+                <KeyInfoArea keyInfo={keyInfo} />
               ) : (
-                "No client certificate configured"
+                "No public key configured"
               ))}
             {useJwksUrl === "true" && (
               <TextControl
@@ -176,6 +193,14 @@ export const Keys = ({ clientId, save, hasConfigureAccess }: KeysProps) => {
                 isDisabled={useJwksUrl === "true"}
               >
                 {t("import")}
+              </Button>
+              <Button
+                data-testid="reload"
+                variant="secondary"
+                onClick={refresh}
+                isDisabled={useJwksUrl === "true"}
+              >
+                <SyncAltIcon /> {t("refresh")}
               </Button>
             </ActionGroup>
           </FormAccess>

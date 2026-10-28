@@ -19,28 +19,30 @@ package org.keycloak.models.sessions.infinispan.events;
 
 import java.util.Objects;
 
-import org.infinispan.protostream.annotations.ProtoField;
 import org.keycloak.cluster.ClusterEvent;
-import org.keycloak.connections.infinispan.InfinispanUtil;
-import org.keycloak.connections.infinispan.TopologyInfo;
+import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
+import org.keycloak.connections.infinispan.NodeInfo;
 import org.keycloak.models.KeycloakSession;
+
+import org.infinispan.protostream.annotations.ProtoField;
+import org.infinispan.protostream.annotations.ProtoReserved;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
  */
+@ProtoReserved(numbers = {3}, names = {"resendingEvent"})
 public abstract class SessionClusterEvent implements ClusterEvent {
 
     private String realmId;
     private String eventKey;
-    private boolean resendingEvent;
     private String siteId;
     private String nodeId;
 
 
-    public static <T extends SessionClusterEvent> T createEvent(Class<T> eventClass, String eventKey, KeycloakSession session, String realmId, boolean resendingEvent) {
+    public static <T extends SessionClusterEvent> T createEvent(Class<T> eventClass, String eventKey, KeycloakSession session, String realmId) {
         try {
             T event = eventClass.getDeclaredConstructor().newInstance();
-            event.setData(session, eventKey, realmId, resendingEvent);
+            event.setData(session, eventKey, realmId);
             return event;
         } catch (Exception e) {
             throw new RuntimeException(e);
@@ -48,13 +50,12 @@ public abstract class SessionClusterEvent implements ClusterEvent {
     }
 
 
-    void setData(KeycloakSession session, String eventKey, String realmId, boolean resendingEvent) {
+    void setData(KeycloakSession session, String eventKey, String realmId) {
         this.realmId = realmId;
         this.eventKey = eventKey;
-        this.resendingEvent = resendingEvent;
-        TopologyInfo topology = InfinispanUtil.getTopologyInfo(session);
-        this.siteId = topology.getMySiteName();
-        this.nodeId = topology.getMyNodeName();
+        NodeInfo nodeInfo = session.getProvider(InfinispanConnectionProvider.class).getNodeInfo();
+        this.siteId = nodeInfo.siteName();
+        this.nodeId = nodeInfo.nodeName();
     }
 
 
@@ -74,15 +75,6 @@ public abstract class SessionClusterEvent implements ClusterEvent {
 
     void setEventKey(String eventKey) {
         this.eventKey = eventKey;
-    }
-
-    @ProtoField(3)
-    public boolean isResendingEvent() {
-        return resendingEvent;
-    }
-
-    void setResendingEvent(boolean resendingEvent) {
-        this.resendingEvent = resendingEvent;
     }
 
     @ProtoField(4)

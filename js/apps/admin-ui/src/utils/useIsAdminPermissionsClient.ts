@@ -1,29 +1,10 @@
-import { useState } from "react";
-import { useFetch } from "@keycloak/keycloak-ui-shared";
-import { useAdminClient } from "../admin-client";
-import ClientRepresentation from "@keycloak/keycloak-admin-client/lib/defs/clientRepresentation";
+import { useRealm } from "../context/realm-context/RealmContext";
 
-export function useIsAdminPermissionsClient(selectedClientId: string) {
-  const { adminClient } = useAdminClient();
-  const [isAdminPermissionsClient, setIsAdminPermissionsClient] =
-    useState<boolean>(false);
+export function useIsAdminPermissionsClient(selectedClientId?: string) {
+  const { realmRepresentation } = useRealm();
 
-  useFetch(
-    async () => {
-      const clients: ClientRepresentation[] = await adminClient.clients.find();
-      return clients;
-    },
-    (clients: ClientRepresentation[]) => {
-      const adminPermissionsClient = clients.find(
-        (client) => client.clientId === "admin-permissions",
-      );
-
-      setIsAdminPermissionsClient(
-        selectedClientId === adminPermissionsClient?.id,
-      );
-    },
-    [],
+  return (
+    !!selectedClientId &&
+    selectedClientId === realmRepresentation.adminPermissionsClient?.id
   );
-
-  return isAdminPermissionsClient;
 }

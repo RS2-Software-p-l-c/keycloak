@@ -16,24 +16,28 @@
  */
 package org.keycloak.quarkus.runtime.configuration;
 
-import io.smallrye.config.ConfigSourceInterceptor;
-import io.smallrye.config.ConfigSourceInterceptorContext;
-import io.smallrye.config.ConfigValue;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
-import io.smallrye.config.Priorities;
 import jakarta.annotation.Priority;
-import org.apache.commons.collections4.IteratorUtils;
-import org.apache.commons.collections4.iterators.FilterIterator;
-import org.keycloak.quarkus.runtime.Environment;
+
+import org.keycloak.config.OptionCategory;
 import org.keycloak.quarkus.runtime.configuration.mappers.PropertyMapper;
 import org.keycloak.quarkus.runtime.configuration.mappers.PropertyMappers;
 import org.keycloak.quarkus.runtime.configuration.mappers.WildcardPropertyMapper;
 
-import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
+import io.smallrye.config.ConfigSourceInterceptor;
+import io.smallrye.config.ConfigSourceInterceptorContext;
+import io.smallrye.config.ConfigValue;
+import io.smallrye.config.Priorities;
+import org.apache.commons.collections4.IteratorUtils;
 
-import static org.keycloak.quarkus.runtime.Environment.isRebuild;
+import static org.keycloak.quarkus.runtime.configuration.MicroProfileConfigProvider.NS_KEYCLOAK_PREFIX;
 
 /**
  * <p>This interceptor is responsible for mapping Keycloak properties to their corresponding properties in Quarkus.
@@ -47,6 +51,9 @@ import static org.keycloak.quarkus.runtime.Environment.isRebuild;
  *
  * <p>This interceptor must execute after the {@link io.smallrye.config.ExpressionConfigSourceInterceptor} so that expressions
  * are properly resolved before executing this interceptor.
+ *
+ * <p>The {@link NestedPropertyMappingInterceptor} catches property mappings that need to be performed within expressions.
+ *
  * <p>
  * The reason for the used priority is to always execute the interceptor before default Application Config Source interceptors
  */
@@ -54,7 +61,8 @@ import static org.keycloak.quarkus.runtime.Environment.isRebuild;
 public class PropertyMappingInterceptor implements ConfigSourceInterceptor {
 
     private static final ThreadLocal<Boolean> disable = new ThreadLocal<>();
-    private static final ThreadLocal<Boolean> disableAdditionalNames = new ThreadLocal<>();
+
+    private Boolean augmenting;
 
     public static void disable() {
         disable.set(true);
@@ -64,40 +72,143 @@ public class PropertyMappingInterceptor implements ConfigSourceInterceptor {
         disable.remove();
     }
 
-    static Iterator<String> filterRuntime(Iterator<String> iter) {
-        if (!isRebuild() && !Environment.isRebuildCheck()) {
-            return iter;
-        }
-        return new FilterIterator<>(iter, item -> !isRuntime(item));
-    }
-
-    static boolean isRuntime(String name) {
-        PropertyMapper<?> mapper = PropertyMappers.getMapper(name);
-        return mapper != null && mapper.isRunTime();
-    }
-
+    /**
+     * Provides a curated iteration of names based upon the mapping logic.
+     * Quarkus logic, such as config mapping, is dependent upon seeing the quarkus
+     * form of the key. We want to expose that here, rather than in the config sources
+     * because we lack a simple way to do name mapping for some sources, such as the
+     * keystore config source.
+     * <p>
+     * We currently expose:
+     * <li>anything based upon a property mapper that has a map to a quarkus property - including
+     * our kc. properties that have defaults.
+     * <li>wildcard key names for wildcard keys that map from a keycloak property (e.g. kc.log-level)
+     *
+     * We selectively exclude:
+     * <li>Config keystore properties at build time
+     */
     @Override
     public Iterator<String> iterateNames(ConfigSourceInterceptorContext context) {
-        // We need to iterate through names to get wildcard option names.
-        // Additionally, wildcardValuesTransformer might also trigger iterateNames.
-        // Hence we need to disable this to prevent infinite recursion.
-        // But we don't want to disable the whole interceptor, as wildcardValuesTransformer
-        // might still need mappers to work.
-        List<String> mappedWildcardNames = List.of();
-        if (!Boolean.TRUE.equals(disableAdditionalNames.get())) {
-            disableAdditionalNames.set(true);
-            try {
-                mappedWildcardNames = PropertyMappers.getWildcardMappers().stream()
-                        .map(WildcardPropertyMapper::getToWithWildcards)
-                        .flatMap(Set::stream)
-                        .toList();
-            } finally {
-                disableAdditionalNames.remove();
+        Iterable<String> iterable = context::iterateNames;
+
+        final Set<PropertyMapper<?>> mappersWithoutValues = PropertyMappers.getMappers();
+
+        boolean filterRuntime = isAugmenting(context);
+
+        // this will return different iterations when our configuration is initialized vs not.
+        // when the configuration is not initialized, we only need to worry about providing
+        // bootsrapping level options, so we can make simplistic assumptions about the presence of values
+
+        // we also only do first level discovery - for example if an inferred value exists, we are not
+        // checking to see if it has wildcard or connected options
+
+        var baseStream = StreamSupport.stream(iterable.spliterator(), false).flatMap(name -> {
+            final PropertyMapper<?> mapper = PropertyMappers.getMapper(name);
+
+            if (mapper == null) {
+                return Stream.of(name);
             }
+            if (filterRuntime && mapper.getCategory() == OptionCategory.CONFIG) {
+                return Stream.of(); // advertising the keystore type causes the keystore to be used early
+            }
+
+            final PropertyMapper<?> mappedMapper = mapper.forKey(name);
+
+            mappersWithoutValues.remove(mapper);
+
+            // only include additional mappings if we're on the from side of the mapping as the mapping may not be bi-directional
+            if (!name.equals(mappedMapper.getFrom())) {
+                return Stream.of(name);
+            }
+
+            List<String> allNames = new ArrayList<String>();
+            allNames.add(name);
+            if (!name.equals(mappedMapper.getTo()) && hasValue(mappedMapper.getTo(), context)) {
+                allNames.add(mappedMapper.getTo());
+            }
+
+            appendWildcardsMappedFrom(context, name, mapper, allNames);
+
+            if (mapper.hasWildcard()) {
+                var wildcardMapper = (WildcardPropertyMapper<?>) mapper;
+
+                var wildcardValue = wildcardMapper.extractWildcardValue(name).orElseThrow();
+
+                if (mapper.hasConnectedOptions()) {
+                    wildcardMapper.getConnectedOptions(wildcardValue).stream()
+                            .map(option -> Optional.ofNullable(PropertyMappers.getMapper(NS_KEYCLOAK_PREFIX + option)).orElseThrow(() -> new IllegalArgumentException("Cannot find connected options")))
+                            .map(m -> m.hasWildcard() ? ((WildcardPropertyMapper<?>) m).getTo(wildcardValue) : m.getTo())
+                            .filter(key -> hasValue(key, context)).forEach(allNames::add);
+                }
+            }
+
+            return allNames.stream();
+        });
+
+        // include anything remaining that has a value - we currently only care about the to (typically quarkus) values
+        var inferredValueStream = mappersWithoutValues.stream()
+                .filter(m -> hasInferredValue(m, context))
+                .map(m -> m.getTo());
+
+        return IteratorUtils.chainedIterator(baseStream.iterator(), inferredValueStream.iterator());
+    }
+
+    private boolean isAugmenting(ConfigSourceInterceptorContext context) {
+        if (augmenting == null) {
+            // see BuildTimeConfigurationReader - if a sys properties are excluded, then we're augmenting
+            augmenting = context.proceed("file.separator") == null;
+        }
+        return augmenting;
+    }
+
+    private void appendWildcardsMappedFrom(ConfigSourceInterceptorContext context, String name,
+            final PropertyMapper<?> mapper, List<String> names) {
+        var wildCards = PropertyMappers.getWildcardsMappedFrom(mapper.getOption());
+        if (wildCards.isEmpty()) {
+            return;
+        }
+        ConfigValue value = context.proceed(name);
+        if (value == null || value.getValue() == null) {
+            return;
+        }
+        if (mapper.hasWildcard()) {
+            var wildcardMapper = (WildcardPropertyMapper<?>) mapper;
+            var wildcardValue = wildcardMapper.extractWildcardValue(name).orElseThrow();
+            wildCards.stream().map(w -> w.getTo(wildcardValue)).filter(to -> hasValue(to, context)).forEach(names::add);
+        } else {
+            // this is not a wildcard value, but may map to wildcards
+            // the current example is something like log-level=wildcardCat1:level,wildcardCat2:level
+            wildCards.stream().flatMap(w -> w.getToFromWildcardTransformer(value.getValue())).forEach(names::add);
+        }
+    }
+
+    private boolean hasInferredValue(PropertyMapper<?> m, ConfigSourceInterceptorContext context) {
+        if (m.getCategory() == OptionCategory.CONFIG // advertising the keystore type causes the keystore to be used early
+                || m.hasWildcard()
+                || (m.getDefaultValue().isEmpty() && m.getMapFrom() == null)
+                || m.getTo().startsWith(NS_KEYCLOAK_PREFIX)) {
+            return false;
         }
 
-        // this could be optimized by filtering the wildcard names in the stream above
-        return filterRuntime(IteratorUtils.chainedIterator(mappedWildcardNames.iterator(), context.iterateNames()));
+        if (m.getMapper() == null && m.getDefaultValue().isPresent() && m.getMapFrom() == null) {
+            return true; // the default will be used "as-is"
+        }
+
+        if (Configuration.isInitialized()) {
+            return hasValue(m.getTo(), context);
+        }
+
+        return m.getDefaultValue().isPresent(); // just make a simplistic assumption prior to init
+    }
+
+    private boolean hasValue(String key, ConfigSourceInterceptorContext context) {
+        try {
+            return !Configuration.isInitialized()
+                    || key.startsWith(NS_KEYCLOAK_PREFIX) // once we remove Scope.getPropertyNames, this check can be inverted like in hasInferredValue
+                    || Optional.ofNullable(context.restart(key)).map(ConfigValue::getValue).isPresent();
+        } catch (Exception e) {
+            return false; // corner case - validation or other failure, we won't report it as having a value
+        }
     }
 
     @Override
@@ -105,6 +216,8 @@ public class PropertyMappingInterceptor implements ConfigSourceInterceptor {
         if (Boolean.TRUE.equals(disable.get())) {
             return context.proceed(name);
         }
-        return PropertyMappers.getValue(context, name);
+
+        // Call through NestedPropertyMappingInterceptor to track what we are currently getting the value for
+        return NestedPropertyMappingInterceptor.getValueFromPropertyMappers(context, name, isAugmenting(context));
     }
 }

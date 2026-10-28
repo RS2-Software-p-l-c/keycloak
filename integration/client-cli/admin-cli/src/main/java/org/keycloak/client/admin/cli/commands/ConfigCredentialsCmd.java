@@ -18,12 +18,13 @@ package org.keycloak.client.admin.cli.commands;
 
 import org.keycloak.client.admin.cli.KcAdmMain;
 import org.keycloak.client.cli.common.BaseConfigCredentialsCmd;
-
 import org.keycloak.client.cli.config.ConfigData;
+
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 
 import static java.lang.System.currentTimeMillis;
+
 import static org.keycloak.client.cli.util.AuthUtil.AUTH_BUFFER_TIME;
 import static org.keycloak.client.cli.util.ConfigUtil.credentialsAvailable;
 import static org.keycloak.client.cli.util.ConfigUtil.loadConfig;
@@ -33,8 +34,10 @@ import static org.keycloak.client.cli.util.IoUtil.printOut;
 /**
  * @author <a href="mailto:mstrukel@redhat.com">Marko Strukelj</a>
  */
-@Command(name = "credentials", description = "--server SERVER_URL --realm REALM [ARGUMENTS]")
+@Command(name = ConfigCredentialsCmd.NAME, description = "--server SERVER_URL --realm REALM [ARGUMENTS]")
 public class ConfigCredentialsCmd extends BaseConfigCredentialsCmd {
+
+    static final String NAME = "credentials";
 
     public ConfigCredentialsCmd() {
         super(KcAdmMain.COMMAND_STATE);
@@ -61,5 +64,9 @@ public class ConfigCredentialsCmd extends BaseConfigCredentialsCmd {
         } else {
             super.process();
         }
+    }
+
+    String getPassword() {
+        return this.password;
     }
 }

@@ -16,20 +16,21 @@
  */
 package org.keycloak.services.resources.admin;
 
-import org.jboss.resteasy.reactive.NoCache;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.FormParam;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.LDAPConstants;
 import org.keycloak.models.RealmModel;
 import org.keycloak.representations.idm.TestLdapConnectionRepresentation;
 import org.keycloak.services.ErrorResponse;
 import org.keycloak.services.managers.LDAPServerCapabilitiesManager;
-import org.keycloak.services.resources.admin.permissions.AdminPermissionEvaluator;
+import org.keycloak.services.resources.admin.fgap.AdminPermissionEvaluator;
 
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.FormParam;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
+import org.jboss.resteasy.reactive.NoCache;
 
 /**
  * @resource User Storage Provider

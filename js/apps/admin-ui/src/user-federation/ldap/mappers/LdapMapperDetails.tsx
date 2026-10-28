@@ -4,6 +4,7 @@ import { DirectionType } from "@keycloak/keycloak-admin-client/lib/resources/use
 import {
   HelpItem,
   KeycloakSelect,
+  KeycloakSpinner,
   SelectVariant,
   TextControl,
   useAlerts,
@@ -26,14 +27,17 @@ import { useNavigate } from "react-router-dom";
 import { useAdminClient } from "../../../admin-client";
 import { useConfirmDialog } from "../../../components/confirm-dialog/ConfirmDialog";
 import {
-  DynamicComponents,
   convertToName,
+  DynamicComponents,
 } from "../../../components/dynamic/DynamicComponents";
 import { FormAccess } from "../../../components/form/FormAccess";
-import { KeycloakSpinner } from "@keycloak/keycloak-ui-shared";
 import { ViewHeader } from "../../../components/view-header/ViewHeader";
 import { useRealm } from "../../../context/realm-context/RealmContext";
-import { convertFormValuesToObject, convertToFormValues } from "../../../util";
+import {
+  beerify,
+  convertFormValuesToObject,
+  convertToFormValues,
+} from "../../../util";
 import { useParams } from "../../../utils/useParams";
 import { toUserFederationLdap } from "../../routes/UserFederationLdap";
 import { UserFederationLdapMapperParams } from "../../routes/UserFederationLdapMapper";
@@ -52,6 +56,7 @@ export default function LdapMapperDetails() {
   const { addAlert, addError } = useAlerts();
 
   const [isMapperDropdownOpen, setIsMapperDropdownOpen] = useState(false);
+  const [mapperTypeFilter, setMapperTypeFilter] = useState("");
   const [key, setKey] = useState(0);
   const refresh = () => setKey(key + 1);
 
@@ -100,7 +105,7 @@ export default function LdapMapperDetails() {
     try {
       if (mapperId === "new") {
         await adminClient.components.create(map);
-        navigate(
+        void navigate(
           toUserFederationLdap({ realm, id: mapper.parentId!, tab: "mappers" }),
         );
       } else {
@@ -152,7 +157,7 @@ export default function LdapMapperDetails() {
           id: mapping!.id!,
         });
         addAlert(t("mappingDeletedSuccess"), AlertVariant.success);
-        navigate(toUserFederationLdap({ id, realm, tab: "mappers" }));
+        void navigate(toUserFederationLdap({ id, realm, tab: "mappers" }));
       } catch (error) {
         addError("mappingDeletedError", error);
       }
@@ -164,12 +169,36 @@ export default function LdapMapperDetails() {
     name: "providerId",
   });
 
+  const config = useWatch({
+    control: form.control,
+    name: "config",
+  });
+
+  const mapper = components?.find((c) => c.id === mapperType);
+
+  const realmRolesValue = config?.[beerify("use.realm.roles.mapping")];
+  const isRealmMapping =
+    realmRolesValue === undefined || realmRolesValue === "true";
+  const visibleProperties =
+    mapperType === "role-ldap-mapper" && isRealmMapping
+      ? (mapper?.properties ?? []).filter((p) => p.name !== "client.id")
+      : (mapper?.properties ?? []);
+
+  const selectItems = () =>
+    (components || [])
+      .filter((c) => c.id.includes(mapperTypeFilter))
+      .map((c) => (
+        <SelectOption key={c.id} value={c.id}>
+          {c.id}
+        </SelectOption>
+      ));
+
   if (!components) {
     return <KeycloakSpinner />;
   }
 
   const isNew = mapperId === "new";
-  const mapper = components.find((c) => c.id === mapperType);
+
   return (
     <>
       <DeleteConfirm />
@@ -197,8 +226,8 @@ export default function LdapMapperDetails() {
                   ? [
                       <DropdownItem
                         key="ldapSync"
-                        onClick={() => {
-                          sync("keycloakToFed");
+                        onClick={async () => {
+                          await sync("keycloakToFed");
                         }}
                       >
                         {t(mapper.metadata.keycloakToFedSyncMessage)}
@@ -268,10 +297,12 @@ export default function LdapMapperDetails() {
                     <KeycloakSelect
                       toggleId="kc-providerId"
                       typeAheadAriaLabel={t("mapperType")}
-                      onToggle={() =>
-                        setIsMapperDropdownOpen(!isMapperDropdownOpen)
-                      }
+                      onToggle={setIsMapperDropdownOpen}
                       isOpen={isMapperDropdownOpen}
+                      onFilter={(search) => {
+                        setMapperTypeFilter(search);
+                        return selectItems();
+                      }}
                       onSelect={(value) => {
                         setupForm({
                           providerId: value as string,
@@ -285,17 +316,12 @@ export default function LdapMapperDetails() {
                               ]) || [],
                           ),
                         });
-                        setIsMapperDropdownOpen(false);
                       }}
                       selections={field.value}
                       variant={SelectVariant.typeahead}
                       aria-label={t("selectMapperType")}
                     >
-                      {components.map((c) => (
-                        <SelectOption key={c.id} value={c.id}>
-                          {c.id}
-                        </SelectOption>
-                      ))}
+                      {selectItems()}
                     </KeycloakSelect>
                   )}
                 ></Controller>
@@ -303,7 +329,7 @@ export default function LdapMapperDetails() {
             )}
 
             {!!mapperType && (
-              <DynamicComponents properties={mapper?.properties!} />
+              <DynamicComponents properties={visibleProperties} />
             )}
             <ActionGroup>
               <Button
@@ -318,8 +344,8 @@ export default function LdapMapperDetails() {
                 variant="link"
                 onClick={() =>
                   isNew
-                    ? navigate(-1)
-                    : navigate(
+                    ? void navigate(-1)
+                    : void navigate(
                         `/${realm}/user-federation/ldap/${
                           mapping!.parentId
                         }/mappers`,

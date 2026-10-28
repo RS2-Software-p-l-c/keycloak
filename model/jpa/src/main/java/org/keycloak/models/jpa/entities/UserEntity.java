@@ -17,11 +17,8 @@
 
 package org.keycloak.models.jpa.entities;
 
-import org.hibernate.annotations.BatchSize;
-import org.hibernate.annotations.Fetch;
-import org.hibernate.annotations.FetchMode;
-import org.hibernate.annotations.Nationalized;
-import org.keycloak.models.utils.KeycloakModelUtils;
+import java.util.Collection;
+import java.util.LinkedList;
 
 import jakarta.persistence.Access;
 import jakarta.persistence.AccessType;
@@ -34,8 +31,13 @@ import jakarta.persistence.NamedQuery;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
-import java.util.Collection;
-import java.util.LinkedList;
+
+import org.keycloak.models.utils.KeycloakModelUtils;
+
+import org.hibernate.annotations.BatchSize;
+import org.hibernate.annotations.Fetch;
+import org.hibernate.annotations.FetchMode;
+import org.hibernate.annotations.Nationalized;
 
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
@@ -47,8 +49,6 @@ import java.util.LinkedList;
         @NamedQuery(name="getRealmUserByLastName", query="select u from UserEntity u where u.lastName = :lastName and u.realmId = :realmId"),
         @NamedQuery(name="getRealmUserByFirstLastName", query="select u from UserEntity u where u.firstName = :first and u.lastName = :last and u.realmId = :realmId"),
         @NamedQuery(name="getRealmUserByServiceAccount", query="select u from UserEntity u where u.serviceAccountClientLink = :clientInternalId and u.realmId = :realmId"),
-        @NamedQuery(name="getRealmUserCount", query="select count(u) from UserEntity u where u.realmId = :realmId"),
-        @NamedQuery(name="getRealmUserCountExcludeServiceAccount", query="select count(u) from UserEntity u where u.realmId = :realmId and (u.serviceAccountClientLink is null)"),
         @NamedQuery(name="getRealmUsersByAttributeNameAndValue", query="select u from UserEntity u join u.attributes attr " +
                 "where u.realmId = :realmId and attr.name = :name and attr.value = :value"),
         @NamedQuery(name="getRealmUsersByAttributeNameAndLongValue", query="select u from UserEntity u join u.attributes attr " +
@@ -76,6 +76,8 @@ public class UserEntity {
     protected String firstName;
     @Column(name = "CREATED_TIMESTAMP")
     protected Long createdTimestamp;
+    @Column(name = "LAST_MODIFIED_TIMESTAMP")
+    protected Long lastModifiedTimestamp;
     @Nationalized
     @Column(name = "LAST_NAME")
     protected String lastName;
@@ -147,6 +149,14 @@ public class UserEntity {
 
     public void setCreatedTimestamp(Long timestamp) {
         createdTimestamp = timestamp;
+    }
+
+    public Long getLastModifiedTimestamp() {
+        return lastModifiedTimestamp;
+    }
+
+    public void setLastModifiedTimestamp(Long timestamp) {
+        lastModifiedTimestamp = timestamp;
     }
 
     public String getFirstName() {

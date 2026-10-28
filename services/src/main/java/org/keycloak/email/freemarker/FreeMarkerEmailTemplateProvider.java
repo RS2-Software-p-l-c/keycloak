@@ -18,6 +18,7 @@
 package org.keycloak.email.freemarker;
 
 import java.io.IOException;
+import java.text.Bidi;
 import java.text.MessageFormat;
 import java.util.Collections;
 import java.util.HashMap;
@@ -25,6 +26,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
+
+import jakarta.enterprise.context.ContextNotActiveException;
+
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.common.util.ObjectUtil;
 import org.keycloak.email.EmailException;
@@ -35,6 +39,7 @@ import org.keycloak.email.freemarker.beans.ProfileBean;
 import org.keycloak.events.Event;
 import org.keycloak.events.EventType;
 import org.keycloak.forms.login.freemarker.model.UrlBean;
+import org.keycloak.models.Constants;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakUriInfo;
 import org.keycloak.models.OrganizationModel;
@@ -47,11 +52,15 @@ import org.keycloak.theme.beans.LinkExpirationFormatterMethod;
 import org.keycloak.theme.beans.MessageFormatterMethod;
 import org.keycloak.theme.freemarker.FreeMarkerProvider;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
  */
 public class FreeMarkerEmailTemplateProvider implements EmailTemplateProvider {
 
+    private static final Logger log = LoggerFactory.getLogger(FreeMarkerEmailTemplateProvider.class);
     protected KeycloakSession session;
     /**
      * authenticationSession can be null for some email sendings, it is filled only for email sendings performed as part of the authentication session (email verification, password reset, broker link
@@ -156,6 +165,14 @@ public class FreeMarkerEmailTemplateProvider implements EmailTemplateProvider {
     }
 
     @Override
+    public void sendVerifiableCredentialOffer(String link, long expirationInMinutes) throws EmailException {
+        Map<String, Object> attributes = new HashMap<>(this.attributes);
+        addLinkInfoIntoAttributes(link, expirationInMinutes, attributes);
+
+        send("verifiableCredentialOfferSubject", "verifiable-credential-offer.ftl", attributes);
+    }
+
+    @Override
     public void sendVerifyEmail(String link, long expirationInMinutes) throws EmailException {
         Map<String, Object> attributes = new HashMap<>(this.attributes);
         addLinkInfoIntoAttributes(link, expirationInMinutes, attributes);
@@ -199,7 +216,7 @@ public class FreeMarkerEmailTemplateProvider implements EmailTemplateProvider {
         attributes.put("link", link);
         attributes.put("linkExpiration", expirationInMinutes);
         try {
-            Locale locale = session.getContext().resolveLocale(user, getTheme().getType());
+            Locale locale = session.getContext().resolveLocale(user, Boolean.parseBoolean(String.valueOf(attributes.get(Constants.IGNORE_ACCEPT_LANGUAGE_HEADER))));
             attributes.put("linkExpirationFormatter", new LinkExpirationFormatterMethod(getTheme().getMessages(locale), locale));
         } catch (IOException e) {
             throw new EmailException("Failed to template email", e);
@@ -213,20 +230,33 @@ public class FreeMarkerEmailTemplateProvider implements EmailTemplateProvider {
 
     protected EmailTemplate processTemplate(String subjectKey, List<Object> subjectAttributes, String template, Map<String, Object> attributes) throws EmailException {
         try {
-            Theme theme = getTheme();
-            Locale locale = session.getContext().resolveLocale(user, theme.getType());
+            Locale locale = session.getContext().resolveLocale(user, Boolean.parseBoolean(String.valueOf(attributes.get(Constants.IGNORE_ACCEPT_LANGUAGE_HEADER))));
             attributes.put("locale", locale);
 
+            Theme theme = getTheme();
             Properties messages = theme.getEnhancedMessages(realm, locale);
+
+            String currentLanguageTag = locale.getLanguage();
+            String currentLanguage = messages.getProperty("locale_" + currentLanguageTag, currentLanguageTag);
+            boolean isLtr = new Bidi(currentLanguage, Bidi.DIRECTION_DEFAULT_LEFT_TO_RIGHT).isLeftToRight();
+            attributes.put("ltr", isLtr);
+
             attributes.put("msg", new MessageFormatterMethod(locale, messages));
 
             attributes.put("properties", theme.getProperties());
             attributes.put("realmName", getRealmName());
             attributes.put("user", new ProfileBean(user, session));
-            KeycloakUriInfo uriInfo = session.getContext().getUri();
-            attributes.put("url", new UrlBean(realm, theme, uriInfo.getBaseUri(), null));
+
+            try {
+                KeycloakUriInfo uriInfo = session.getContext().getUri();
+                attributes.put("url", new UrlBean(realm, theme, uriInfo.getBaseUri(), null));
+            } catch (ContextNotActiveException e) {
+                log.debug("No active request, can't make url attribute available to the template");
+                // ignore when running without an active request context such as sending emails from an scheduled task
+            }
 
             String subject = new MessageFormat(messages.getProperty(subjectKey, subjectKey), locale).format(subjectAttributes.toArray());
+            attributes.put("subject", subject);
             String textTemplate = String.format("text/%s", template);
             String textBody;
             try {
@@ -257,7 +287,14 @@ public class FreeMarkerEmailTemplateProvider implements EmailTemplateProvider {
         send(subjectFormatKey, subjectAttributes, bodyTemplate, bodyAttributes, null);
     }
 
-    protected void send(String subjectFormatKey, List<Object> subjectAttributes, String bodyTemplate, Map<String, Object> bodyAttributes, String address) throws EmailException {
+    @Override
+    public void send(String subjectFormatKey, String bodyTemplate, Map<String, Object> bodyAttributes, String destinationEmail) throws EmailException {
+        send(subjectFormatKey, Collections.emptyList(), bodyTemplate, bodyAttributes, destinationEmail);
+    }
+
+    @Override
+    public void send(String subjectFormatKey, List<Object> subjectAttributes, String bodyTemplate,
+        Map<String, Object> bodyAttributes, String address) throws EmailException {
         try {
             EmailTemplate email = processTemplate(subjectFormatKey, subjectAttributes, bodyTemplate, bodyAttributes);
             send(email.getSubject(), email.getTextBody(), email.getHtmlBody(), address);
@@ -278,6 +315,9 @@ public class FreeMarkerEmailTemplateProvider implements EmailTemplateProvider {
 
     protected void send(Map<String, String> config, String subject, String textBody, String htmlBody, String address) throws EmailException {
         EmailSenderProvider emailSender = session.getProvider(EmailSenderProvider.class);
+        if (emailSender == null) {
+            throw new EmailException("Email sender provider is disabled or not configured");
+        }
         if (address == null) {
             emailSender.send(config, user, subject, textBody, htmlBody);
         } else {

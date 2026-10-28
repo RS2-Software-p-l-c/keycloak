@@ -17,7 +17,11 @@
 
 package org.keycloak.exportimport.singlefile;
 
-import org.jboss.logging.Logger;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Map;
+
 import org.keycloak.Config;
 import org.keycloak.exportimport.AbstractFileBasedImportProvider;
 import org.keycloak.exportimport.Strategy;
@@ -25,14 +29,10 @@ import org.keycloak.exportimport.util.ExportImportSessionTask;
 import org.keycloak.exportimport.util.ImportUtils;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
-import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.util.JsonSerialization;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.Map;
+import org.jboss.logging.Logger;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -54,18 +54,19 @@ public class SingleFileImportProvider extends AbstractFileBasedImportProvider {
         this.strategy = strategy;
     }
 
+    @Override
     public void importModel() throws IOException {
         logger.infof("Full importing from file %s", this.file.getAbsolutePath());
         checkRealmReps();
 
-        KeycloakModelUtils.runJobInTransaction(factory, new ExportImportSessionTask() {
+        new ExportImportSessionTask() {
 
             @Override
             protected void runExportImportTask(KeycloakSession session) {
                 ImportUtils.importRealms(session, realmReps.values(), strategy);
             }
 
-        });
+        }.runTask(factory);
     }
 
     @Override

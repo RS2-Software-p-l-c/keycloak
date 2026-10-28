@@ -18,10 +18,7 @@
 
 package org.keycloak.authentication.authenticators.x509;
 
-import static org.keycloak.authentication.authenticators.x509.AbstractX509ClientCertificateAuthenticator.CERTIFICATE_POLICY_MODE_ANY;
-
 import java.io.ByteArrayInputStream;
-import java.io.DataInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -53,10 +50,11 @@ import java.util.HashSet;
 import java.util.Hashtable;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-
+import java.util.stream.Stream;
 import javax.naming.Context;
 import javax.naming.NamingException;
 import javax.naming.directory.Attribute;
@@ -65,20 +63,24 @@ import javax.naming.directory.DirContext;
 import javax.naming.directory.InitialDirContext;
 import javax.security.auth.x500.X500Principal;
 
-import org.apache.http.client.methods.CloseableHttpResponse;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.util.EntityUtils;
-import org.jboss.logging.Logger;
 import org.keycloak.common.crypto.CryptoIntegration;
 import org.keycloak.common.util.PemUtils;
 import org.keycloak.common.util.Time;
 import org.keycloak.connections.httpclient.HttpClientProvider;
+import org.keycloak.crl.CrlStorageProvider;
 import org.keycloak.models.Constants;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.truststore.TruststoreProvider;
 import org.keycloak.utils.CRLUtils;
 import org.keycloak.utils.OCSPProvider;
+
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.util.EntityUtils;
+import org.jboss.logging.Logger;
+
+import static org.keycloak.authentication.authenticators.x509.AbstractX509ClientCertificateAuthenticator.CERTIFICATE_POLICY_MODE_ANY;
 
 /**
  * @author <a href="mailto:pnalyvayko@agi.com">Peter Nalyvayko</a>
@@ -89,6 +91,54 @@ import org.keycloak.utils.OCSPProvider;
 public class CertificateValidator {
 
     private final static Logger logger = Logger.getLogger(CertificateValidator.class);
+
+    private PKIXCertPathBuilderResult certPathBuilderResult;
+
+    // Custom OIDs defined in the OpenBanking Brasil - https://openbanking-brasil.github.io/specs-seguranca/open-banking-brasil-certificate-standards-1_ID1.html#name-client-certificate
+    // These are not recognized by default in RFC1779 or RFC2253 and hence not read in Java by default
+    private static final Map<String, String> CUSTOM_OIDS = Map.of(
+            "2.5.4.5", "serialNumber".toUpperCase(Locale.ROOT),
+            "2.5.4.15", "businessCategory".toUpperCase(Locale.ROOT),
+            "1.3.6.1.4.1.311.60.2.1.3", "jurisdictionCountryName".toUpperCase(Locale.ROOT),
+            "1.2.840.113549.1.9.1", "emailAddress".toUpperCase(Locale.ROOT));
+    private static final Map<String, String> CUSTOM_OIDS_REVERSED = Stream.concat(
+            CUSTOM_OIDS.entrySet().stream(),
+            Stream.of(Map.entry("1.2.840.113549.1.9.1", "E")))
+            .collect(Collectors.toUnmodifiableMap(Map.Entry::getValue, Map.Entry::getKey));
+
+    public static X500Principal constructX500Principal(String subjectDN) {
+        if (subjectDN == null) {
+            return null;
+        }
+
+        try {
+            return new X500Principal(subjectDN, CUSTOM_OIDS_REVERSED);
+        } catch (IllegalArgumentException e) {
+            logger.debugf("Invalid subjectDN '%s'", subjectDN);
+            return null;
+        }
+    }
+
+    public static String getSubjectName(X509Certificate cert) {
+        if (cert == null) {
+            return null;
+        }
+        return cert.getSubjectX500Principal().getName(X500Principal.RFC2253, CUSTOM_OIDS);
+    }
+
+    public static boolean checkSubjectDNExact(X509Certificate certificate, String subjectDN) {
+        if (certificate == null || subjectDN == null) {
+            return false;
+        }
+
+        X500Principal expectedDNPrincipal = constructX500Principal(subjectDN);
+        if (expectedDNPrincipal == null) {
+            return false;
+        }
+
+        return expectedDNPrincipal.getName(X500Principal.RFC2253, CUSTOM_OIDS)
+                .equals(certificate.getSubjectX500Principal().getName(X500Principal.RFC2253, CUSTOM_OIDS));
+    }
 
     enum KeyUsageBits {
         DIGITAL_SIGNATURE(0, "digitalSignature"),
@@ -136,6 +186,10 @@ public class CertificateValidator {
                     return bit;
             throw new IndexOutOfBoundsException("value");
         }
+    }
+
+    public PKIXCertPathBuilderResult getCertPathBuilderResult() {
+        return this.certPathBuilderResult;
     }
 
     public static class LdapContext {
@@ -229,6 +283,7 @@ public class CertificateValidator {
         public CRLLoaderProxy(X509CRL crl) {
             _crl = crl;
         }
+        @Override
         public Collection<X509CRL> getX509CRLs() throws GeneralSecurityException {
             return Collections.singleton(_crl);
         }
@@ -278,8 +333,15 @@ public class CertificateValidator {
                 throw new NullPointerException("Context cannot be null");
         }
 
+        @Override
         public Collection<X509CRL> getX509CRLs() throws GeneralSecurityException {
-            X509CRL crl = loadCRL();
+            if (cRLPath == null) {
+                throw new GeneralSecurityException("Unable to load CRL because no crl path is defined");
+            }
+
+            CrlStorageProvider crlCache = session.getProvider(CrlStorageProvider.class);
+            final X509CRL crl = crlCache.get(cRLPath, this::loadCRL);
+
             if (crl == null) {
                 throw new GeneralSecurityException(String.format("Unable to load CRL from \"%s\"", cRLPath));
             }
@@ -298,25 +360,23 @@ public class CertificateValidator {
         private X509CRL loadCRL() throws GeneralSecurityException {
             CertificateFactory cf = CertificateFactory.getInstance("X.509");
             X509CRL crl = null;
-            if (cRLPath != null) {
-                if (cRLPath.startsWith("http") || cRLPath.startsWith("https")) {
-                    // load CRL using remote URI
-                    try {
-                        crl = loadFromURI(cf, new URI(cRLPath));
-                    } catch (URISyntaxException e) {
-                        logger.error(e.getMessage());
-                    }
-                } else if (cRLPath.startsWith("ldap")) {
-                    // load CRL from LDAP
-                    try {
-                        crl = loadCRLFromLDAP(cf, new URI(cRLPath));
-                    } catch(URISyntaxException e) {
-                        logger.error(e.getMessage());
-                    }
-                } else {
-                    // load CRL from file
-                    crl = loadCRLFromFile(cf, cRLPath);
+            if (cRLPath.startsWith("http") || cRLPath.startsWith("https")) {
+                // load CRL using remote URI
+                try {
+                    crl = loadFromURI(cf, new URI(cRLPath));
+                } catch (URISyntaxException e) {
+                    logger.error(e.getMessage());
                 }
+            } else if (cRLPath.startsWith("ldap")) {
+                // load CRL from LDAP
+                try {
+                    crl = loadCRLFromLDAP(cf, new URI(cRLPath));
+                } catch (URISyntaxException e) {
+                    logger.error(e.getMessage());
+                }
+            } else {
+                // load CRL from file
+                crl = loadCRLFromFile(cf, cRLPath);
             }
             return crl;
         }
@@ -330,10 +390,8 @@ public class CertificateValidator {
                 get.setHeader("Pragma", "no-cache");
                 get.setHeader("Cache-Control", "no-cache, no-store");
                 try (CloseableHttpResponse response = httpClient.execute(get)) {
-                    try {
-                        InputStream content = response.getEntity().getContent();
-                        X509CRL crl = loadFromStream(cf, content);
-                        return crl;
+                    try (InputStream content = response.getEntity().getContent()) {
+                        return loadFromStream(cf, content);
                     } finally {
                         EntityUtils.consumeQuietly(response.getEntity());
                     }
@@ -360,8 +418,9 @@ public class CertificateValidator {
                     if (data == null || data.length == 0) {
                         throw new CertificateException(String.format("Failed to download CRL from \"%s\"", remoteURI.toString()));
                     }
-                    X509CRL crl = loadFromStream(cf, new ByteArrayInputStream(data));
-                    return crl;
+                    try (InputStream is = new ByteArrayInputStream(data)) {
+                        return loadFromStream(cf, is);
+                    }
                 } finally {
                     ctx.close();
                 }
@@ -386,8 +445,7 @@ public class CertificateValidator {
                             throw new IOException(String.format("Unable to read CRL from \"%s\"", f.getAbsolutePath()));
                         }
                         try (FileInputStream is = new FileInputStream(f.getAbsolutePath())) {
-                            X509CRL crl = loadFromStream(cf, is);
-                            return crl;
+                            return loadFromStream(cf, is);
                         }
                     }
                 }
@@ -397,11 +455,9 @@ public class CertificateValidator {
             }
             return null;
         }
+
         private X509CRL loadFromStream(CertificateFactory cf, InputStream is) throws IOException, CRLException {
-            DataInputStream dis = new DataInputStream(is);
-            X509CRL crl = (X509CRL)cf.generateCRL(dis);
-            dis.close();
-            return crl;
+            return (X509CRL) cf.generateCRL(is);
         }
     }
 
@@ -420,10 +476,12 @@ public class CertificateValidator {
     OCSPChecker ocspChecker;
     boolean _timestampValidationEnabled;
     boolean _trustValidationEnabled;
+    List<String> _caSubjectDN;
 
     public CertificateValidator() {
 
     }
+
     protected CertificateValidator(X509Certificate[] certChain,
                          int keyUsageBits, List<String> extendedKeyUsage,
                                    List<String> certificatePolicy, String certificatePolicyMode,
@@ -436,7 +494,8 @@ public class CertificateValidator {
                                    OCSPChecker ocspChecker,
                                    KeycloakSession session,
                                    boolean timestampValidationEnabled,
-                                   boolean trustValidationEnabled) {
+                                   boolean trustValidationEnabled,
+                                   List<String> caSubjectDN) {
         _certChain = certChain;
         _keyUsageBits = keyUsageBits;
         _extendedKeyUsage = extendedKeyUsage;
@@ -452,6 +511,7 @@ public class CertificateValidator {
         this.session = session;
         _timestampValidationEnabled = timestampValidationEnabled;
         _trustValidationEnabled = trustValidationEnabled;
+        _caSubjectDN = caSubjectDN;
 
         if (ocspChecker == null)
             throw new IllegalArgumentException("ocspChecker");
@@ -602,17 +662,39 @@ public class CertificateValidator {
             return this;
 
         TruststoreProvider truststoreProvider = session.getProvider(TruststoreProvider.class);
-        if (truststoreProvider == null || truststoreProvider.getTruststore() == null) {
+        if (truststoreProvider == null || truststoreProvider.getHttpsTruststore() == null) {
             throw new GeneralSecurityException("Cannot validate client certificate trust: Truststore not available. Please make sure to correctly configure truststore provider in order to be able to revalidate certificate trust");
         }
         else
         {
-            Set<X509Certificate> trustedRootCerts = truststoreProvider.getRootCertificates().entrySet().stream().flatMap(t -> t.getValue().stream()).collect(Collectors.toSet());
-            Set<X509Certificate> trustedIntermediateCerts = truststoreProvider.getIntermediateCertificates().entrySet().stream().flatMap(t -> t.getValue().stream()).collect(Collectors.toSet());
+            Set<X509Certificate> trustedRootCerts = truststoreProvider.getHttpsRootCertificates().entrySet().stream().flatMap(t -> t.getValue().stream()).collect(Collectors.toSet());
+            Set<X509Certificate> trustedIntermediateCerts = truststoreProvider.getHttpsIntermediateCertificates().entrySet().stream().flatMap(t -> t.getValue().stream()).collect(Collectors.toSet());
 
             logger.debugf("Found %d trusted root certs, %d trusted intermediate certs", trustedRootCerts.size(), trustedIntermediateCerts.size());
+            logger.debugf("Found %d trusted root certs", truststoreProvider.getHttpsTruststore().size());
 
-            verifyCertificateTrust(_certChain, trustedRootCerts, trustedIntermediateCerts);
+            this.certPathBuilderResult = verifyCertificateTrust(_certChain, trustedRootCerts, trustedIntermediateCerts);
+        }
+
+        return this;
+    }
+
+    public CertificateValidator validateCASubjectDN() throws GeneralSecurityException {
+        if (_caSubjectDN == null || _caSubjectDN.isEmpty()) {
+            return this;
+        }
+
+        if (this.certPathBuilderResult == null) {
+            throw new GeneralSecurityException("Trust is not validated yet");
+        }
+
+        X509Certificate ca = this.certPathBuilderResult.getTrustAnchor().getTrustedCert();
+
+        if (ca == null || _caSubjectDN.stream().noneMatch(dn -> checkSubjectDNExact(ca, dn))) {
+            if (logger.isDebugEnabled()) {
+                logger.debugf("Couldn't match trusted anchor subject DN '%s' with expected CA Subject DNs: %s", getSubjectName(ca), _caSubjectDN);
+            }
+            throw new GeneralSecurityException("Invalid trust anchor for the certificate");
         }
 
         return this;
@@ -735,9 +817,7 @@ public class CertificateValidator {
                     logger.warnf("Unable to check client revocation status using OCSP - continuing certificate authentication because of fail-open OCSP configuration setting");
                 else
                     throw new GeneralSecurityException("Unable to check client revocation status using OCSP");
-            }
-
-            if (rs.getRevocationStatus() == OCSPProvider.RevocationStatus.UNKNOWN) {
+            } else if (rs.getRevocationStatus() == OCSPProvider.RevocationStatus.UNKNOWN) {
                 if (_ocspFailOpen)
                     logger.warnf("Unable to determine certificate's revocation status - continuing certificate authentication because of fail-open OCSP configuration setting");
                 else
@@ -833,6 +913,7 @@ public class CertificateValidator {
         X509Certificate _responderCert;
         boolean _timestampValidationEnabled;
         boolean _trustValidationEnabled;
+        List<String> _caSubjectDN;
 
         public CertificateValidatorBuilder() {
             _extendedKeyUsage = new LinkedList<>();
@@ -1056,6 +1137,11 @@ public class CertificateValidator {
                 _parent = parent;
             }
 
+            public TrustValidationBuilder caSubjectDN(List<String> value) {
+                _caSubjectDN = value == null ? List.of() : List.copyOf(value);
+                return this;
+            }
+
             public CertificateValidatorBuilder enabled(boolean value) {
                 _trustValidationEnabled = value;
                 return _parent;
@@ -1098,7 +1184,7 @@ public class CertificateValidator {
             return new CertificateValidator(certs, _keyUsageBits, _extendedKeyUsage,
                     _certificatePolicy, _certificatePolicyMode,
                     _crlCheckingEnabled, _crlAbortIfNonUpdated, _crldpEnabled, _crlLoader, _ocspEnabled, _ocspFailOpen,
-                    new BouncyCastleOCSPChecker(session, _responderUri, _responderCert), session, _timestampValidationEnabled, _trustValidationEnabled);
+                    new BouncyCastleOCSPChecker(session, _responderUri, _responderCert), session, _timestampValidationEnabled, _trustValidationEnabled, _caSubjectDN);
         }
     }
 

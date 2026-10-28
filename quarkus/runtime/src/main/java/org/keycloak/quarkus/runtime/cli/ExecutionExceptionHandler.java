@@ -17,43 +17,38 @@
 
 package org.keycloak.quarkus.runtime.cli;
 
-import static org.keycloak.quarkus.runtime.configuration.Configuration.getConfig;
-
 import java.io.PrintWriter;
-import java.nio.file.FileSystemException;
-import java.util.Optional;
-import org.jboss.logging.Logger;
-import org.keycloak.platform.Platform;
-import org.keycloak.quarkus.runtime.Environment;
-import org.keycloak.quarkus.runtime.Messages;
-import org.keycloak.quarkus.runtime.integration.QuarkusPlatform;
 
-import io.smallrye.config.ConfigValue;
+import org.keycloak.quarkus.runtime.Environment;
+
+import io.quarkus.bootstrap.logging.InitialConfigurator;
+import org.jboss.logging.Logger;
 import picocli.CommandLine;
 import picocli.CommandLine.ParseResult;
 
 public final class ExecutionExceptionHandler implements CommandLine.IExecutionExceptionHandler {
 
-    private Logger logger;
+    private static Logger logger;
     private boolean verbose;
 
     public ExecutionExceptionHandler() {}
 
     @Override
     public int handleExecutionException(Exception cause, CommandLine cmd, ParseResult parseResult) {
-        if (cause instanceof PropertyException) {
+        var exception = cause;
+        if (exception instanceof PropertyException) {
             PrintWriter writer = cmd.getErr();
-            writer.println(cmd.getColorScheme().errorText(cause.getMessage()));
-            if (verbose && cause.getCause() != null) {
-                dumpException(writer, cause.getCause());
+            writer.println(cmd.getColorScheme().errorText(exception.getMessage()));
+            if (verbose && exception.getCause() != null) {
+                dumpException(writer, exception.getCause());
             }
-            return ShortErrorMessageHandler.getInvalidInputExitCode(cause, cmd);
+            return ShortErrorMessageHandler.getInvalidInputExitCode(exception, cmd);
         }
         error(cmd.getErr(), "Failed to run '" + parseResult.subcommands().stream()
                 .map(ParseResult::commandSpec)
                 .map(CommandLine.Model.CommandSpec::name)
                 .findFirst()
-                .orElse(Environment.getCommand()) + "' command.", cause);
+                .orElse(Environment.getCommand()) + "' command.", exception);
         return cmd.getCommandSpec().exitCodeOnExecutionException();
     }
 
@@ -79,21 +74,7 @@ public final class ExecutionExceptionHandler implements CommandLine.IExecutionEx
                 if (cause.getMessage() != null) {
                     logError(errorWriter, String.format("ERROR: %s", cause.getMessage()));
                 }
-                printErrorHints(errorWriter, cause);
             } while ((cause = cause.getCause()) != null);
-        }
-
-        printErrorHints(errorWriter, cause);
-    }
-
-    private void printErrorHints(PrintWriter errorWriter, Throwable cause) {
-        if (cause instanceof FileSystemException) {
-            FileSystemException fse = (FileSystemException) cause;
-            ConfigValue httpsCertFile = getConfig().getConfigValue("kc.https-certificate-file");
-
-            if (fse.getFile().equals(Optional.ofNullable(httpsCertFile.getValue()).orElse(null))) {
-                logError(errorWriter, Messages.httpsConfigurationNotSet());
-            }
         }
     }
 
@@ -103,9 +84,8 @@ public final class ExecutionExceptionHandler implements CommandLine.IExecutionEx
 
     // The "cause" can be null
     private void logError(PrintWriter errorWriter, String errorMessage, Throwable cause) {
-        QuarkusPlatform platform = (QuarkusPlatform) Platform.getPlatform();
-        if (platform.isStarted()) {
-            // Can delegate to proper logger once the platform is started
+        if (InitialConfigurator.DELAYED_HANDLER.isActivated()) {
+            // Can delegate to proper logger once delayed handler is activated
             if (cause == null) {
                 getLogger().error(errorMessage);
             } else {
@@ -121,7 +101,7 @@ public final class ExecutionExceptionHandler implements CommandLine.IExecutionEx
         }
     }
 
-    private Logger getLogger() {
+    private static Logger getLogger() {
         if (logger == null) {
             logger = Logger.getLogger(ExecutionExceptionHandler.class);
         }
@@ -131,4 +111,5 @@ public final class ExecutionExceptionHandler implements CommandLine.IExecutionEx
     public void setVerbose(boolean verbose) {
         this.verbose = verbose;
     }
+
 }

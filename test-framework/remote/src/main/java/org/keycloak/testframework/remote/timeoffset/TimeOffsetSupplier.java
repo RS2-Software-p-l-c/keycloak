@@ -1,6 +1,9 @@
 package org.keycloak.testframework.remote.timeoffset;
 
-import org.apache.http.client.HttpClient;
+import java.util.List;
+
+import org.keycloak.testframework.injection.DependenciesBuilder;
+import org.keycloak.testframework.injection.Dependency;
 import org.keycloak.testframework.injection.InstanceContext;
 import org.keycloak.testframework.injection.LifeCycle;
 import org.keycloak.testframework.injection.RequestedInstance;
@@ -9,22 +12,14 @@ import org.keycloak.testframework.injection.SupplierOrder;
 import org.keycloak.testframework.remote.RemoteProviders;
 import org.keycloak.testframework.server.KeycloakUrls;
 
-import java.util.Set;
+import org.apache.http.client.HttpClient;
 
 public class TimeOffsetSupplier implements Supplier<TimeOffSet, InjectTimeOffSet> {
-    @Override
-    public Class<InjectTimeOffSet> getAnnotationClass() {
-        return InjectTimeOffSet.class;
-    }
 
     @Override
-    public Class<TimeOffSet> getValueType() {
-        return TimeOffSet.class;
-    }
-
-    @Override
-    public Set<Class<?>> dependencies() {
-        return Set.of(HttpClient.class, RemoteProviders.class, KeycloakUrls.class);
+    public List<Dependency> getDependencies(RequestedInstance<TimeOffSet, InjectTimeOffSet> instanceContext) {
+        return DependenciesBuilder.create(HttpClient.class)
+                .add(RemoteProviders.class).add(KeycloakUrls.class).build();
     }
 
     @Override
@@ -34,7 +29,8 @@ public class TimeOffsetSupplier implements Supplier<TimeOffSet, InjectTimeOffSet
         KeycloakUrls keycloakUrls = instanceContext.getDependency(KeycloakUrls.class);
 
         int initOffset = instanceContext.getAnnotation().offset();
-        return new TimeOffSet(httpClient, keycloakUrls.getMasterRealm(), initOffset);
+        boolean caches = instanceContext.getAnnotation().enableForCaches();
+        return new TimeOffSet(httpClient, keycloakUrls.getMasterRealm(), initOffset, caches);
     }
 
     @Override
@@ -49,11 +45,9 @@ public class TimeOffsetSupplier implements Supplier<TimeOffSet, InjectTimeOffSet
 
     @Override
     public void close(InstanceContext<TimeOffSet, InjectTimeOffSet> instanceContext) {
-        if (instanceContext.getLifeCycle() != LifeCycle.METHOD) {
-            TimeOffSet timeOffSet = instanceContext.getValue();
-            if (timeOffSet.hasChanged()) {
-                timeOffSet.set(0);
-            }
+        TimeOffSet timeOffSet = instanceContext.getValue();
+        if (timeOffSet.hasChanged()) {
+            timeOffSet.set(0);
         }
     }
 

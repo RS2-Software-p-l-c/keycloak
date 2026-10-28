@@ -17,6 +17,13 @@
  */
 package org.keycloak.protocol.oidc;
 
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MultivaluedMap;
+
 import org.keycloak.OAuth2Constants;
 import org.keycloak.common.ClientConnection;
 import org.keycloak.events.EventBuilder;
@@ -24,12 +31,6 @@ import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.services.cors.Cors;
-
-import jakarta.ws.rs.core.HttpHeaders;
-import jakarta.ws.rs.core.MultivaluedMap;
-
-import java.util.List;
-import java.util.Map;
 
 /**
  * Token exchange context
@@ -41,7 +42,6 @@ public class TokenExchangeContext {
     private final KeycloakSession session;
     private final MultivaluedMap<String, String> formParams;
 
-    // TODO: resolve deps issue and use correct types
     private final Cors cors;
     private final Object tokenManager;
 
@@ -49,11 +49,15 @@ public class TokenExchangeContext {
     private final RealmModel realm;
     private final EventBuilder event;
 
-    private ClientConnection clientConnection;
-    private HttpHeaders headers;
-    private Map<String, String> clientAuthAttributes;
+    private final ClientConnection clientConnection;
+    private final HttpHeaders headers;
+    private final Map<String, String> clientAuthAttributes;
 
     private final Params params = new Params();
+    private Set<String> restrictedScopes;
+
+    // Reason why the particular tokenExchange provider cannot be supported
+    private String unsupportedReason;
 
     public TokenExchangeContext(KeycloakSession session,
             MultivaluedMap<String, String> formParams,
@@ -119,6 +123,22 @@ public class TokenExchangeContext {
 
     public Params getParams() {
         return params;
+    }
+
+    public Set<String> getRestrictedScopes() {
+        return restrictedScopes;
+    }
+
+    public void setRestrictedScopes(Set<String> restrictedScopes) {
+        this.restrictedScopes = restrictedScopes;
+    }
+
+    public String getUnsupportedReason() {
+        return unsupportedReason;
+    }
+
+    public void setUnsupportedReason(String unsupportedReason) {
+        this.unsupportedReason = unsupportedReason;
     }
 
     public class Params {

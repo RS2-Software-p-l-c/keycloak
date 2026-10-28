@@ -17,13 +17,7 @@
 package org.keycloak.tests.admin.authz.fgap;
 
 import java.util.List;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.empty;
-import static org.hamcrest.Matchers.hasSize;
-import static org.hamcrest.Matchers.is;
-import static org.hamcrest.Matchers.notNullValue;
-import static org.hamcrest.Matchers.nullValue;
-import org.junit.jupiter.api.Test;
+
 import org.keycloak.models.Constants;
 import org.keycloak.representations.idm.ClientRepresentation;
 import org.keycloak.representations.idm.RealmRepresentation;
@@ -34,13 +28,22 @@ import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 import org.keycloak.testframework.realm.ManagedClient;
 import org.keycloak.testframework.realm.ManagedRealm;
 
-@KeycloakIntegrationTest(config = KeycloakAdminPermissionsServerConfig.class)
+import org.junit.jupiter.api.Test;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.empty;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
+
+@KeycloakIntegrationTest
 public class FeatureV2EnabledTest {
 
     @InjectRealm
     private ManagedRealm realm;
 
-    @InjectClient(ref = "test-client", config = AuthzClientConfig.class, createClient = true)
+    @InjectClient(config = AuthzClientConfig.class)
     private ManagedClient testClient;
 
     @Test

@@ -16,13 +16,27 @@
  */
 package org.keycloak.services.resources.admin;
 
-import org.eclipse.microprofile.openapi.annotations.Operation;
-import org.eclipse.microprofile.openapi.annotations.extensions.Extension;
-import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
-import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
-import org.eclipse.microprofile.openapi.annotations.tags.Tag;
-import org.jboss.logging.Logger;
-import org.jboss.resteasy.reactive.NoCache;
+import java.io.InputStream;
+import java.net.URI;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+import java.util.stream.Stream;
+
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DefaultValue;
+import jakarta.ws.rs.ForbiddenException;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.CacheControl;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+
 import org.keycloak.common.ClientConnection;
 import org.keycloak.events.admin.OperationType;
 import org.keycloak.events.admin.ResourceType;
@@ -40,29 +54,22 @@ import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.services.ErrorResponse;
 import org.keycloak.services.managers.RealmManager;
 import org.keycloak.services.resources.KeycloakOpenAPI;
-import org.keycloak.services.resources.admin.permissions.AdminPermissionEvaluator;
-import org.keycloak.services.resources.admin.permissions.AdminPermissions;
+import org.keycloak.services.resources.admin.fgap.AdminPermissionEvaluator;
+import org.keycloak.services.resources.admin.fgap.AdminPermissions;
 import org.keycloak.storage.DatastoreProvider;
 import org.keycloak.storage.ExportImportManager;
 
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.DefaultValue;
-import jakarta.ws.rs.ForbiddenException;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.NotFoundException;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.QueryParam;
-import jakarta.ws.rs.core.CacheControl;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
-import java.io.InputStream;
-import java.net.URI;
-import java.util.Arrays;
-import java.util.Objects;
-import java.util.stream.Stream;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
+import org.eclipse.microprofile.openapi.annotations.extensions.Extension;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+import org.jboss.logging.Logger;
+import org.jboss.resteasy.reactive.NoCache;
 
 import static org.keycloak.utils.StreamsUtil.throwIfEmpty;
 
@@ -108,6 +115,10 @@ public class RealmsAdminResource {
     @Produces(MediaType.APPLICATION_JSON)
     @Tag(name = KeycloakOpenAPI.Admin.Tags.REALMS_ADMIN)
     @Operation(summary = "Get accessible realms Returns a list of accessible realms. The list is filtered based on what realms the caller is allowed to view.")
+    @APIResponses(value = {
+        @APIResponse(responseCode = "200", description = "OK", content = @Content(schema = @Schema(implementation = RealmRepresentation.class, type = SchemaType.ARRAY))),
+        @APIResponse(responseCode = "403", description = "Forbidden")
+    })
     public Stream<RealmRepresentation> getRealms(@DefaultValue("false") @QueryParam("briefRepresentation") boolean briefRepresentation) {
         Stream<RealmRepresentation> realms = session.realms().getRealmsStream()
                 .map(realm -> toRealmRep(realm, briefRepresentation))
@@ -117,7 +128,17 @@ public class RealmsAdminResource {
 
     protected RealmRepresentation toRealmRep(RealmModel realm, boolean briefRep) {
         if (AdminPermissions.realms(session, auth).canView(realm)) {
-            return briefRep ? ModelToRepresentation.toBriefRepresentation(realm) : ModelToRepresentation.toRepresentation(session, realm, false);
+            if (briefRep) {
+                return ModelToRepresentation.toBriefRepresentation(realm);
+            }
+            RealmRepresentation rep = ModelToRepresentation.toRepresentation(session, realm, false);
+            AdminPermissionEvaluator realmAuth = AdminPermissions.evaluator(session, realm, auth);
+            List<String> filteredDefaultGroups = realm.getDefaultGroupsStream()
+                    .filter(realmAuth.groups()::canView)
+                    .map(ModelToRepresentation::buildGroupPath)
+                    .toList();
+            rep.setDefaultGroups(filteredDefaultGroups.isEmpty() ? null : filteredDefaultGroups);
+            return rep;
         } else if (AdminPermissions.realms(session, auth).isAdmin(realm)) {
             RealmRepresentation rep = new RealmRepresentation();
             rep.setRealm(realm.getName());
@@ -136,7 +157,13 @@ public class RealmsAdminResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Tag(name = KeycloakOpenAPI.Admin.Tags.REALMS_ADMIN)
     @Operation(summary = "Import a realm. Imports a realm from a full representation of that realm.", description = "Realm name must be unique.")
-    @APIResponse(responseCode = "201", description = "Created")
+    @APIResponses(value = {
+        @APIResponse(responseCode = "201", description = "Created"),
+        @APIResponse(responseCode = "400", description = "Bad Request"),
+        @APIResponse(responseCode = "403", description = "Forbidden"),
+        @APIResponse(responseCode = "409", description = "Conflict"),
+        @APIResponse(responseCode = "500", description = "Internal Server Error")
+    })
     public Response importRealm(InputStream requestBody) {
         AdminPermissions.realms(session, auth).requireCreateRealm();
 
@@ -159,17 +186,15 @@ public class RealmsAdminResource {
                     .success();
 
             return Response.created(location).build();
-        } catch (ModelDuplicateException e) {
-            logger.error("Conflict detected", e);
-            if (session.getTransactionManager().isActive()) session.getTransactionManager().setRollbackOnly();
-            throw ErrorResponse.exists("Conflict detected. See logs for details");
         } catch (PasswordPolicyNotMetException e) {
             logger.error("Password policy not met for user " + e.getUsername(), e);
-            if (session.getTransactionManager().isActive()) session.getTransactionManager().setRollbackOnly();
             throw ErrorResponse.error("Password policy not met. See logs for details", Response.Status.BAD_REQUEST);
-        } catch (ModelIllegalStateException e) {
-            logger.error(e.getMessage(), e);
-            throw ErrorResponse.error(e.getMessage(), Response.Status.INTERNAL_SERVER_ERROR);
+        } catch (ModelIllegalStateException mise) {
+            logger.error(mise.getMessage(), mise);
+            throw ErrorResponse.error(mise.getMessage(), Response.Status.INTERNAL_SERVER_ERROR);
+        } catch (ModelDuplicateException mde) {
+            logger.error("Conflict detected", mde);
+            throw ErrorResponse.exists(mde.getMessage());
         } catch (ModelException e) {
             throw ErrorResponse.error(e.getMessage(), Response.Status.BAD_REQUEST);
         }
@@ -201,9 +226,11 @@ public class RealmsAdminResource {
                 && !auth.getRealm().equals(realm)) {
             throw new ForbiddenException();
         }
-        AdminPermissionEvaluator realmAuth = AdminPermissions.evaluator(session, realm, auth);
 
         session.getContext().setRealm(realm);
+
+        AdminPermissionEvaluator realmAuth = AdminPermissions.evaluator(session, realm, auth);
+
         AdminEventBuilder adminEvent = new AdminEventBuilder(realm, auth, session, clientConnection);
 
         return new RealmAdminResource(session, realmAuth, adminEvent);

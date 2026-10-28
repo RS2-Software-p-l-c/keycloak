@@ -16,14 +16,16 @@
  */
 package org.keycloak.testsuite.migration;
 
-import org.junit.Before;
-import org.junit.Test;
+import java.util.List;
+
+import jakarta.ws.rs.NotFoundException;
+
 import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.testsuite.arquillian.migration.Migration;
 
-import jakarta.ws.rs.NotFoundException;
-import java.util.List;
+import org.junit.Before;
+import org.junit.Test;
 
 import static org.keycloak.testsuite.auth.page.AuthRealm.MASTER;
 
@@ -73,6 +75,8 @@ public class MigrationTest extends AbstractMigrationTest {
         testMigrationTo25_0_0();
         testMigrationTo26_0_0(true);
         testMigrationTo26_1_0(true);
+        testMigrationTo26_3_0();
+        testMigrationTo26_4_0();
     }
 
     @Test
@@ -87,5 +91,8 @@ public class MigrationTest extends AbstractMigrationTest {
         testMigrationTo25_0_0();
         testMigrationTo26_0_0(true);
         testMigrationTo26_1_0(true);
+        testMigrationTo26_3_0();
+        testMigrationTo26_4_0();
+        testMigrationTo26_7_0();
     }
 }

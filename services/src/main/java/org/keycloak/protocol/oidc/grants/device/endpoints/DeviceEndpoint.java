@@ -17,8 +17,20 @@
 
 package org.keycloak.protocol.oidc.grants.device.endpoints;
 
-import org.jboss.logging.Logger;
-import org.keycloak.http.HttpRequest;
+import java.util.Map;
+
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotSupportedException;
+import jakarta.ws.rs.OPTIONS;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.MultivaluedMap;
+import jakarta.ws.rs.core.Response;
+
 import org.keycloak.OAuthErrorException;
 import org.keycloak.common.util.Base64Url;
 import org.keycloak.common.util.SecretGenerator;
@@ -27,6 +39,7 @@ import org.keycloak.events.Errors;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.events.EventType;
 import org.keycloak.forms.login.LoginFormsProvider;
+import org.keycloak.http.HttpRequest;
 import org.keycloak.models.AuthenticatedClientSessionModel;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.Constants;
@@ -45,6 +58,7 @@ import org.keycloak.protocol.oidc.grants.device.DeviceGrantType;
 import org.keycloak.protocol.oidc.grants.device.clientpolicy.context.DeviceAuthorizationRequestContext;
 import org.keycloak.protocol.oidc.utils.AuthorizeClientUtil;
 import org.keycloak.representations.OAuth2DeviceAuthorizationResponse;
+import org.keycloak.representations.idm.OAuth2ErrorRepresentation;
 import org.keycloak.saml.common.util.StringUtil;
 import org.keycloak.services.ErrorResponseException;
 import org.keycloak.services.ServicesLogger;
@@ -58,18 +72,8 @@ import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.util.JsonSerialization;
 import org.keycloak.util.TokenUtil;
 
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.OPTIONS;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.QueryParam;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.MultivaluedMap;
-import jakarta.ws.rs.core.Response;
-
-import java.util.Map;
+import org.jboss.logging.Logger;
+import org.jboss.resteasy.reactive.server.ServerExceptionMapper;
 
 import static org.keycloak.protocol.oidc.grants.device.DeviceGrantType.OAUTH2_DEVICE_USER_CODE;
 
@@ -89,6 +93,20 @@ public class DeviceEndpoint extends AuthorizationEndpointBase implements RealmRe
     public DeviceEndpoint(KeycloakSession session, EventBuilder event) {
         super(session, event);
         this.request = session.getContext().getHttpRequest();
+    }
+
+    @ServerExceptionMapper(NotSupportedException.class)
+    Response handleNotSupportedException() {
+        // applied on all endpoints in this resource since it should be fine here,
+        // but intended for the device authorization request in order to match token endpoint request
+        // per https://datatracker.ietf.org/doc/html/rfc8628#section-3.2
+        // if you need to narrow this response to only specific endpoint, extract this mapper with 'handleDeviceRequest'
+        // into a dedicated resource
+
+        return Response.status(400)
+                .entity(new OAuth2ErrorRepresentation(OAuthErrorException.INVALID_REQUEST, "Invalid Content-Type header"))
+                .type(MediaType.APPLICATION_JSON_TYPE)
+                .build();
     }
 
     /**
@@ -140,10 +158,13 @@ public class DeviceEndpoint extends AuthorizationEndpointBase implements RealmRe
         AuthorizationEndpointChecker checker = new AuthorizationEndpointChecker()
                 .event(event)
                 .client(client)
-                .request(request);
+                .realm(realm)
+                .request(request)
+                .session(session);
 
         try {
             checker.checkPKCEParams();
+            checker.checkValidScope();
         } catch (AuthorizationEndpointChecker.AuthorizationCheckException ex) {
             throw new ErrorResponseException(ex.getError(), ex.getErrorDescription(), Response.Status.BAD_REQUEST);
         }
@@ -151,6 +172,10 @@ public class DeviceEndpoint extends AuthorizationEndpointBase implements RealmRe
         try {
             session.clientPolicy().triggerOnEvent(new DeviceAuthorizationRequestContext(request, httpRequest.getDecodedFormParameters()));
         } catch (ClientPolicyException cpe) {
+            event.detail(Details.REASON, Details.CLIENT_POLICY_ERROR);
+            event.detail(Details.CLIENT_POLICY_ERROR, cpe.getError());
+            event.detail(Details.CLIENT_POLICY_ERROR_DETAIL, cpe.getErrorDetail());
+            event.error(cpe.getError());
             throw new ErrorResponseException(cpe.getError(), cpe.getErrorDetail(), Response.Status.BAD_REQUEST);
         }
 

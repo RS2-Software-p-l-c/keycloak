@@ -1,36 +1,40 @@
+import { useEnvironment } from "@keycloak/keycloak-ui-shared";
 import {
-  Divider,
+  Label,
   Nav,
   NavGroup,
-  NavItem,
-  NavList,
   PageSidebar,
   PageSidebarBody,
 } from "@patternfly/react-core";
 import { FormEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { NavLink, useMatch, useNavigate } from "react-router-dom";
-import { RealmSelector } from "./components/realm-selector/RealmSelector";
+import { NavLink, useNavigate } from "react-router-dom";
 import { useAccess } from "./context/access/Access";
 import { useRealm } from "./context/realm-context/RealmContext";
 import { useServerInfo } from "./context/server-info/ServerInfoProvider";
+import type { Environment } from "./environment-types";
 import { toPage } from "./page/routes";
-import { AddRealmRoute } from "./realm/routes/AddRealm";
+import { normalizeNavRoutePath } from "./page-nav-utils";
 import { routes } from "./routes";
+import { resolveDisplayName } from "./util";
 import useIsFeatureEnabled, { Feature } from "./utils/useIsFeatureEnabled";
 
 import "./page-nav.css";
 
-type LeftNavProps = { title: string; path: string; id?: string };
+type LeftNavProps = {
+  title: string;
+  path: string;
+  id?: string;
+};
 
 const LeftNav = ({ title, path, id }: LeftNavProps) => {
   const { t } = useTranslation();
   const { hasAccess } = useAccess();
   const { realm } = useRealm();
   const encodedRealm = encodeURIComponent(realm);
+  const navPath = id || path;
   const route = routes.find(
-    (route) =>
-      route.path.replace(/\/:.+?(\?|(?:(?!\/).)*|$)/g, "") === (id || path),
+    (route) => normalizeNavRoutePath(route.path) === navPath,
   );
 
   const accessAllowed =
@@ -40,13 +44,15 @@ const LeftNav = ({ title, path, id }: LeftNavProps) => {
       : hasAccess(route.handle.access));
 
   if (!accessAllowed) {
-    return null;
+    return undefined;
   }
 
+  const name = "nav-item" + path.replace("/", "-");
   return (
     <li>
       <NavLink
-        id={"nav-item" + path.replace("/", "-")}
+        id={name}
+        data-testid={name}
         to={`/${encodedRealm}${path}`}
         className={({ isActive }) =>
           `pf-v5-c-nav__link${isActive ? " pf-m-current" : ""}`
@@ -60,13 +66,14 @@ const LeftNav = ({ title, path, id }: LeftNavProps) => {
 
 export const PageNav = () => {
   const { t } = useTranslation();
+  const { environment } = useEnvironment<Environment>();
   const { hasSomeAccess } = useAccess();
   const { componentTypes } = useServerInfo();
   const isFeatureEnabled = useIsFeatureEnabled();
   const pages =
     componentTypes?.["org.keycloak.services.ui.extend.UiPageProvider"];
   const navigate = useNavigate();
-  const { realmRepresentation } = useRealm();
+  const { realm, realmRepresentation } = useRealm();
 
   type SelectedItem = {
     groupId: number | string;
@@ -76,7 +83,7 @@ export const PageNav = () => {
   };
 
   const onSelect = (item: SelectedItem) => {
-    navigate(item.to);
+    void navigate(item.to);
     item.event.preventDefault();
   };
 
@@ -85,6 +92,7 @@ export const PageNav = () => {
     "query-groups",
     "query-users",
     "query-clients",
+    "query-organizations",
     "view-events",
   );
 
@@ -94,22 +102,34 @@ export const PageNav = () => {
     "view-identity-providers",
   );
 
-  const isOnAddRealm = !!useMatch(AddRealmRoute.path);
+  const showWorkflows =
+    hasSomeAccess("realm-admin", "admin") &&
+    isFeatureEnabled(Feature.Workflows);
+
+  const showManageRealm = environment.masterRealm === environment.realm;
 
   return (
     <PageSidebar className="keycloak__page_nav__nav">
       <PageSidebarBody>
         <Nav onSelect={(_event, item) => onSelect(item as SelectedItem)}>
-          <NavList>
-            <NavItem className="keycloak__page_nav__nav_item__realm-selector">
-              <RealmSelector />
-            </NavItem>
-          </NavList>
-          <Divider />
-          {showManage && !isOnAddRealm && (
+          <h2
+            className="pf-v5-c-nav__section-title"
+            style={{ wordWrap: "break-word" }}
+          >
+            <span data-testid="currentRealm">
+              {resolveDisplayName(t, realmRepresentation.displayName, realm)}
+            </span>{" "}
+            <Label color="blue">{t("currentRealm")}</Label>
+          </h2>
+          {showManageRealm && (
+            <NavGroup>
+              <LeftNav title={t("manageRealms")} path="/realms" />
+            </NavGroup>
+          )}
+          {showManage && (
             <NavGroup aria-label={t("manage")} title={t("manage")}>
               {isFeatureEnabled(Feature.Organizations) &&
-                realmRepresentation?.organizationsEnabled && (
+                realmRepresentation.organizationsEnabled && (
                   <LeftNav title="organizations" path="/organizations" />
                 )}
               <LeftNav title="clients" path="/clients" />
@@ -122,16 +142,17 @@ export const PageNav = () => {
             </NavGroup>
           )}
 
-          {showConfigure && !isOnAddRealm && (
+          {showConfigure && (
             <NavGroup aria-label={t("configure")} title={t("configure")}>
               <LeftNav title="realmSettings" path="/realm-settings" />
               <LeftNav title="authentication" path="/authentication" />
-              <LeftNav title="identityProviders" path="/identity-providers" />
-              <LeftNav title="userFederation" path="/user-federation" />
               {isFeatureEnabled(Feature.AdminFineGrainedAuthzV2) &&
-                realmRepresentation?.adminPermissionsEnabled && (
+                realmRepresentation.adminPermissionsEnabled && (
                   <LeftNav title="permissions" path="/permissions" />
                 )}
+              <LeftNav title="identityProviders" path="/identity-providers" />
+              <LeftNav title="userFederation" path="/user-federation" />
+              {showWorkflows && <LeftNav title="workflows" path="/workflows" />}
               {isFeatureEnabled(Feature.DeclarativeUI) &&
                 pages?.map((p) => (
                   <LeftNav

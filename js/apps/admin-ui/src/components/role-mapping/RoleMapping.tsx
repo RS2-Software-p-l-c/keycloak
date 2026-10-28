@@ -19,9 +19,13 @@ import { translationFormatter } from "../../utils/translationFormatter";
 import { useConfirmDialog } from "../confirm-dialog/ConfirmDialog";
 import { ListEmptyState } from "@keycloak/keycloak-ui-shared";
 import { Action, KeycloakDataTable } from "@keycloak/keycloak-ui-shared";
-import { AddRoleMappingModal } from "./AddRoleMappingModal";
-import { deleteMapping, getEffectiveRoles, getMapping } from "./queries";
-import { getEffectiveClientRoles } from "./resource";
+import {
+  AddRoleButton,
+  AddRoleMappingModal,
+  FilterType,
+} from "./AddRoleMappingModal";
+import { deleteMapping, getMapping } from "./queries";
+import { getAllEffectiveRoles } from "./resource";
 
 import "./role-mapping.css";
 
@@ -40,26 +44,72 @@ export const mapRoles = (
   assignedRoles: Row[],
   effectiveRoles: Row[],
   hide: boolean,
-) => [
-  ...(hide
-    ? assignedRoles.map((row) => ({
-        id: row.role.id,
-        ...row,
-        role: {
-          ...row.role,
-          isInherited: false,
-        },
-      }))
-    : effectiveRoles.map((row) => ({
-        id: row.role.id,
-        ...row,
-        role: {
-          ...row.role,
-          isInherited:
-            assignedRoles.find((r) => r.role.id === row.role.id) === undefined,
-        },
-      }))),
-];
+) => {
+  if (hide) {
+    return assignedRoles.map((row) => ({
+      id: row.role.id,
+      ...row,
+      role: {
+        ...row.role,
+        isInherited: false,
+      },
+    }));
+  }
+
+  const assignedRoleIds = new Set(
+    assignedRoles.filter((r) => r.role.id).map((r) => r.role.id),
+  );
+  const effectiveRoleCountMap = new Map<string, number>();
+  effectiveRoles.forEach((row) => {
+    if (row.role.id) {
+      effectiveRoleCountMap.set(
+        row.role.id,
+        (effectiveRoleCountMap.get(row.role.id) || 0) + 1,
+      );
+    }
+  });
+
+  const result: Row[] = [];
+  const seenRoleIds = new Set<string>();
+
+  effectiveRoles.forEach((row) => {
+    if (row.role.id && !seenRoleIds.has(row.role.id)) {
+      seenRoleIds.add(row.role.id);
+      const isAssigned = assignedRoleIds.has(row.role.id);
+      const effectiveCount = effectiveRoleCountMap.get(row.role.id) || 0;
+
+      if (isAssigned && effectiveCount > 1) {
+        result.push({
+          id: `${row.role.id}-direct`,
+          ...row,
+          role: {
+            ...row.role,
+            isInherited: false,
+          },
+        });
+        result.push({
+          id: `${row.role.id}-inherited`,
+          ...row,
+          role: {
+            ...row.role,
+            isInherited: true,
+          },
+        });
+      } else {
+        result.push({
+          id: row.role.id,
+          ...row,
+          role: {
+            ...row.role,
+            isInherited: !isAssigned,
+          },
+        });
+      }
+    }
+  });
+
+  return result;
+};
 
 export const ServiceRole = ({ role, client }: Row) => (
   <>
@@ -80,6 +130,7 @@ type RoleMappingProps = {
   type: ResourcesKey;
   isManager?: boolean;
   save: (rows: Row[]) => Promise<void>;
+  groupsResource?: any;
 };
 
 export const RoleMapping = ({
@@ -88,6 +139,7 @@ export const RoleMapping = ({
   type,
   isManager = true,
   save,
+  groupsResource,
 }: RoleMappingProps) => {
   const { adminClient } = useAdminClient();
 
@@ -99,6 +151,7 @@ export const RoleMapping = ({
 
   const [hide, setHide] = useState(true);
   const [showAssign, setShowAssign] = useState(false);
+  const [filterType, setFilterType] = useState<FilterType>("clients");
   const [selected, setSelected] = useState<Row[]>([]);
 
   const assignRoles = async (rows: Row[]) => {
@@ -107,31 +160,23 @@ export const RoleMapping = ({
   };
 
   const loader = async () => {
-    let effectiveRoles: Row[] = [];
-    let effectiveClientRoles: Row[] = [];
+    let allEffectiveRoles: Row[] = [];
 
     if (!hide) {
-      effectiveRoles = await getEffectiveRoles(adminClient, type, id);
+      const effectiveRoles = await getAllEffectiveRoles(adminClient, {
+        type,
+        id,
+      });
 
-      effectiveClientRoles = (
-        await getEffectiveClientRoles(adminClient, {
-          type,
-          id,
-        })
-      ).map((e) => ({
-        client: { clientId: e.client, id: e.clientId },
-        role: { id: e.id, name: e.role, description: e.description },
+      allEffectiveRoles = effectiveRoles.map((e) => ({
+        ...(e.clientRole && e.client && e.clientId
+          ? { client: { clientId: e.client, id: e.clientId } }
+          : {}),
+        role: { id: e.id, name: e.name, description: e.description },
       }));
-
-      effectiveRoles = effectiveRoles.filter(
-        (role) =>
-          !effectiveClientRoles.some(
-            (clientRole) => clientRole.role.id === role.role.id,
-          ),
-      );
     }
 
-    const roles = await getMapping(adminClient, type, id);
+    const roles = await getMapping(adminClient, type, id, groupsResource);
     const realmRolesMapping =
       roles.realmMappings?.map((role) => ({ role })) || [];
     const clientMapping = Object.values(roles.clientMappings || {})
@@ -143,18 +188,10 @@ export const RoleMapping = ({
       )
       .flat();
 
-    const test = [
-      ...mapRoles(
-        [...clientMapping, ...realmRolesMapping],
-        [...effectiveClientRoles, ...effectiveRoles],
-        hide,
-      ),
-    ];
-    console.log(test);
     return [
       ...mapRoles(
         [...clientMapping, ...realmRolesMapping],
-        [...effectiveClientRoles, ...effectiveRoles],
+        allEffectiveRoles,
         hide,
       ),
     ];
@@ -187,9 +224,11 @@ export const RoleMapping = ({
         <AddRoleMappingModal
           id={id}
           type={type}
+          filterType={filterType}
           name={name}
           onAssign={assignRoles}
           onClose={() => setShowAssign(false)}
+          groupsResource={groupsResource}
         />
       )}
       <DeleteConfirm />
@@ -200,7 +239,7 @@ export const RoleMapping = ({
         canSelectAll
         onSelect={(rows) => setSelected(rows)}
         searchPlaceholderKey="searchByName"
-        ariaLabelKey="clientScopeList"
+        ariaLabelKey="roleList"
         isRowDisabled={(value) =>
           (value.role as CompositeRole).isInherited || false
         }
@@ -221,12 +260,12 @@ export const RoleMapping = ({
             {isManager && (
               <>
                 <ToolbarItem>
-                  <Button
-                    data-testid="assignRole"
-                    onClick={() => setShowAssign(true)}
-                  >
-                    {t("assignRole")}
-                  </Button>
+                  <AddRoleButton
+                    onFilerTypeChange={(type) => {
+                      setFilterType(type);
+                      setShowAssign(true);
+                    }}
+                  />
                 </ToolbarItem>
                 <ToolbarItem>
                   <Button
@@ -278,8 +317,6 @@ export const RoleMapping = ({
           <ListEmptyState
             message={t(`noRoles-${type}`)}
             instructions={t(`noRolesInstructions-${type}`)}
-            primaryActionText={t("assignRole")}
-            onPrimaryAction={() => setShowAssign(true)}
             secondaryActions={[
               {
                 text: t("showInheritedRoles"),
@@ -289,7 +326,14 @@ export const RoleMapping = ({
                 },
               },
             ]}
-          />
+          >
+            <AddRoleButton
+              onFilerTypeChange={(type) => {
+                setFilterType(type);
+                setShowAssign(true);
+              }}
+            />
+          </ListEmptyState>
         }
       />
     </>

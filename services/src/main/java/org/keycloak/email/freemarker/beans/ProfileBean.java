@@ -16,20 +16,20 @@
  */
 package org.keycloak.email.freemarker.beans;
 
-import org.jboss.logging.Logger;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 import org.keycloak.forms.login.freemarker.model.OrganizationBean;
 import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.OrganizationModel;
 import org.keycloak.models.UserModel;
-import org.keycloak.organization.OrganizationProvider;
+import org.keycloak.organization.utils.Organizations;
 import org.keycloak.representations.userprofile.config.UPAttribute;
 import org.keycloak.representations.userprofile.config.UPConfig;
 import org.keycloak.userprofile.UserProfileProvider;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
+import org.jboss.logging.Logger;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
@@ -39,7 +39,7 @@ public class ProfileBean {
 
     private static final Logger logger = Logger.getLogger(ProfileBean.class);
 
-    private UserModel user;
+    private final UserModel user;
     private final KeycloakSession session;
     private final Map<String, String> attributes = new HashMap<>();
     private List<OrganizationBean> organizations;
@@ -90,9 +90,13 @@ public class ProfileBean {
 
     public List<OrganizationBean> getOrganizations() {
         if (organizations == null) {
-            organizations = session.getProvider(OrganizationProvider.class).getByMember(user)
-                    .map(o -> new OrganizationBean(o, user))
-                    .toList();
+            if (!Organizations.isEnabled(session)) {
+                organizations = Collections.emptyList();
+            } else {
+                organizations = Organizations.getProvider(session).getByMember(user)
+                        .map(o -> new OrganizationBean(o, user))
+                        .toList();
+            }
         }
         return organizations;
     }

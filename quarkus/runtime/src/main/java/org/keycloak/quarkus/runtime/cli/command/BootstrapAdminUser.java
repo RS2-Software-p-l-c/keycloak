@@ -19,11 +19,11 @@ package org.keycloak.quarkus.runtime.cli.command;
 
 import org.keycloak.common.util.IoUtils;
 import org.keycloak.config.BootstrapAdminOptions;
-import org.keycloak.models.KeycloakSessionFactory;
+import org.keycloak.config.OptionCategory;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.quarkus.runtime.cli.PropertyException;
+import org.keycloak.quarkus.runtime.integration.QuarkusKeycloakSessionFactory;
 import org.keycloak.quarkus.runtime.integration.jaxrs.QuarkusKeycloakApplication;
-import org.keycloak.services.resources.KeycloakApplication;
 
 import picocli.CommandLine.ArgGroup;
 import picocli.CommandLine.Command;
@@ -37,18 +37,18 @@ public class BootstrapAdminUser extends AbstractNonServerCommand {
     public static final String HEADER = "Add an admin user with a password";
 
     static class UsernameOptions {
-        @Option(names = { "--username" }, description = "Username of admin user, defaults to "
+        @Option(paramLabel = "username", names = { "--username" }, description = "Username of admin user, defaults to "
                 + BootstrapAdminOptions.DEFAULT_TEMP_ADMIN_USERNAME)
         String username;
 
-        @Option(names = { "--username:env" }, description = "Environment variable name for the admin username")
+        @Option(paramLabel = "USERNAME", names = { "--username:env" }, description = "Environment variable name for the admin username")
         String usernameEnv;
     }
 
     @ArgGroup(exclusive = true, multiplicity = "0..1")
     UsernameOptions usernameOptions;
 
-    @Option(names = { "--password:env" }, description = "Environment variable name for the admin user password")
+    @Option(paramLabel = "PASSWORD", names = { "--password:env" }, description = "Environment variable name for the admin user password")
     String passwordEnv;
 
     String password;
@@ -98,11 +98,15 @@ public class BootstrapAdminUser extends AbstractNonServerCommand {
     }
 
     @Override
-    public void onStart(QuarkusKeycloakApplication application) {
+    public void onStart(QuarkusKeycloakApplication application, QuarkusKeycloakSessionFactory sessionFactory) {
         //BootstrapAdmin bootstrap = spec.commandLine().getParent().getCommand();
-        KeycloakSessionFactory sessionFactory = KeycloakApplication.getSessionFactory();
         KeycloakModelUtils.runJobInTransaction(sessionFactory, session -> application
                 .createTemporaryMasterRealmAdminUser(username, password, /* bootstrap.expiration, */ session));
+    }
+
+    @Override
+    public boolean isHiddenCategory(OptionCategory category) {
+        return category == OptionCategory.BOOTSTRAP_ADMIN || super.isHiddenCategory(category);
     }
 
 }

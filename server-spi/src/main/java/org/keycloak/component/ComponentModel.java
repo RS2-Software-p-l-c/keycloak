@@ -17,16 +17,16 @@
 
 package org.keycloak.component;
 
-import org.infinispan.protostream.annotations.ProtoFactory;
-import org.infinispan.protostream.annotations.ProtoField;
-import org.infinispan.protostream.annotations.ProtoTypeId;
-import org.keycloak.common.util.MultivaluedHashMap;
-
-import java.io.Serializable;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+
+import org.keycloak.common.util.MultivaluedHashMap;
+
+import org.infinispan.protostream.annotations.ProtoFactory;
+import org.infinispan.protostream.annotations.ProtoField;
+import org.infinispan.protostream.annotations.ProtoTypeId;
 
 /**
  * Stored configuration of a User Storage provider instance.
@@ -99,12 +99,12 @@ public class ComponentModel {
 
     public int get(String key, int defaultValue) {
         String s = get(key);
-        return s != null ? Integer.valueOf(s) : defaultValue;
+        return s != null ? Integer.parseInt(s) : defaultValue;
     }
 
     public long get(String key, long defaultValue) {
         String s = get(key);
-        return s != null ? Long.valueOf(s) : defaultValue;
+        return s != null ? Long.parseLong(s) : defaultValue;
     }
 
     public boolean get(String key, boolean defaultValue) {

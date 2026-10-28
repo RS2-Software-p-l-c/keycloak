@@ -21,7 +21,7 @@
     <parent>
         <artifactId>keycloak-tests-parent</artifactId>
         <groupId>org.keycloak.tests</groupId>
-        <version>26.1.4</version>
+        <version>26.8.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
@@ -45,6 +45,16 @@
 
     <dependencies>
         <dependency>
+            <groupId>org.keycloak.testframework</groupId>
+            <artifactId>keycloak-test-framework-core</artifactId>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.keycloak.testframework</groupId>
+            <artifactId>keycloak-test-framework-remote-providers</artifactId>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
         </dependency>
@@ -54,7 +64,7 @@
         </dependency>
         <dependency>
             <groupId>org.keycloak</groupId>
-            <artifactId>keycloak-admin-client-tests</artifactId>
+            <artifactId>keycloak-admin-client-internal</artifactId>
             <version>${project.version}</version>
         </dependency>
     </dependencies>

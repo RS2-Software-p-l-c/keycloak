@@ -18,7 +18,12 @@
 
 package org.keycloak.authorization.policy.evaluation;
 
-import java.util.*;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -118,6 +123,7 @@ public class DefaultEvaluation implements Evaluation {
         return authorizationProvider;
     }
 
+    @Override
     public Policy getParentPolicy() {
         return this.parentPolicy;
     }
@@ -183,14 +189,21 @@ public class DefaultEvaluation implements Evaluation {
                     }
                     RealmModel realm = session.getContext().getRealm();
                     user = session.users().getUserById(realm, id);
+
+                    if (Objects.isNull(user)) {
+                        // in case the id references a service account
+                        ClientModel client = realm.getClientById(id);
+
+                        if (client != null) {
+                            user = session.users().getServiceAccount(client);
+                        }
+                    }
+
                     if (Objects.isNull(user)) {
                         user = session.users().getUserByUsername(realm, id);
                     }
                     if (Objects.isNull(user)) {
                         user = session.users().getUserByEmail(realm, id);
-                    }
-                    if (Objects.isNull(user)) {
-                        user = session.users().getServiceAccount(realm.getClientById(id));
                     }
                 }
 

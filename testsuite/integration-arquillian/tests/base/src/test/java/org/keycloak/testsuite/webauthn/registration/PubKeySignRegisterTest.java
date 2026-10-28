@@ -16,29 +16,32 @@
  */
 package org.keycloak.testsuite.webauthn.registration;
 
-import com.webauthn4j.data.attestation.authenticator.COSEKey;
-import com.webauthn4j.data.attestation.statement.COSEAlgorithmIdentifier;
-import org.junit.Test;
-import org.keycloak.models.credential.dto.WebAuthnCredentialData;
-import org.keycloak.testsuite.arquillian.annotation.IgnoreBrowserDriver;
-import org.keycloak.testsuite.webauthn.AbstractWebAuthnVirtualTest;
-import org.keycloak.testsuite.webauthn.utils.WebAuthnDataWrapper;
-import org.keycloak.testsuite.webauthn.utils.WebAuthnRealmData;
-import org.openqa.selenium.firefox.FirefoxDriver;
-
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 
-import static org.hamcrest.CoreMatchers.containsString;
-import static org.hamcrest.CoreMatchers.is;
-import static org.hamcrest.CoreMatchers.notNullValue;
-import static org.hamcrest.MatcherAssert.assertThat;
+import org.keycloak.models.credential.dto.WebAuthnCredentialData;
+import org.keycloak.testsuite.arquillian.annotation.IgnoreBrowserDriver;
+import org.keycloak.testsuite.webauthn.AbstractWebAuthnVirtualTest;
+import org.keycloak.testsuite.webauthn.utils.WebAuthnDataWrapper;
+import org.keycloak.testsuite.webauthn.utils.WebAuthnRealmData;
+import org.keycloak.utils.StringUtil;
+
+import com.webauthn4j.data.attestation.authenticator.COSEKey;
+import com.webauthn4j.data.attestation.statement.COSEAlgorithmIdentifier;
+import org.junit.Test;
+import org.openqa.selenium.firefox.FirefoxDriver;
+
 import static org.keycloak.crypto.Algorithm.ES256;
 import static org.keycloak.crypto.Algorithm.ES512;
 import static org.keycloak.crypto.Algorithm.RS384;
 import static org.keycloak.crypto.Algorithm.RS512;
+
+import static org.hamcrest.CoreMatchers.containsString;
+import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.CoreMatchers.notNullValue;
+import static org.hamcrest.MatcherAssert.assertThat;
 
 /**
  * @author <a href="mailto:mabartos@redhat.com">Martin Bartos</a>
@@ -73,10 +76,16 @@ public class PubKeySignRegisterTest extends AbstractWebAuthnVirtualTest {
 
     @Test
     public void publicKeySignaturesNonExisting() {
-        assertPublicKeyAlgorithms(true, COSEAlgorithmIdentifier.ES256, Collections.singletonList("RSSSS2048"));
+        assertPublicKeyAlgorithms(false, COSEAlgorithmIdentifier.ES256, Collections.singletonList("RSSSS2048"),
+                "Failed to register your Passkey.");
     }
 
     private void assertPublicKeyAlgorithms(boolean shouldSuccess, COSEAlgorithmIdentifier selectedAlgorithm, List<String> algorithms) {
+        assertPublicKeyAlgorithms(shouldSuccess, selectedAlgorithm, algorithms, null);
+    }
+
+    private void assertPublicKeyAlgorithms(boolean shouldSuccess, COSEAlgorithmIdentifier selectedAlgorithm, List<String> algorithms,
+                                           String expectedError) {
         assertThat(algorithms, notNullValue());
 
         try (Closeable u = getWebAuthnRealmUpdater()
@@ -84,22 +93,26 @@ public class PubKeySignRegisterTest extends AbstractWebAuthnVirtualTest {
                 .update()) {
 
             if (!algorithms.isEmpty()) {
-                WebAuthnRealmData realmData = new WebAuthnRealmData(testRealm().toRepresentation(), isPasswordless());
+                WebAuthnRealmData realmData = new WebAuthnRealmData(managedRealm.admin().toRepresentation(), isPasswordless());
                 assertThat(realmData.getSignatureAlgorithms(), is(algorithms));
             }
 
             registerDefaultUser(shouldSuccess);
 
-            assertThat(webAuthnErrorPage.isCurrent(), is(!shouldSuccess));
+            if (!oauth.parseLoginResponse().isSuccess()) {
+                webAuthnErrorPage.assertCurrent();
+            }
+
             if (!shouldSuccess) {
-                final String expectedMessage = getExpectedMessageByDriver(
-                        "NotSupportedError: Operation is not supported",
-                        "The operation either timed out or was not allowed");
+                final String expectedMessage = StringUtil.isNotBlank(expectedError)
+                        ? expectedError
+                        : "The Passkey operation was not allowed or timed out.";
                 assertThat(webAuthnErrorPage.getError(), containsString(expectedMessage));
                 return;
             }
 
             final String credentialType = getCredentialType();
+            final long selectedAlgorithmValue = selectedAlgorithm.getValue();
 
             getTestingClient().server(TEST_REALM_NAME).run(session -> {
                 final WebAuthnDataWrapper dataWrapper = new WebAuthnDataWrapper(session, USERNAME, credentialType);
@@ -111,7 +124,7 @@ public class PubKeySignRegisterTest extends AbstractWebAuthnVirtualTest {
                 final COSEKey pubKey = dataWrapper.getKey();
                 assertThat(pubKey, notNullValue());
                 assertThat(pubKey.getAlgorithm(), notNullValue());
-                assertThat(pubKey.getAlgorithm().getValue(), is(selectedAlgorithm.getValue()));
+                assertThat(pubKey.getAlgorithm().getValue(), is(selectedAlgorithmValue));
                 assertThat(pubKey.hasPublicKey(), is(true));
             });
         } catch (IOException e) {

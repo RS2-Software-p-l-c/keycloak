@@ -31,7 +31,9 @@ export const DiscoveryEndpointField = ({
     useState<Record<string, string>>();
 
   const setupForm = (result: Record<string, string>) => {
-    Object.keys(result).map((k) => setValue(`config.${k}`, result[k]));
+    Object.keys(result).map((k) =>
+      setValue(`config.${k}`, result[k], { shouldDirty: true }),
+    );
   };
 
   const discover = async (fromUrl: string) => {
@@ -85,35 +87,44 @@ export const DiscoveryEndpointField = ({
         />
       </FormGroup>
       {discovery && (
-        <TextControl
-          name="discoveryEndpoint"
-          label={t(
-            id === "oidc" ? "discoveryEndpoint" : "samlEntityDescriptor",
-          )}
-          labelIcon={t(
-            id === "oidc"
-              ? "discoveryEndpointHelp"
-              : "samlEntityDescriptorHelp",
-          )}
-          type="url"
-          placeholder={
-            id === "oidc"
-              ? "https://hostname/realms/master/.well-known/openid-configuration"
-              : ""
-          }
-          validated={
-            errors.discoveryError || errors.discoveryEndpoint
+        <>
+          <div style={{ display: "none" }} data-testid="playwright-result">
+            {errors.discoveryError || errors.discoveryEndpoint
               ? "error"
               : !discoveryResult
                 ? "default"
-                : "success"
-          }
-          customIcon={discovering ? <Spinner isInline /> : undefined}
-          rules={{
-            required: t("required"),
-            validate: (value: string) => discoverDebounced(value),
-          }}
-        />
+                : "success"}
+          </div>
+          <TextControl
+            name="discoveryEndpoint"
+            label={t(
+              id === "oidc" ? "discoveryEndpoint" : "samlEntityDescriptor",
+            )}
+            labelIcon={t(
+              id === "oidc"
+                ? "discoveryEndpointHelp"
+                : "samlEntityDescriptorHelp",
+            )}
+            type="url"
+            placeholder={
+              id === "oidc"
+                ? "https://hostname/realms/master/.well-known/openid-configuration"
+                : ""
+            }
+            validated={
+              errors.discoveryError || errors.discoveryEndpoint
+                ? "error"
+                : !discoveryResult
+                  ? "default"
+                  : "success"
+            }
+            customIcon={discovering ? <Spinner isInline /> : undefined}
+            rules={{
+              required: t("required"),
+              validate: (value: string) => discoverDebounced(value),
+            }}
+          />
+        </>
       )}
       {!discovery && fileUpload}
       {discovery && !errors.discoveryError && children(true)}

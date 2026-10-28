@@ -25,16 +25,22 @@ import java.util.function.Supplier;
 import jakarta.ws.rs.BadRequestException;
 import jakarta.ws.rs.ForbiddenException;
 import jakarta.ws.rs.NotFoundException;
-import org.jboss.logging.Logger;
+
 import org.keycloak.authentication.AuthenticatorUtil;
 import org.keycloak.authentication.authenticators.util.LoAUtil;
 import org.keycloak.credential.CredentialModel;
 import org.keycloak.credential.CredentialProvider;
 import org.keycloak.credential.CredentialTypeMetadata;
 import org.keycloak.credential.CredentialTypeMetadataContext;
+import org.keycloak.models.AuthenticationFlowBindings;
+import org.keycloak.models.AuthenticationFlowModel;
+import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.models.utils.AuthenticationFlowResolver;
+
+import org.jboss.logging.Logger;
 
 import static org.keycloak.models.Constants.NO_LOA;
 
@@ -60,6 +66,15 @@ public class CredentialDeleteHelper {
     public static CredentialModel removeCredential(KeycloakSession session, UserModel user, String credentialId, Supplier<Integer> currentLoAProvider) {
         CredentialModel credential = user.credentialManager().getStoredCredentialById(credentialId);
         if (credential == null) {
+            if (user.isFederated()) {
+                credential = user.credentialManager().getFederatedCredentialsStream().filter(c -> credentialId.equals(c.getId())).findAny().orElse(null);
+                if (credential != null) {
+                    String type = credential.getType();
+                    checkIfCanBeRemoved(session, user, type, currentLoAProvider);
+                    user.credentialManager().disableCredentialType(type);
+                    return null;
+                }
+            }
             // Backwards compatibility with account console 1 - When stored credential is not found, it may be federated credential.
             // In this case, it's ID needs to be something like "otp-id", which is returned by account REST GET endpoint as a placeholder
             // for federated credentials (See CredentialHelper.createUserStorageCredentialRepresentation )
@@ -78,7 +93,7 @@ public class CredentialDeleteHelper {
 
     private static void checkIfCanBeRemoved(KeycloakSession session, UserModel user, String credentialType, Supplier<Integer> currentLoAProvider) {
         CredentialProvider credentialProvider = AuthenticatorUtil.getCredentialProviders(session)
-                .filter(credentialProvider1 -> credentialType.equals(credentialProvider1.getType()))
+                .filter(credentialProvider1 -> credentialProvider1.supportsCredentialType(credentialType))
                 .findAny().orElse(null);
         if (credentialProvider == null) {
             logger.warnf("Credential provider %s not found", credentialType);
@@ -96,7 +111,7 @@ public class CredentialDeleteHelper {
     }
 
     private static void checkAuthenticatedLoASufficientForCredentialRemove(KeycloakSession session, String credentialType, Supplier<Integer> currentLoAProvider) {
-        int requestedLoaForCredentialRemove = getRequestedLoaForCredential(session, session.getContext().getRealm(), credentialType);
+        int requestedLoaForCredentialRemove = getRequestedLoaForCredential(session, credentialType);
 
         int currentAuthenticatedLevel = currentLoAProvider.get();
         if (currentAuthenticatedLevel < requestedLoaForCredentialRemove) {
@@ -104,8 +119,15 @@ public class CredentialDeleteHelper {
         }
     }
 
-    private static int getRequestedLoaForCredential(KeycloakSession session, RealmModel realm, String credentialType) {
-        Map<String, Integer> credentialTypesToLoa = LoAUtil.getCredentialTypesToLoAMap(session, realm, realm.getBrowserFlow());
+    private static int getRequestedLoaForCredential(KeycloakSession session, String credentialType) {
+        RealmModel realm = session.getContext().getRealm();
+        ClientModel client = session.getContext().getClient();
+        AuthenticationFlowModel authFlow = AuthenticationFlowResolver.resolveBindingOverrideFlowForClient(client, AuthenticationFlowBindings.BROWSER_BINDING);
+        if (authFlow == null) {
+            authFlow = realm.getBrowserFlow();
+        }
+
+        Map<String, Integer> credentialTypesToLoa = LoAUtil.getCredentialTypesToLoAMap(session, realm, authFlow);
         return credentialTypesToLoa.getOrDefault(credentialType, NO_LOA);
     }
 }

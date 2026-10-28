@@ -25,10 +25,9 @@ type RoleDetailLinkProps = RoleRepresentation & {
 const RoleDetailLink = ({
   defaultRoleName,
   toDetail,
-  messageBundle,
   ...role
 }: RoleDetailLinkProps) => {
-  const { t } = useTranslation(messageBundle);
+  const { t } = useTranslation();
   const { realm } = useRealm();
   const { hasAccess, hasSomeAccess } = useAccess();
   const canViewUserRegistration =
@@ -44,11 +43,8 @@ const RoleDetailLink = ({
         </Link>
       ) : (
         <span>{role.name}</span>
-      )}
-      <HelpItem
-        helpText={t(`${messageBundle}:defaultRole`)}
-        fieldLabelId="defaultRole"
-      />
+      )}{" "}
+      <HelpItem helpText={t("defaultRole")} fieldLabelId="defaultRole" />
     </>
   );
 };
@@ -139,7 +135,7 @@ export const RolesList = ({
                   onRowClick: (role) => {
                     setSelectedRole(role);
                     if (
-                      realm?.defaultRole &&
+                      realm.defaultRole &&
                       role.name === realm!.defaultRole!.name
                     ) {
                       addAlert(
@@ -158,7 +154,7 @@ export const RolesList = ({
             cellRenderer: (row) => (
               <RoleDetailLink
                 {...row}
-                defaultRoleName={realm?.defaultRole?.name}
+                defaultRoleName={realm.defaultRole?.name}
                 toDetail={toDetail}
                 messageBundle={messageBundle}
               />
@@ -182,7 +178,7 @@ export const RolesList = ({
               isReadOnly ? "" : t(`noRolesInstructions-${messageBundle}`)
             }
             primaryActionText={isReadOnly ? "" : t("createRole")}
-            onPrimaryAction={() => navigate(toCreate)}
+            onPrimaryAction={() => void navigate(toCreate)}
           />
         }
       />

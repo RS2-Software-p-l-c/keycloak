@@ -29,8 +29,8 @@ public class IdpConfirmOverrideLinkPage extends LanguageComboboxAwarePage {
     private WebElement message;
 
     @Override
-    public boolean isCurrent() {
-        return PageUtils.getPageTitle(driver).equals("Broker link already exists");
+    public String getExpectedPageId() {
+        return "login-login-idp-link-confirm-override";
     }
 
     public String getMessage() {
@@ -41,8 +41,4 @@ public class IdpConfirmOverrideLinkPage extends LanguageComboboxAwarePage {
         confirmOverrideButton.click();
     }
 
-    @Override
-    public void open() throws Exception {
-        throw new UnsupportedOperationException();
-    }
 }

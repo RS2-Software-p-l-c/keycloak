@@ -21,7 +21,7 @@
     <parent>
         <groupId>org.keycloak.testsuite</groupId>
         <artifactId>integration-arquillian-servers</artifactId>
-        <version>26.1.4</version>
+        <version>26.8.0</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
@@ -59,8 +59,6 @@
                                 </requireProperty>
                                 <requireProperty>
                                     <property>keycloak.connectionsJpa.password</property>
-                                    <regex>^(?!\s*$).+</regex>
-                                    <regexMessage>"keycloak.connectionsJpa.password" property cannot be empty string!</regexMessage>
                                 </requireProperty>
                                 <requireProperty>
                                     <property>keycloak.connectionsJpa.url</property>

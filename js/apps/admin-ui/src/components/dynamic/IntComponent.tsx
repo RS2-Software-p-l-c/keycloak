@@ -1,13 +1,12 @@
-import { useTranslation } from "react-i18next";
 import { TextControl } from "@keycloak/keycloak-ui-shared";
-
-import { convertToName } from "./DynamicComponents";
+import { useTranslation } from "react-i18next";
 import { NumberComponentProps } from "./components";
 
 export const IntComponent = ({
   name,
   label,
   helpText,
+  convertToName,
   ...props
 }: NumberComponentProps) => {
   const { t } = useTranslation();
@@ -20,6 +19,12 @@ export const IntComponent = ({
       label={t(label!)}
       labelIcon={t(helpText!)}
       data-testid={name}
+      rules={{
+        required: {
+          value: !!props.required,
+          message: t("required"),
+        },
+      }}
       {...props}
     />
   );

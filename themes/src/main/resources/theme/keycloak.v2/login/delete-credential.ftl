@@ -12,10 +12,10 @@
         </div>
 
         <form class="${properties.kcFormClass!}" action="${url.loginAction}" method="POST">
-            <@buttons.actionGroup>
-                <@buttons.button name="accept" id="kc-accept" label="doConfirmDelete" class=["kcButtonPrimaryClass"]/>
-                <@buttons.button name="cancel-aia" id="kc-decline" label="doDecline" class=["kcButtonSecondaryClass"]/>
+            <@buttons.actionGroup horizontal=true>
+                <@buttons.button name="accept" id="kc-accept" label="doConfirmDelete"/>
+                <@buttons.button name="cancel-aia" id="kc-decline" label="doDecline" type="secondary"/>
             </@buttons.actionGroup>
-        </form
+        </form>
     </#if>
 </@layout.registrationLayout>

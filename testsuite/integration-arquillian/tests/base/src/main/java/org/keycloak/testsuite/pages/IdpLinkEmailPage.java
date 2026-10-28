@@ -35,13 +35,8 @@ public class IdpLinkEmailPage extends AbstractPage {
     private WebElement continueLink;
 
     @Override
-    public boolean isCurrent() {
-        return PageUtils.getPageTitle(driver).startsWith("Link ");
-    }
-
-    @Override
-    public void open() throws Exception {
-        throw new UnsupportedOperationException();
+    public String getExpectedPageId() {
+        return "login-login-idp-link-email";
     }
 
     public String getMessage() {

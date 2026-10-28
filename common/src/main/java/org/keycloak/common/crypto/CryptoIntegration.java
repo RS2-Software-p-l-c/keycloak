@@ -9,12 +9,12 @@ import java.util.ServiceLoader;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
-
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.TrustManagerFactory;
 
-import org.jboss.logging.Logger;
 import org.keycloak.common.util.BouncyIntegration;
+
+import org.jboss.logging.Logger;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -41,6 +41,10 @@ public class CryptoIntegration {
             logger.tracef(dumpJavaSecurityProviders());
             logger.tracef(dumpSecurityProperties());
         }
+    }
+
+    public static boolean isInitialised() {
+        return cryptoProvider != null;
     }
 
     public static CryptoProvider getProvider() {
@@ -94,7 +98,7 @@ public class CryptoIntegration {
     }
 
     public static void setProvider(CryptoProvider provider) {
-        logger.debugf("Using the crypto provider: %s", provider.getClass().getName());
+        logger.debugf("Using the crypto provider: %s", provider != null ? provider.getClass().getName() : "null");
         cryptoProvider = provider;
     }
 }

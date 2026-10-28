@@ -16,13 +16,13 @@
  */
 package org.keycloak.services.resources.admin;
 
+import jakarta.ws.rs.POST;
+
 import org.keycloak.events.admin.OperationType;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.cache.UserCache;
-import org.keycloak.services.resources.admin.permissions.AdminPermissionEvaluator;
-
-import jakarta.ws.rs.POST;
+import org.keycloak.services.resources.admin.fgap.AdminPermissionEvaluator;
 
 /**
  * Clear user cache.

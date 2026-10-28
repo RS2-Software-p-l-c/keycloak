@@ -4,7 +4,7 @@ import org.keycloak.testframework.annotations.InjectTestDatabase;
 import org.keycloak.testframework.injection.InstanceContext;
 import org.keycloak.testframework.server.KeycloakServerConfigBuilder;
 
-public class OracleDatabaseSupplier extends AbstractDatabaseSupplier {
+public class OracleDatabaseSupplier extends AbstractContainerDatabaseSupplier {
 
     @Override
     public String getAlias() {
@@ -19,6 +19,6 @@ public class OracleDatabaseSupplier extends AbstractDatabaseSupplier {
     @Override
     public KeycloakServerConfigBuilder intercept(KeycloakServerConfigBuilder serverConfig, InstanceContext<TestDatabase, InjectTestDatabase> instanceContext) {
         return super.intercept(serverConfig, instanceContext)
-                .dependency("com.oracle.database.jdbc", "ojdbc11");
+                .dependency("com.oracle.database.jdbc", "ojdbc17");
     }
 }

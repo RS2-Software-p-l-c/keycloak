@@ -1,10 +1,5 @@
 package org.keycloak.testsuite.arquillian.containers;
 
-import org.jboss.arquillian.container.spi.client.container.LifecycleException;
-import org.jboss.logging.Logger;
-import org.keycloak.testsuite.model.StoreProvider;
-import org.keycloak.testsuite.util.WaitUtils;
-
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
@@ -29,6 +24,12 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+
+import org.keycloak.testsuite.model.StoreProvider;
+import org.keycloak.testsuite.util.WaitUtils;
+
+import org.jboss.arquillian.container.spi.client.container.LifecycleException;
+import org.jboss.logging.Logger;
 
 /**
  * @author mhajas
@@ -117,7 +118,9 @@ public class KeycloakQuarkusServerDeployableContainer extends AbstractQuarkusDep
             log.infof("Importing realm from file '%s'", importFileName);
 
             final URL url = getClass().getResource("/migration-test/" + importFileName);
-            if (url == null) throw new IllegalArgumentException("Cannot find migration import file");
+            if (url == null) {
+                throw new IllegalArgumentException("Cannot find migration import file");
+            }
 
             final Path path = Paths.get(url.toURI());
             final File wrkDir = configuration.getProvidersPath().resolve("bin").toFile();
@@ -164,11 +167,6 @@ public class KeycloakQuarkusServerDeployableContainer extends AbstractQuarkusDep
 
         if (javaOpts != null) {
             builder.environment().put("JAVA_OPTS", javaOpts);
-        }
-
-        if (!StoreProvider.JPA.equals(StoreProvider.getCurrentProvider())) {
-            builder.environment().put("KC_BOOTSTRAP_ADMIN_USERNAME", "admin");
-            builder.environment().put("KC_BOOTSTRAP_ADMIN_PASSWORD", "admin");
         }
 
         if (restart.compareAndSet(false, true)) {
@@ -245,6 +243,7 @@ public class KeycloakQuarkusServerDeployableContainer extends AbstractQuarkusDep
     public static void deleteDirectory(final Path directory) throws IOException {
         if (Files.isDirectory(directory, new LinkOption[0])) {
             Files.walkFileTree(directory, new SimpleFileVisitor<Path>() {
+                @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
                     try {
                         Files.delete(file);
@@ -254,6 +253,7 @@ public class KeycloakQuarkusServerDeployableContainer extends AbstractQuarkusDep
                     return FileVisitResult.CONTINUE;
                 }
 
+                @Override
                 public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
                     try {
                         Files.delete(dir);

@@ -1,9 +1,13 @@
 <!doctype html>
-<html lang="${locale}">
+<html lang="${locale}" dir="${localeDir}">
   <head>
+    <#import "theme-resources.ftl" as themeResourceTags>
     <meta charset="utf-8">
-    <base href="${resourceUrl}/">
-    <link rel="icon" type="${properties.favIconType!'image/svg+xml'}" href="${resourceUrl}${properties.favIcon!'/favicon.svg'}">
+    <#if themeResources?? && themeResources.favicons?has_content>
+      <@themeResourceTags.renderFavicons themeResources.favicons resourceUrl />
+    <#else>
+      <link rel="icon" type="${properties.favIconType!'image/svg+xml'}" href="${resourceUrl}${properties.favIcon!'/favicon.svg'}">
+    </#if>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="light${darkMode?then(' dark', '')}">
     <meta name="description" content="${properties.description!'The Account Console is a web-based interface for managing your account.'}">
@@ -104,7 +108,9 @@
         <link rel="stylesheet" href="${resourceUrl}/${style}">
       </#list>
     </#if>
-    <#if properties.styles?has_content>
+    <#if themeResources?? && themeResources.styles?has_content>
+      <@themeResourceTags.renderStyles themeResources.styles resourceUrl />
+    <#elseif properties.styles?has_content>
       <#list properties.styles?split(' ') as style>
         <link rel="stylesheet" href="${resourceUrl}/${style}">
       </#list>
@@ -112,9 +118,11 @@
     <#if entryScript?has_content>
       <script type="module" src="${resourceUrl}/${entryScript}"></script>
     </#if>
-    <#if properties.scripts?has_content>
+    <#if themeResources?? && themeResources.scripts?has_content>
+      <@themeResourceTags.renderScripts themeResources.scripts resourceUrl "module" />
+    <#elseif properties.scripts?has_content>
       <#list properties.scripts?split(' ') as script>
-        <script type="module" src="${resourceUrl}/${script}"></script>
+        <script src="${resourceUrl}/${script}" type="module"></script>
       </#list>
     </#if>
     <#if entryImports?has_content>
@@ -123,15 +131,13 @@
       </#list>
     </#if>
   </head>
-  <body>
+  <body data-page-id="account">
     <div id="app">
       <main class="container">
         <div class="keycloak__loading-container">
-          <span class="pf-c-spinner pf-m-xl" role="progressbar" aria-valuetext="Loading&hellip;">
-            <span class="pf-c-spinner__clipper"></span>
-            <span class="pf-c-spinner__lead-ball"></span>
-            <span class="pf-c-spinner__tail-ball"></span>
-          </span>
+          <svg class="pf-v5-c-spinner pf-m-xl" role="progressbar" aria-valuetext="Loading..." viewBox="0 0 100 100" aria-label="Contents">
+            <circle class="pf-v5-c-spinner__path" cx="50" cy="50" r="45" fill="none"></circle>
+          </svg>
           <div>
             <p id="loading-text">Loading the Account Console</p>
           </div>
@@ -149,6 +155,7 @@
         "resourceUrl": "${resourceUrl}",
         "logo": "${properties.logo!""}",
         "logoUrl": "${properties.logoUrl!""}",
+        "darkMode": ${darkMode?c},
         "baseUrl": "${baseUrl}",
         "locale": "${locale}",
         "referrerName": "${referrerName!""}",
@@ -157,12 +164,13 @@
           "isRegistrationEmailAsUsername": ${realm.registrationEmailAsUsername?c},
           "isEditUserNameAllowed": ${realm.editUsernameAllowed?c},
           "isInternationalizationEnabled": ${realm.isInternationalizationEnabled()?c},
-          "isLinkedAccountsEnabled": ${realm.identityFederationEnabled?c},
+          "isLinkedAccountsEnabled": ${isLinkedAccountsEnabled?c},
           "isMyResourcesEnabled": ${(realm.userManagedAccessAllowed && isAuthorizationEnabled)?c},
           "isViewOrganizationsEnabled": ${isViewOrganizationsEnabled?c},
           "deleteAccountAllowed": ${deleteAccountAllowed?c},
           "updateEmailFeatureEnabled": ${updateEmailFeatureEnabled?c},
           "updateEmailActionEnabled": ${updateEmailActionEnabled?c},
+          "isViewApplicationsEnabled": ${isViewApplicationsEnabled?c},
           "isViewGroupsEnabled": ${isViewGroupsEnabled?c},
           "isOid4VciEnabled": ${isOid4VciEnabled?c}
         },

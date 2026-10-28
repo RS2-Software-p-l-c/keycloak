@@ -1,6 +1,5 @@
 package org.keycloak.tests.admin;
 
-import org.junit.jupiter.api.Test;
 import org.keycloak.TokenVerifier;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.crypto.Algorithm;
@@ -11,6 +10,8 @@ import org.keycloak.testframework.annotations.InjectRealm;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 import org.keycloak.testframework.realm.ManagedRealm;
 
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @KeycloakIntegrationTest
@@ -19,7 +20,7 @@ public class AdminSignatureAlgorithmTest {
     @InjectAdminClient
     Keycloak admin;
 
-    @InjectRealm(ref = "master", createRealm = false)
+    @InjectRealm(attachTo = "master")
     ManagedRealm masterRealm;
 
     @Test

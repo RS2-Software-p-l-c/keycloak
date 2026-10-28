@@ -3,12 +3,9 @@ import { ExpandableSection } from "@patternfly/react-core";
 import { useState } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
-import {
-  SelectControl,
-  TextAreaControl,
-  TextControl,
-} from "@keycloak/keycloak-ui-shared";
+import { SelectControl, TextControl } from "@keycloak/keycloak-ui-shared";
 import { DefaultSwitchControl } from "../../components/SwitchControl";
+import { JwksSettings } from "./JwksSettings";
 
 import "./discovery-settings.css";
 
@@ -16,9 +13,10 @@ const PKCE_METHODS = ["plain", "S256"] as const;
 
 type DiscoverySettingsProps = {
   readOnly: boolean;
+  isOIDC: boolean;
 };
 
-const Fields = ({ readOnly }: DiscoverySettingsProps) => {
+const Fields = ({ readOnly, isOIDC }: DiscoverySettingsProps) => {
   const { t } = useTranslation();
   const { control } = useFormContext<IdentityProviderRepresentation>();
 
@@ -26,13 +24,17 @@ const Fields = ({ readOnly }: DiscoverySettingsProps) => {
     control,
     name: "config.validateSignature",
   });
-  const useJwks = useWatch({
-    control,
-    name: "config.useJwksUrl",
-  });
   const isPkceEnabled = useWatch({
     control,
     name: "config.pkceEnabled",
+  });
+  const jwtAuthorizationGrantEnabled = useWatch({
+    control,
+    name: "config.jwtAuthorizationGrantEnabled",
+  });
+  const supportsClientAssertions = useWatch({
+    control,
+    name: "config.supportsClientAssertions",
   });
 
   return (
@@ -55,53 +57,47 @@ const Fields = ({ readOnly }: DiscoverySettingsProps) => {
           required: t("required"),
         }}
       />
-      <TextControl
-        name="config.logoutUrl"
-        label={t("logoutUrl")}
-        readOnly={readOnly}
-      />
+      {isOIDC && (
+        <TextControl
+          name="config.logoutUrl"
+          label={t("logoutUrl")}
+          readOnly={readOnly}
+        />
+      )}
       <TextControl
         name="config.userInfoUrl"
         label={t("userInfoUrl")}
         readOnly={readOnly}
+        rules={{
+          required: isOIDC ? "" : t("required"),
+        }}
       />
       <TextControl
-        name="config.issuer"
-        label={t("issuer")}
+        name="config.tokenIntrospectionUrl"
+        label={t("tokenIntrospectionUrl")}
+        type="url"
         readOnly={readOnly}
       />
-      <DefaultSwitchControl
-        name="config.validateSignature"
-        label={t("validateSignature")}
-        isDisabled={readOnly}
-        stringify
-      />
-      {validateSignature === "true" && (
+      {isOIDC && (
+        <TextControl
+          name="config.issuer"
+          label={t("issuer")}
+          readOnly={readOnly}
+        />
+      )}
+      {isOIDC && (
         <>
           <DefaultSwitchControl
-            name="config.useJwksUrl"
-            label={t("useJwksUrl")}
+            name="config.validateSignature"
+            label={t("validateSignature")}
+            labelIcon={t("validateSignatureHelp")}
             isDisabled={readOnly}
             stringify
           />
-          {useJwks === "true" ? (
-            <TextAreaControl
-              name="config.jwksUrl"
-              label={t("jwksUrl")}
-              readOnly={readOnly}
-            />
-          ) : (
-            <>
-              <TextAreaControl
-                name="config.publicKeySignatureVerifier"
-                label={t("validatingPublicKey")}
-              />
-              <TextControl
-                name="config.publicKeySignatureVerifierKeyId"
-                label={t("validatingPublicKeyId")}
-                readOnly={readOnly}
-              />
-            </>
+          {(validateSignature === "true" ||
+            jwtAuthorizationGrantEnabled === "true" ||
+            supportsClientAssertions == "true") && (
+            <JwksSettings readOnly={readOnly} />
           )}
         </>
       )}
@@ -129,7 +125,10 @@ const Fields = ({ readOnly }: DiscoverySettingsProps) => {
   );
 };
 
-export const DiscoverySettings = ({ readOnly }: DiscoverySettingsProps) => {
+export const DiscoverySettings = ({
+  readOnly,
+  isOIDC,
+}: DiscoverySettingsProps) => {
   const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -142,10 +141,10 @@ export const DiscoverySettings = ({ readOnly }: DiscoverySettingsProps) => {
           onToggle={() => setIsExpanded(!isExpanded)}
           isExpanded={isExpanded}
         >
-          <Fields readOnly={readOnly} />
+          <Fields readOnly={readOnly} isOIDC={isOIDC} />
         </ExpandableSection>
       )}
-      {!readOnly && <Fields readOnly={readOnly} />}
+      {!readOnly && <Fields readOnly={readOnly} isOIDC={isOIDC} />}
     </>
   );
 };

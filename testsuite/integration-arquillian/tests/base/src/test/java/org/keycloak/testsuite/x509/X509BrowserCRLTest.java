@@ -17,25 +17,27 @@
 
 package org.keycloak.testsuite.x509;
 
-import org.jboss.arquillian.drone.api.annotation.Drone;
-import org.junit.Assert;
-import org.junit.Before;
-import org.junit.ClassRule;
-import org.junit.Test;
-import org.keycloak.OAuth2Constants;
 import org.keycloak.authentication.authenticators.x509.X509AuthenticatorConfigModel;
 import org.keycloak.events.Details;
 import org.keycloak.models.Constants;
 import org.keycloak.representations.idm.AuthenticatorConfigRepresentation;
-import org.keycloak.testsuite.pages.AppPage;
+import org.keycloak.testframework.events.EventAssertion;
+import org.keycloak.testsuite.util.AccountHelper;
 import org.keycloak.testsuite.util.ContainerAssume;
 import org.keycloak.testsuite.util.HtmlUnitBrowser;
+
+import org.jboss.arquillian.drone.api.annotation.Drone;
+import org.junit.Before;
+import org.junit.ClassRule;
+import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
 import org.openqa.selenium.WebDriver;
 
-import static org.hamcrest.Matchers.containsString;
-import static org.hamcrest.MatcherAssert.assertThat;
 import static org.keycloak.authentication.authenticators.x509.X509AuthenticatorConfigModel.IdentityMapperType.USERNAME_EMAIL;
 import static org.keycloak.authentication.authenticators.x509.X509AuthenticatorConfigModel.MappingSourceType.SUBJECTDN_EMAIL;
+
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsString;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -87,7 +89,7 @@ public class X509BrowserCRLTest extends AbstractX509AuthenticationTest {
                         .setUserIdentityMapperType(USERNAME_EMAIL);
         AuthenticatorConfigRepresentation cfg = newConfig("x509-browser-config", config.getConfig());
         String cfgId = createConfig(browserExecution.getId(), cfg);
-        Assert.assertNotNull(cfgId);
+        Assertions.assertNotNull(cfgId);
 
         assertLoginFailedDueRevokedCertificate();
     }
@@ -107,7 +109,7 @@ public class X509BrowserCRLTest extends AbstractX509AuthenticationTest {
                         .setUserIdentityMapperType(USERNAME_EMAIL);
         AuthenticatorConfigRepresentation cfg = newConfig("x509-browser-config", config.getConfig());
         String cfgId = createConfig(browserExecution.getId(), cfg);
-        Assert.assertNotNull(cfgId);
+        Assertions.assertNotNull(cfgId);
 
         assertLoginFailedDueRevokedCertificate();
     }
@@ -138,9 +140,57 @@ public class X509BrowserCRLTest extends AbstractX509AuthenticationTest {
                         .setUserIdentityMapperType(USERNAME_EMAIL);
         AuthenticatorConfigRepresentation cfg = newConfig("x509-browser-config", config.getConfig());
         String cfgId = createConfig(browserExecution.getId(), cfg);
-        Assert.assertNotNull(cfgId);
+        Assertions.assertNotNull(cfgId);
 
         assertLoginFailedDueRevokedCertificate();
+    }
+
+    @Test
+    public void loginTestCRLCaching() {
+        X509AuthenticatorConfigModel config =
+                new X509AuthenticatorConfigModel()
+                        .setCRLEnabled(true)
+                        .setCRLRelativePath(CRLRule.CRL_RESPONDER_ORIGIN + "/cached-crl")
+                        .setConfirmationPageAllowed(true)
+                        .setMappingSourceType(SUBJECTDN_EMAIL)
+                        .setUserIdentityMapperType(USERNAME_EMAIL);
+        AuthenticatorConfigRepresentation cfg = newConfig("x509-browser-config", config.getConfig());
+        String cfgId = createConfig(browserExecution.getId(), cfg);
+        Assertions.assertNotNull(cfgId);
+
+        try {
+            // change CRL to the empty but expired, it should login OK
+            crlRule.addHandler("cached-crl", EMPTY_EXPIRED_CRL_PATH);
+            x509BrowserLogin(config, userId, "test-user@localhost", "test-user@localhost");
+            AccountHelper.logout(managedRealm.admin(), "test-user@localhost");
+            Assertions.assertEquals(1, crlRule.getCounter("cached-crl"));
+
+            // change the CRL to the new one but it is cached the min time
+            crlRule.setCrlForHandler("cached-crl", INTERMEDIATE_CA_CRL_PATH);
+            x509BrowserLogin(config, userId, "test-user@localhost", "test-user@localhost");
+            AccountHelper.logout(managedRealm.admin(), "test-user@localhost");
+            Assertions.assertEquals(1, crlRule.getCounter("cached-crl"));
+
+            // wait the min time and it should be refreshed now and fail
+            timeOffSet.set(10);
+            assertLoginFailedDueRevokedCertificate();
+            AccountHelper.logout(managedRealm.admin(), "test-user@localhost");
+            Assertions.assertEquals(2, crlRule.getCounter("cached-crl"));
+
+            // now it's cached until next update 50 years
+            timeOffSet.set(3600);
+            assertLoginFailedDueRevokedCertificate();
+            AccountHelper.logout(managedRealm.admin(), "test-user@localhost");
+            Assertions.assertEquals(2, crlRule.getCounter("cached-crl"));
+
+            // clear the cache
+            managedRealm.admin().clearCrlCache();
+            assertLoginFailedDueRevokedCertificate();
+            AccountHelper.logout(managedRealm.admin(), "test-user@localhost");
+            Assertions.assertEquals(3, crlRule.getCounter("cached-crl"));
+        } finally {
+            crlRule.removeHandler("cached-crl");
+        }
     }
 
     @Test
@@ -155,7 +205,7 @@ public class X509BrowserCRLTest extends AbstractX509AuthenticationTest {
                         .setUserIdentityMapperType(USERNAME_EMAIL);
         AuthenticatorConfigRepresentation cfg = newConfig("x509-browser-config", config.getConfig());
         String cfgId = createConfig(browserExecution.getId(), cfg);
-        Assert.assertNotNull(cfgId);
+        Assertions.assertNotNull(cfgId);
 
         assertLoginFailedDueRevokedCertificate();
     }
@@ -173,10 +223,10 @@ public class X509BrowserCRLTest extends AbstractX509AuthenticationTest {
                         .setUserIdentityMapperType(USERNAME_EMAIL);
         AuthenticatorConfigRepresentation cfg = newConfig("x509-browser-config", config.getConfig());
         String cfgId = createConfig(browserExecution.getId(), cfg);
-        Assert.assertNotNull(cfgId);
+        Assertions.assertNotNull(cfgId);
 
         // Verify there is an error message because of invalid CRL signature
-        assertLoginFailedWithExpectedX509Error("Certificate validation's failed.\nCertificate revoked or incorrect.");
+        assertLoginFailedWithExpectedX509Error("Certificate validation's failed. Certificate revoked or incorrect.");
     }
 
 
@@ -192,7 +242,7 @@ public class X509BrowserCRLTest extends AbstractX509AuthenticationTest {
                         .setUserIdentityMapperType(USERNAME_EMAIL);
         AuthenticatorConfigRepresentation cfg = newConfig("x509-browser-config", config.getConfig());
         String cfgId = createConfig(browserExecution.getId(), cfg);
-        Assert.assertNotNull(cfgId);
+        Assertions.assertNotNull(cfgId);
 
         // Verify there is an error message because of invalid CRL signature
         x509BrowserLogin(config, userId, "test-user@localhost", "test-user@localhost");
@@ -211,7 +261,7 @@ public class X509BrowserCRLTest extends AbstractX509AuthenticationTest {
                         .setUserIdentityMapperType(USERNAME_EMAIL);
         AuthenticatorConfigRepresentation cfg = newConfig("x509-browser-config", config.getConfig());
         String cfgId = createConfig(browserExecution.getId(), cfg);
-        Assert.assertNotNull(cfgId);
+        Assertions.assertNotNull(cfgId);
 
         assertLoginFailedDueRevokedCertificate();
     }
@@ -231,7 +281,7 @@ public class X509BrowserCRLTest extends AbstractX509AuthenticationTest {
                         .setUserIdentityMapperType(USERNAME_EMAIL);
         AuthenticatorConfigRepresentation cfg = newConfig("x509-browser-config", config.getConfig());
         String cfgId = createConfig(browserExecution.getId(), cfg);
-        Assert.assertNotNull(cfgId);
+        Assertions.assertNotNull(cfgId);
 
         x509BrowserLogin(config, userId, "test-user@localhost", "test-user@localhost");
     }
@@ -248,7 +298,7 @@ public class X509BrowserCRLTest extends AbstractX509AuthenticationTest {
                         .setUserIdentityMapperType(USERNAME_EMAIL);
         AuthenticatorConfigRepresentation cfg = newConfig("x509-browser-config", config.getConfig());
         String cfgId = createConfig(browserExecution.getId(), cfg);
-        Assert.assertNotNull(cfgId);
+        Assertions.assertNotNull(cfgId);
 
         assertLoginFailedDueRevokedCertificate();
     }
@@ -256,28 +306,25 @@ public class X509BrowserCRLTest extends AbstractX509AuthenticationTest {
 
 
     private void assertLoginFailedDueRevokedCertificate() {
-        assertLoginFailedWithExpectedX509Error("Certificate validation's failed.\nCertificate revoked or incorrect.");
+        assertLoginFailedWithExpectedX509Error("Certificate validation's failed. Certificate revoked or incorrect.");
     }
 
     private void assertLoginFailedWithExpectedX509Error(String expectedError) {
-        loginConfirmationPage.open();
+        oauth.openLoginForm();
         loginPage.assertCurrent();
 
         // Verify there is an error message
-        Assert.assertNotNull(loginPage.getError());
+        Assertions.assertNotNull(loginPage.getError());
 
         assertThat(loginPage.getError(), containsString(expectedError));
 
         // Continue with form based login
         loginPage.login("test-user@localhost", "password");
 
-        Assert.assertEquals(AppPage.RequestType.AUTH_RESPONSE, appPage.getRequestType());
-        Assert.assertNotNull(oauth.getCurrentQuery().get(OAuth2Constants.CODE));
+        Assertions.assertTrue(oauth.parseLoginResponse().isSuccess());
 
-        events.expectLogin()
-                .user(userId)
-                .detail(Details.USERNAME, "test-user@localhost")
-                .removeDetail(Details.REDIRECT_URI)
-                .assertEvent();
+        EventAssertion.expectLoginSuccess(events.poll())
+                .userId(userId)
+                .details(Details.USERNAME, "test-user@localhost");
     }
 }

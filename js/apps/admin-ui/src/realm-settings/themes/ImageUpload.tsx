@@ -1,7 +1,8 @@
 import { KeycloakSpinner } from "@keycloak/keycloak-ui-shared";
 import { FileUpload } from "@patternfly/react-core";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Controller, useFormContext } from "react-hook-form";
+import { fileToDataUri } from "./fileUtils";
 
 type ImageUploadProps = {
   name: string;
@@ -13,23 +14,25 @@ export const ImageUpload = ({ name, onChange }: ImageUploadProps) => {
   const [file, setFile] = useState<File>();
   const [isLoading, setIsLoading] = useState(false);
 
-  const { control } = useFormContext();
-
-  const fileToDataUri = (file: File) =>
-    new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        resolve(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
-    });
+  const { control, watch } = useFormContext();
 
   if (file) {
-    fileToDataUri(file).then((dataUri) => {
+    void fileToDataUri(file).then((dataUri) => {
       setDataUri(dataUri);
       onChange?.(dataUri);
     });
   }
+
+  const loadedFile = watch(name);
+  useEffect(() => {
+    (() => {
+      if (loadedFile) {
+        void fileToDataUri(loadedFile).then((dataUri) => {
+          setDataUri(dataUri);
+        });
+      }
+    })();
+  }, [loadedFile]);
 
   return (
     <Controller

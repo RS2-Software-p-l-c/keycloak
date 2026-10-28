@@ -16,14 +16,16 @@
  */
 package org.keycloak.saml.processing.core.util;
 
-import org.apache.commons.codec.binary.Base64;
-import org.apache.commons.codec.binary.StringUtils;
-import org.apache.xml.security.encryption.EncryptedData;
-import org.apache.xml.security.encryption.EncryptedKey;
-import org.apache.xml.security.encryption.XMLCipher;
-import org.apache.xml.security.encryption.XMLEncryptionException;
-import org.apache.xml.security.exceptions.XMLSecurityException;
-import org.apache.xml.security.utils.EncryptionConstants;
+import java.security.Key;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.util.List;
+import java.util.Objects;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
+import javax.xml.XMLConstants;
+import javax.xml.crypto.dsig.XMLSignature;
+import javax.xml.namespace.QName;
 
 import org.keycloak.saml.processing.core.saml.v2.util.DecryptionException;
 import org.keycloak.saml.common.PicketLinkLogger;
@@ -31,22 +33,20 @@ import org.keycloak.saml.common.PicketLinkLoggerFactory;
 import org.keycloak.saml.common.exceptions.ProcessingException;
 import org.keycloak.saml.common.util.DocumentUtil;
 import org.keycloak.saml.common.util.StringUtil;
+import org.keycloak.models.KeycloakSession;
 
+import org.apache.commons.codec.binary.Base64;
+import org.apache.xml.security.algorithms.JCEMapper;
+import org.apache.xml.security.encryption.EncryptedData;
+import org.apache.xml.security.encryption.EncryptedKey;
+import org.apache.xml.security.encryption.XMLCipher;
+import org.apache.xml.security.encryption.XMLEncryptionException;
+import org.apache.xml.security.exceptions.XMLSecurityException;
+import org.apache.xml.security.utils.EncryptionConstants;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
-
-import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
-import javax.xml.namespace.QName;
-import java.security.Key;
-import java.security.PrivateKey;
-import java.security.PublicKey;
-import java.util.List;
-import java.util.Objects;
-import javax.xml.XMLConstants;
-import javax.xml.crypto.dsig.XMLSignature;
 
 /**
  * Utility for XML Encryption <b>Note: </b> This utility is currently using Apache XML Security library API. JSR-106 is
@@ -79,9 +79,14 @@ public class XMLEncryptionUtil {
 
     public static final String DS_KEY_INFO = "ds:KeyInfo";
 
+    // RSA-OAEP-11 (SHA-256 digest + MGF1-SHA256) rather than the legacy rsa-oaep-mgf1p scheme.
+    // The legacy URI implies SHA-1/MGF1-SHA1, but the key was wrapped with a SHA-256 digest; with
+    // xmlsec 3.x the DigestMethod no longer round-trips for the mgf1p URI, so decryption defaulted
+    // to SHA-1 and failed with a padding error. RSA-OAEP-11 states the digest and MGF explicitly,
+    // so the wrap and unwrap parameters always agree.
     private static final String RSA_ENCRYPTION_SCHEME = Objects.equals(System.getProperty("keycloak.saml.key_trans.rsa_v1.5"), "true")
             ? XMLCipher.RSA_v1dot5
-            : XMLCipher.RSA_OAEP;
+            : XMLCipher.RSA_OAEP_11;
 
     /**
      * <p>
@@ -97,15 +102,14 @@ public class XMLEncryptionUtil {
      * @param document
      * @param keyToBeEncrypted Symmetric Key (SecretKey)
      * @param keyUsedToEncryptSecretKey Asymmetric Key (Public Key)
-     * @param keySize Length of the key
      *
      * @return
      *
      * @throws org.keycloak.saml.common.exceptions.ProcessingException
      */
     private static EncryptedKey encryptKey(Document document, SecretKey keyToBeEncrypted, PublicKey keyUsedToEncryptSecretKey,
-                                           int keySize, String keyEncryptionAlgorithm, String keyEncryptionDigestMethod,
-                                           String keyEncryptionMgfAlgorithm) throws ProcessingException {
+                                          String keyEncryptionAlgorithm, String keyEncryptionDigestMethod,
+                                          String keyEncryptionMgfAlgorithm) throws ProcessingException {
         XMLCipher keyCipher;
 
         try {
@@ -118,17 +122,32 @@ public class XMLEncryptionUtil {
         }
     }
 
+    public static String getJCEKeyAlgorithmFromURI(String algorithm) {
+        return JCEMapper.getJCEKeyAlgorithmFromURI(algorithm);
+    }
+
+    public static int getKeyLengthFromURI(String algorithm) {
+        return JCEMapper.getKeyLengthFromURI(algorithm);
+    }
+
     public static void encryptElement(QName elementQName, Document document, PublicKey publicKey, SecretKey secretKey,
                                       int keySize, QName wrappingElementQName, boolean addEncryptedKeyInKeyInfo) throws ProcessingException {
         encryptElement(elementQName, document, publicKey, secretKey, keySize, wrappingElementQName, addEncryptedKeyInKeyInfo,
-                null, null, null);
+                null, null, null, null);
     }
 
     public static void encryptElement(QName elementQName, Document document, PublicKey publicKey, SecretKey secretKey,
                                       int keySize, QName wrappingElementQName, boolean addEncryptedKeyInKeyInfo,
                                       String keyEncryptionAlgorithm) throws ProcessingException {
         encryptElement(elementQName, document, publicKey, secretKey, keySize, wrappingElementQName,
-                addEncryptedKeyInKeyInfo, keyEncryptionAlgorithm, null, null);
+                addEncryptedKeyInKeyInfo, null, keyEncryptionAlgorithm, null, null);
+    }
+
+    public static void encryptElement(QName elementQName, Document document, PublicKey publicKey, SecretKey secretKey,
+                                      int keySize, QName wrappingElementQName, boolean addEncryptedKeyInKeyInfo, String keyEncryptionAlgorithm,
+                                      String keyEncryptionDigestMethod, String keyEncryptionMgfAlgorithm) throws ProcessingException {
+        encryptElement(elementQName, document, publicKey, secretKey, keySize, wrappingElementQName, addEncryptedKeyInKeyInfo,
+                null, keyEncryptionAlgorithm, keyEncryptionDigestMethod, keyEncryptionMgfAlgorithm);
     }
 
     /**
@@ -142,6 +161,7 @@ public class XMLEncryptionUtil {
      * @param keySize The size of the public key
      * @param wrappingElementQName A QName of an element that will wrap the encrypted element
      * @param addEncryptedKeyInKeyInfo Need for the EncryptedKey to be placed in ds:KeyInfo
+     * @param encryptionAlgorithm The encryption algorithm
      * @param keyEncryptionAlgorithm The wrap algorithm for the secret key (can be null, default is used depending the publicKey type)
      * @param keyEncryptionDigestMethod An optional digestMethod to use (can be null)
      * @param keyEncryptionMgfAlgorithm The xenc11 MGF Algorithm to use (can be null)
@@ -149,8 +169,8 @@ public class XMLEncryptionUtil {
      * @throws ProcessingException
      */
     public static void encryptElement(QName elementQName, Document document, PublicKey publicKey, SecretKey secretKey,
-                                      int keySize, QName wrappingElementQName, boolean addEncryptedKeyInKeyInfo, String keyEncryptionAlgorithm,
-                                      String keyEncryptionDigestMethod, String keyEncryptionMgfAlgorithm) throws ProcessingException {
+                                      int keySize, QName wrappingElementQName, boolean addEncryptedKeyInKeyInfo, String encryptionAlgorithm,
+                                      String keyEncryptionAlgorithm, String keyEncryptionDigestMethod, String keyEncryptionMgfAlgorithm) throws ProcessingException {
         if (elementQName == null)
             throw logger.nullArgumentError("elementQName");
         if (document == null)
@@ -164,14 +184,40 @@ public class XMLEncryptionUtil {
         if (documentElement == null)
             throw logger.domMissingDocElementError(elementQName.toString());
 
-        XMLCipher cipher = null;
+        // set default algorithms
+        if (encryptionAlgorithm == null) {
+            // set default encryption based on the secret key passed
+            encryptionAlgorithm = getXMLEncryptionURL(secretKey.getAlgorithm(), keySize);
+        }
+
         if (keyEncryptionAlgorithm == null) {
             // get default one for the public key
             keyEncryptionAlgorithm = getXMLEncryptionURLForKeyUnwrap(publicKey.getAlgorithm(), keySize);
         }
-        EncryptedKey encryptedKey = encryptKey(document, secretKey, publicKey, keySize, keyEncryptionAlgorithm, keyEncryptionDigestMethod, keyEncryptionMgfAlgorithm);
 
-        String encryptionAlgorithm = getXMLEncryptionURL(secretKey.getAlgorithm(), keySize);
+        if ((XMLCipher.RSA_OAEP.equals(keyEncryptionAlgorithm) || XMLCipher.RSA_OAEP_11.equals(keyEncryptionAlgorithm))) {
+            if (keyEncryptionDigestMethod == null) {
+                keyEncryptionDigestMethod = XMLCipher.SHA256; // default digest method to SHA256
+            } else if (XMLCipher.SHA1.equals(keyEncryptionDigestMethod)){
+                keyEncryptionDigestMethod = null; // default by spec
+            }
+        } else {
+            keyEncryptionDigestMethod = null; // not used for RSA_v1dot5
+        }
+
+        if (XMLCipher.RSA_OAEP_11.equals(keyEncryptionAlgorithm)) {
+            if (keyEncryptionMgfAlgorithm == null) {
+                keyEncryptionMgfAlgorithm = EncryptionConstants.MGF1_SHA256; // default mgf to mgf1sha256
+            } else if (EncryptionConstants.MGF1_SHA1.equals(keyEncryptionMgfAlgorithm)) {
+                keyEncryptionMgfAlgorithm = null; // default by spec
+            }
+        } else {
+            keyEncryptionMgfAlgorithm = null; // only available for RSA_OAEP_11
+        }
+
+        EncryptedKey encryptedKey = encryptKey(document, secretKey, publicKey, keyEncryptionAlgorithm, keyEncryptionDigestMethod, keyEncryptionMgfAlgorithm);
+
+        XMLCipher cipher = null;
         // Encrypt the Document
         try {
             cipher = XMLCipher.getInstance(encryptionAlgorithm);
@@ -248,6 +294,27 @@ public class XMLEncryptionUtil {
      */
     public static Element decryptElementInDocument(Document documentWithEncryptedElement, DecryptionKeyLocator decryptionKeyLocator)
             throws DecryptionException {
+        return decryptElementInDocument(documentWithEncryptedElement, decryptionKeyLocator, null);
+    }
+
+    /**
+     * Decrypts an encrypted element inside a document. When a {@link KeycloakSession} is provided,
+     * it attempts to use the configured {@link SamlDecryptionProvider} for key unwrapping.
+     * If no provider is available or no session is provided, it falls back to the legacy
+     * {@link DecryptionKeyLocator} behavior.
+     *
+     * @param documentWithEncryptedElement document containing encrypted element
+     * @param decryptionKeyLocator decryption key locator (used as fallback)
+     * @param session optional KeycloakSession for SPI-based decryption (may be null)
+     *
+     * @return the document with the encrypted element replaced by the data element
+     *
+     * @throws DecryptionException when decrypting was not successful
+     */
+    public static Element decryptElementInDocument(Document documentWithEncryptedElement,
+                                                   DecryptionKeyLocator decryptionKeyLocator,
+                                                   KeycloakSession session)
+            throws DecryptionException {
         if (documentWithEncryptedElement == null)
             throw logger.nullArgumentError("Input document is null");
 
@@ -284,35 +351,47 @@ public class XMLEncryptionUtil {
         if (encryptedData != null && encryptedKey != null) {
             boolean success = false;
             final Exception enclosingThrowable = new RuntimeException("Cannot decrypt element in document");
-            List<PrivateKey> encryptionKeys;
-            encryptionKeys = decryptionKeyLocator.getKeys(encryptedData);
 
             try {
-                String encAlgoURL = encryptedData.getEncryptionMethod().getAlgorithm();
+                // Attempt SPI-based decryption when session is available
+                if (session != null) {
+                    // Populate session with decryption keys from the locator so the
+                    // DefaultSamlDecryptionProviderFactory can access them.
+                    // Custom providers (e.g., KMS-backed) may ignore these attributes.
+                    List<PrivateKey> locatedKeys = decryptionKeyLocator.getKeys(encryptedData);
+                    if (locatedKeys != null && !locatedKeys.isEmpty()) {
+                        session.setAttribute("saml.decryption.keys", locatedKeys);
+                    }
 
-                var awsKeyId = System.getenv("ENC_AWS_KMS_KEY_ID");
-                var azureKeyId = System.getenv("ENC_AZURE_VAULT_KEY_ID");
-                var azureClientId = System.getenv("ENC_AZURE_VAULT_CLIENT_ID");
+                    SamlDecryptionProvider provider = session.getProvider(SamlDecryptionProvider.class);
+                    if (provider != null) {
+                        String algorithm = encryptedKey.getEncryptionMethod().getAlgorithm();
+                        String digestAlgorithm = encryptedKey.getEncryptionMethod().getDigestAlgorithm();
+                        String mgfAlgorithm = encryptedKey.getEncryptionMethod().getMGFAlgorithm();
 
-                if (!StringUtil.isNullOrEmpty(awsKeyId)) {
-                    AmazonKMS amazonKMS = new AmazonKMS(awsKeyId);
-                    amazonKMS.setClient();
+                        byte[] encryptedBytes = Base64.decodeBase64(
+                                encryptedKey.getCipherData().getCipherValue().getValue());
+                        byte[] decryptedKeyBytes = provider.unwrapKey(algorithm, encryptedBytes, digestAlgorithm, mgfAlgorithm);
 
-                    decryptedDoc = decryptUsingHsm(encryptedKey, documentWithEncryptedElement, encDataElement, amazonKMS);
-                    success = true;
-                } else if (!StringUtil.isNullOrEmpty(azureKeyId)) {
-                    AzureKeyVault azureKeyVault;
+                        SecretKeySpec secretKey = new SecretKeySpec(decryptedKeyBytes, 0, decryptedKeyBytes.length, "AES");
+                        cipher = XMLCipher.getInstance();
+                        cipher.init(XMLCipher.DECRYPT_MODE, secretKey);
+                        decryptedDoc = cipher.doFinal(documentWithEncryptedElement, encDataElement);
+                        success = true;
+                    }
+                }
+            } catch (Exception e) {
+                // When a session-provided SPI provider fails, propagate immediately
+                // without falling back to legacy logic
+                throw new DecryptionException(e);
+            }
 
-                    if (StringUtil.isNullOrEmpty(azureClientId))
-                        azureKeyVault = new AzureKeyVault(azureKeyId);
-                    else
-                        azureKeyVault = new AzureKeyVault(azureClientId, System.getenv("ENC_AZURE_VAULT_CLIENT_SECRET"), System.getenv("ENC_AZURE_VAULT_TENANT_ID"), System.getenv("ENC_AZURE_VAULT_KEY_ID"));
+            try {
+                // Fall back to legacy DecryptionKeyLocator logic only when no session/provider was used
+                if (!success) {
+                    String encAlgoURL = encryptedData.getEncryptionMethod().getAlgorithm();
+                    List<PrivateKey> encryptionKeys = decryptionKeyLocator.getKeys(encryptedData);
 
-                    azureKeyVault.setClient();
-
-                    decryptedDoc = decryptUsingHsm(encryptedKey, documentWithEncryptedElement, encDataElement, azureKeyVault);
-                    success = true;
-                } else {
                     for (PrivateKey privateKey : encryptionKeys) {
                         XMLCipher keyCipher = XMLCipher.getInstance();
                         keyCipher.init(XMLCipher.UNWRAP_MODE, privateKey);
@@ -432,14 +511,4 @@ public class XMLEncryptionUtil {
         return null;
     }
 
-    private static Document decryptUsingHsm(EncryptedKey encryptedKey, Document documentWithEncryptedElement, Element encDataElement, HSM<?> hsm) throws Exception {
-        var encryptedBytes = Base64.decodeBase64(encryptedKey.getCipherData().getCipherValue().getValue());
-        var decryptedKey = hsm.unwrapKey(encryptedKey.getEncryptionMethod().getAlgorithm(), encryptedBytes);
-
-        var encryptionKey = new SecretKeySpec(decryptedKey, 0, decryptedKey.length, "AES");
-        var cipher = XMLCipher.getInstance();
-        cipher.init(XMLCipher.DECRYPT_MODE, encryptionKey);
-
-        return cipher.doFinal(documentWithEncryptedElement, encDataElement);
-    }
 }

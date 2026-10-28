@@ -17,28 +17,31 @@
 
 package org.keycloak.exportimport.dir;
 
-import org.jboss.logging.Logger;
-import org.keycloak.Config;
-import org.keycloak.exportimport.AbstractFileBasedImportProvider;
-import org.keycloak.exportimport.Strategy;
-import org.keycloak.exportimport.util.ExportImportSessionTask;
-import org.keycloak.exportimport.util.ImportUtils;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.KeycloakSessionFactory;
-import org.keycloak.models.utils.KeycloakModelUtils;
-import org.keycloak.platform.Platform;
-import org.keycloak.representations.idm.RealmRepresentation;
-import org.keycloak.services.ServicesLogger;
-import org.keycloak.util.JsonSerialization;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicBoolean;
-import org.keycloak.services.managers.RealmManager;
+import java.util.Optional;
+
+import org.keycloak.Config;
+import org.keycloak.connections.jpa.support.EntityManagers;
+import org.keycloak.exportimport.AbstractFileBasedImportProvider;
+import org.keycloak.exportimport.Strategy;
+import org.keycloak.exportimport.util.ExportImportSessionTask;
+import org.keycloak.exportimport.util.ExportImportSessionTask.Mode;
+import org.keycloak.exportimport.util.ImportUtils;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.KeycloakSessionFactory;
+import org.keycloak.representations.idm.RealmRepresentation;
+import org.keycloak.services.ServicesLogger;
+import org.keycloak.services.resources.KeycloakApplication;
+import org.keycloak.storage.datastore.DefaultExportImportManager;
+import org.keycloak.util.JsonSerialization;
+import org.keycloak.utils.KeycloakSessionUtil;
+
+import org.jboss.logging.Logger;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -77,7 +80,7 @@ public class DirImportProvider extends AbstractFileBasedImportProvider {
 
     private File getRootDirectory() {
         if (rootDirectory == null) {
-            this.rootDirectory = new File(Platform.getPlatform().getTmpDirectory(), "keycloak-export");
+            this.rootDirectory = new File(KeycloakApplication.getTmpDirectory(), "keycloak-export");
             if (!this.rootDirectory.exists()) {
                 throw new IllegalStateException("Directory " + this.rootDirectory + " doesn't exist");
             }
@@ -98,6 +101,8 @@ public class DirImportProvider extends AbstractFileBasedImportProvider {
 
             for (String realmName : realmNames) {
                 importRealm(realmName, strategy);
+                Optional.ofNullable(KeycloakSessionUtil.getKeycloakSession())
+                        .ifPresent(session -> EntityManagers.flush(session, true));
             }
         }
         ServicesLogger.LOGGER.importSuccess();
@@ -138,58 +143,37 @@ public class DirImportProvider extends AbstractFileBasedImportProvider {
         // Import realm first
         InputStream is = parseFile(realmFile);
         final RealmRepresentation realmRep = JsonSerialization.readValue(is, RealmRepresentation.class);
-        final AtomicBoolean realmImported = new AtomicBoolean();
+        if (!realmRep.getRealm().equals(realmName)) {
+            throw new IllegalStateException(String.format("File name / realm name mismatch. %s, contains realm %s. File name should be %s", realmFile.getName(), realmRep.getRealm(), realmRep.getRealm() + "-realm.json"));
+        }
 
-        KeycloakModelUtils.runJobInTransaction(factory, new ExportImportSessionTask() {
+        new ExportImportSessionTask() {
 
             @Override
             public void runExportImportTask(KeycloakSession session) {
-                boolean imported = ImportUtils.importRealm(session, realmRep, strategy, true);
-                realmImported.set(imported);
+                ImportUtils.importRealm(session, realmRep, strategy, () -> {
+                    importUsers(realmName, userFiles, false);
+                    importUsers(realmName, federatedUserFiles, true);
+                });
             }
 
-        });
+        }.runTask(factory);
+    }
 
-        if (realmImported.get()) {
-            // Import users
-            for (final File userFile : userFiles) {
-                try (InputStream fis = parseFile(userFile)) {
-                    KeycloakModelUtils.runJobInTransaction(factory, new ExportImportSessionTask() {
-                        @Override
-                        protected void runExportImportTask(KeycloakSession session) throws IOException {
-                            session.getContext().setRealm(session.realms().getRealmByName(realmName));
-                            ImportUtils.importUsersFromStream(session, realmName, JsonSerialization.mapper, fis);
-                            logger.infof("Imported users from %s", userFile.getAbsolutePath());
-                        }
-                    });
-                }
+    private void importUsers(final String realmName, File[] userFiles, boolean federated) {
+        for (final File userFile : userFiles) {
+            try (InputStream fis = parseFile(userFile)) {
+                new ExportImportSessionTask() {
+                    @Override
+                    protected void runExportImportTask(KeycloakSession session) throws IOException {
+                        session.getContext().setRealm(session.realms().getRealmByName(realmName));
+                        ImportUtils.importUsersFromStream(session, realmName, JsonSerialization.mapper, fis, federated, new DefaultExportImportManager.Batcher());
+                        logger.infof("Imported %susers from %s", federated?"federated ":"", userFile.getAbsolutePath());
+                    }
+                }.runTask(factory, Mode.BATCHED);
+            } catch (IOException e) {
+                throw new RuntimeException("Error during import: " + e.getMessage(), e);
             }
-            for (final File userFile : federatedUserFiles) {
-                try (InputStream fis = parseFile(userFile)) {
-                    KeycloakModelUtils.runJobInTransaction(factory, new ExportImportSessionTask() {
-                        @Override
-                        protected void runExportImportTask(KeycloakSession session) throws IOException {
-                            session.getContext().setRealm(session.realms().getRealmByName(realmName));
-                            ImportUtils.importFederatedUsersFromStream(session, realmName, JsonSerialization.mapper, fis);
-                            logger.infof("Imported federated users from %s", userFile.getAbsolutePath());
-                        }
-                    });
-                }
-            }
-        }
-
-        if (realmImported.get()) {
-            // Import authorization and initialize service accounts last, as they require users already in DB
-            KeycloakModelUtils.runJobInTransaction(factory, new ExportImportSessionTask() {
-
-                @Override
-                public void runExportImportTask(KeycloakSession session) {
-                    session.getContext().setRealm(session.realms().getRealmByName(realmName));
-                    RealmManager realmManager = new RealmManager(session);
-                    realmManager.setupClientServiceAccountsAndAuthorizationOnImport(realmRep, false);
-                }
-
-            });
         }
     }
 

@@ -16,9 +16,13 @@
  */
 package org.keycloak.testsuite.oidc;
 
-import org.jboss.arquillian.graphene.page.Page;
-import org.junit.Rule;
-import org.junit.Test;
+import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
+import java.security.PrivateKey;
+import java.util.Map;
+
 import org.keycloak.admin.client.resource.ClientResource;
 import org.keycloak.common.util.Base64Url;
 import org.keycloak.common.util.PemUtils;
@@ -37,32 +41,28 @@ import org.keycloak.representations.AuthorizationResponseToken;
 import org.keycloak.representations.idm.ClientRepresentation;
 import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.testsuite.AbstractTestRealmKeycloakTest;
-import org.keycloak.testsuite.Assert;
 import org.keycloak.testsuite.AssertEvents;
-import org.keycloak.testsuite.admin.ApiUtil;
+import org.keycloak.testsuite.admin.AdminApiUtil;
 import org.keycloak.testsuite.arquillian.annotation.UncaughtServerErrorExpected;
 import org.keycloak.testsuite.client.resources.TestApplicationResourceUrls;
 import org.keycloak.testsuite.client.resources.TestOIDCEndpointsApplicationResource;
-import org.keycloak.testsuite.pages.*;
-import org.keycloak.testsuite.util.OAuthClient;
+import org.keycloak.testsuite.pages.ErrorPage;
+import org.keycloak.testsuite.pages.LoginPage;
+import org.keycloak.testsuite.pages.OAuthGrantPage;
 import org.keycloak.testsuite.util.TokenSignatureUtil;
+import org.keycloak.testsuite.util.oauth.AuthorizationEndpointResponse;
 import org.keycloak.util.JsonSerialization;
 import org.keycloak.util.TokenUtil;
 
-import java.io.IOException;
-import java.net.MalformedURLException;
-import java.net.URISyntaxException;
-import java.nio.charset.StandardCharsets;
-import java.security.PrivateKey;
-import java.util.Map;
+import org.jboss.arquillian.graphene.page.Page;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
 
 public class AuthorizationTokenEncryptionTest extends AbstractTestRealmKeycloakTest {
 
     @Rule
     public AssertEvents events = new AssertEvents(this);
-
-    @Page
-    protected AppPage appPage;
 
     @Page
     protected LoginPage loginPage;
@@ -168,7 +168,7 @@ public class AuthorizationTokenEncryptionTest extends AbstractTestRealmKeycloakT
             TestOIDCEndpointsApplicationResource oidcClientEndpointsResource = testingClient.testApp().oidcClientEndpoints();
             oidcClientEndpointsResource.generateKeys(algAlgorithm);
 
-            clientResource = ApiUtil.findClientByClientId(adminClient.realm("test"), "test-app");
+            clientResource = AdminApiUtil.findClientByClientId(adminClient.realm("test"), "test-app");
             clientRep = clientResource.toRepresentation();
             // set authorization response signature algorithm and encryption algorithms
             OIDCAdvancedConfigWrapper.fromClientRepresentation(clientRep).setAuthorizationSignedResponseAlg(sigAlgorithm);
@@ -182,13 +182,12 @@ public class AuthorizationTokenEncryptionTest extends AbstractTestRealmKeycloakT
 
             // get authorization response
             oauth.responseMode("jwt");
-            oauth.stateParamHardcoded("OpenIdConnect.AuthenticationProperties=2302984sdlk");
-            OAuthClient.AuthorizationEndpointResponse response = oauth.doLogin("test-user@localhost", "password");
+            AuthorizationEndpointResponse response = oauth.loginForm().state("OpenIdConnect.AuthenticationProperties=2302984sdlk").doLogin("test-user@localhost", "password");
 
             // parse JWE and JOSE Header
             String jweStr = response.getResponse();
             String[] parts = jweStr.split("\\.");
-            Assert.assertEquals(parts.length, 5);
+            Assertions.assertEquals(parts.length, 5);
 
             // get decryption key
             // not publickey , use privateKey
@@ -203,17 +202,17 @@ public class AuthorizationTokenEncryptionTest extends AbstractTestRealmKeycloakT
 
             // a nested JWT (signed and encrypted JWT) needs to set "JWT" to its JOSE Header's "cty" field
             JWEHeader jweHeader = (JWEHeader) getHeader(parts[0]);
-            Assert.assertEquals("JWT", jweHeader.getContentType());
+            Assertions.assertEquals("JWT", jweHeader.getContentType());
 
             // verify JWS
             AuthorizationResponseToken authorizationToken = oauth.verifyAuthorizationResponseToken(authorizationTokenString);
-            Assert.assertEquals("test-app", authorizationToken.getAudience()[0]);
-            Assert.assertEquals("OpenIdConnect.AuthenticationProperties=2302984sdlk", authorizationToken.getOtherClaims().get("state"));
-            Assert.assertNotNull(authorizationToken.getOtherClaims().get("code"));
+            Assertions.assertEquals("test-app", authorizationToken.getAudience()[0]);
+            Assertions.assertEquals("OpenIdConnect.AuthenticationProperties=2302984sdlk", authorizationToken.getOtherClaims().get("state"));
+            Assertions.assertNotNull(authorizationToken.getOtherClaims().get("code"));
         } catch (JWEException e) {
-            Assert.fail();
+            Assertions.fail();
         } finally {
-            clientResource = ApiUtil.findClientByClientId(adminClient.realm("test"), "test-app");
+            clientResource = AdminApiUtil.findClientByClientId(adminClient.realm("test"), "test-app");
             clientRep = clientResource.toRepresentation();
             // revert id token signature algorithm and encryption algorithms
             OIDCAdvancedConfigWrapper.fromClientRepresentation(clientRep).setAuthorizationSignedResponseAlg(Algorithm.RS256);
@@ -265,7 +264,7 @@ public class AuthorizationTokenEncryptionTest extends AbstractTestRealmKeycloakT
             TestOIDCEndpointsApplicationResource oidcClientEndpointsResource = testingClient.testApp().oidcClientEndpoints();
             oidcClientEndpointsResource.generateKeys(Algorithm.RS256);
 
-            clientResource = ApiUtil.findClientByClientId(adminClient.realm("test"), "test-app");
+            clientResource = AdminApiUtil.findClientByClientId(adminClient.realm("test"), "test-app");
             clientRep = clientResource.toRepresentation();
             // set id token signature algorithm and encryption algorithms
             OIDCAdvancedConfigWrapper.fromClientRepresentation(clientRep).setAuthorizationSignedResponseAlg(Algorithm.RS256);
@@ -279,15 +278,13 @@ public class AuthorizationTokenEncryptionTest extends AbstractTestRealmKeycloakT
  
             // get authorization response but failed
             oauth.responseMode("jwt");
-            oauth.stateParamHardcoded("OpenIdConnect.AuthenticationProperties=2302984sdlk");
-
-            OAuthClient.AuthorizationEndpointResponse errorResponse =  oauth.doLogin("test-user@localhost", "password");
+            AuthorizationEndpointResponse errorResponse =  oauth.loginForm().state("OpenIdConnect.AuthenticationProperties=2302984sdlk").doLogin("test-user@localhost", "password");
 
             System.out.println(driver.getPageSource().contains("Unexpected error when handling authentication request to identity provider."));
 
         } finally {
             // Revert
-            clientResource = ApiUtil.findClientByClientId(adminClient.realm("test"), "test-app");
+            clientResource = AdminApiUtil.findClientByClientId(adminClient.realm("test"), "test-app");
             clientRep = clientResource.toRepresentation();
             OIDCAdvancedConfigWrapper.fromClientRepresentation(clientRep).setAuthorizationSignedResponseAlg(Algorithm.RS256);
             OIDCAdvancedConfigWrapper.fromClientRepresentation(clientRep).setAuthorizationEncryptedResponseAlg(null);
@@ -300,4 +297,3 @@ public class AuthorizationTokenEncryptionTest extends AbstractTestRealmKeycloakT
     }
 
 }
-

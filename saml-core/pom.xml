@@ -21,14 +21,14 @@
     <parent>
         <artifactId>keycloak-parent</artifactId>
         <groupId>org.keycloak</groupId>
-        <version>26.1.4</version>
+        <version>26.8.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>keycloak-saml-core</artifactId>
     <name>Keycloak SAML Core</name>
-    <description/>
+    <description>Keycloak SAML Core</description>
 
     <properties>
         <!-- We still need to support EAP 8, set the Java version to 11. -->
@@ -46,6 +46,16 @@
         <dependency>
             <groupId>org.keycloak</groupId>
             <artifactId>keycloak-common</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.keycloak</groupId>
+            <artifactId>keycloak-core</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.keycloak</groupId>
+            <artifactId>keycloak-server-spi</artifactId>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -77,34 +87,24 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik</artifactId>
+            <version>1.9.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.vintage</groupId>
+            <artifactId>junit-vintage-engine</artifactId>
+            <version>6.0.3</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>jakarta.xml.bind</groupId>
             <artifactId>jakarta.xml.bind-api</artifactId>
         </dependency>
         <dependency>
             <groupId>jakarta.xml.ws</groupId>
             <artifactId>jakarta.xml.ws-api</artifactId>
-        </dependency>
-
-        <!-- Azure Key Vault -->
-        <dependency>
-            <groupId>com.azure</groupId>
-            <artifactId>azure-security-keyvault-keys</artifactId>
-            <version>4.8.8</version>
-            <optional>true</optional>
-        </dependency>
-        <dependency>
-            <groupId>com.azure</groupId>
-            <artifactId>azure-identity</artifactId>
-            <version>1.14.0</version>
-            <optional>true</optional>
-        </dependency>
-
-        <!-- Amazon KMS -->
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>kms</artifactId>
-            <version>2.28.24</version>
-            <optional>true</optional>
         </dependency>
     </dependencies>
     <build>
@@ -140,7 +140,7 @@
                             <argLine>-Djava.security.debug=access -Dmaven.basedir=${basedir} -Djava.security.manager -Djava.security.policy=${basedir}/src/test/resources/named-permissions.policy -XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError</argLine>
                             <test>SecurityActionsTest</test>
                             <skip>${skip.security-manager.tests}</skip>
-                        </configuration>                        
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>

@@ -18,13 +18,18 @@
 package org.keycloak.storage.ldap.idm.store.ldap;
 
 import java.io.ByteArrayOutputStream;
+import java.net.URI;
+import java.text.SimpleDateFormat;
+import java.util.Base64;
+import java.util.Date;
+import java.util.Objects;
+import java.util.TimeZone;
+
 import org.keycloak.models.LDAPConstants;
 import org.keycloak.models.ModelException;
 import org.keycloak.storage.ldap.LDAPConfig;
 
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.TimeZone;
+import org.jboss.logging.Logger;
 
 /**
  * <p>Utility class for working with LDAP.</p>
@@ -32,6 +37,8 @@ import java.util.TimeZone;
  * @author Pedro Igor
  */
 public class LDAPUtil {
+
+    private static final Logger logger = Logger.getLogger(LDAPUtil.class);
 
     /**
      * <p>Formats the given date.</p>
@@ -241,6 +248,60 @@ public class LDAPUtil {
             guid[8], guid[9], guid[10], guid[11], guid[12], guid[13], guid[14], guid[15]
         };
         return convertToDashedString(withBigEndian);
+    }
+
+    /**
+     * Decodes a base64-encoded binary UUID attribute value into a GUID string representation.
+     * Uses {@link #decodeObjectGUID(byte[])} for Active Directory or {@link #decodeGuid(byte[])} for eDirectory,
+     * based on the provided LDAP configuration. Returns the original base64 value if the configuration doesn't
+     * match a known UUID format.
+     *
+     * @param base64Value the base64-encoded binary value of the UUID attribute.
+     * @param config the LDAP configuration used to determine the UUID decoding strategy.
+     * @return the decoded UUID string, or the original base64 value if no matching decoder is found.
+     */
+    public static String decodeBase64ToUuid(String base64Value, LDAPConfig config) {
+        if (base64Value == null) return null;
+        byte[] bytes = Base64.getDecoder().decode(base64Value);
+        if (bytes.length != 16) {
+            logger.warnf("Binary attribute value is %d bytes but a UUID requires exactly 16 bytes. Returning base64-encoded value.", bytes.length);
+            return base64Value;
+        }
+        if (config.isObjectGUID()) {
+            return decodeObjectGUID(bytes);
+        }
+        if (config.isEdirectory() && config.isEdirectoryGUID()) {
+            return decodeGuid(bytes);
+        }
+        return base64Value;
+    }
+
+    /**
+     * Compares two LDAP connection URL strings, which may contain multiple space-separated URIs.
+     * Uses URI-based comparison to handle equivalent but textually different representations.
+     *
+     * @param url1 first LDAP connection URL string
+     * @param url2 second LDAP connection URL string
+     * @return true if the connection URLs match, false otherwise
+     */
+    public static boolean checkLdapConnectionUrlsMatch(String url1, String url2) {
+        if (Objects.equals(url1, url2)) {
+            return true;
+        }
+        if (url1 == null || url2 == null) {
+            return false;
+        }
+        String[] urls1 = url1.trim().split(" ");
+        String[] urls2 = url2.trim().split(" ");
+        if (urls1.length != urls2.length) {
+            return false;
+        }
+        for (int i = 0; i < urls1.length; i++) {
+            if (!Objects.equals(URI.create(urls1[i]), URI.create(urls2[i]))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static String convertToDashedString(byte[] objectGUID) {

@@ -16,12 +16,13 @@
  */
 package org.keycloak.client.admin.cli.commands;
 
-import org.keycloak.client.admin.cli.KcAdmMain;
-import org.keycloak.client.cli.common.BaseGlobalOptionsCmd;
-
 import java.io.PrintWriter;
 import java.io.StringWriter;
 
+import org.keycloak.client.admin.cli.KcAdmMain;
+import org.keycloak.client.cli.common.BaseGlobalOptionsCmd;
+
+import picocli.CommandLine;
 import picocli.CommandLine.Command;
 
 import static org.keycloak.client.admin.cli.KcAdmMain.CMD;
@@ -50,6 +51,9 @@ subcommands = {
         SetPasswordCmd.class
 })
 public class KcAdmCmd extends BaseGlobalOptionsCmd {
+
+    @CommandLine.Spec
+    CommandLine.Model.CommandSpec spec;
 
     @Override
     protected boolean nothingToDo() {

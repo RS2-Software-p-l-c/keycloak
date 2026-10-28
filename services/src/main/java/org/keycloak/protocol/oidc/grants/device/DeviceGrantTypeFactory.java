@@ -18,14 +18,14 @@
 package org.keycloak.protocol.oidc.grants.device;
 
 
+import org.keycloak.Config;
 import org.keycloak.OAuth2Constants;
 import org.keycloak.common.Profile;
 import org.keycloak.models.KeycloakSession;
-import org.keycloak.provider.EnvironmentDependentProviderFactory;
-import org.keycloak.protocol.oidc.grants.OAuth2GrantType;
-import org.keycloak.Config;
 import org.keycloak.models.KeycloakSessionFactory;
+import org.keycloak.protocol.oidc.grants.OAuth2GrantType;
 import org.keycloak.protocol.oidc.grants.OAuth2GrantTypeFactory;
+import org.keycloak.provider.EnvironmentDependentProviderFactory;
 
 /**
  * Factory for OAuth 2.0 Device Authorization Grant
@@ -34,9 +34,16 @@ import org.keycloak.protocol.oidc.grants.OAuth2GrantTypeFactory;
  */
 public class DeviceGrantTypeFactory implements OAuth2GrantTypeFactory, EnvironmentDependentProviderFactory {
 
+    public static final String GRANT_SHORTCUT = "dg";
+
     @Override
     public String getId() {
         return OAuth2Constants.DEVICE_CODE_GRANT_TYPE;
+    }
+
+    @Override
+    public String getShortcut() {
+        return GRANT_SHORTCUT;
     }
 
     @Override

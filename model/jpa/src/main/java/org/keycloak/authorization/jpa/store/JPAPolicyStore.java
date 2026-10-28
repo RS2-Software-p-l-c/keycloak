@@ -24,17 +24,22 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.FlushModeType;
+import jakarta.persistence.LockModeType;
 import jakarta.persistence.NoResultException;
 import jakarta.persistence.TypedQuery;
 import jakarta.persistence.criteria.CriteriaBuilder;
 import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.MapJoin;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
 
 import org.keycloak.authorization.AuthorizationProvider;
+import org.keycloak.authorization.fgap.AdminPermissionsSchema;
 import org.keycloak.authorization.jpa.entities.PolicyEntity;
 import org.keycloak.authorization.model.Policy;
 import org.keycloak.authorization.model.Resource;
@@ -44,7 +49,8 @@ import org.keycloak.authorization.store.PolicyStore;
 import org.keycloak.authorization.store.StoreFactory;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.representations.idm.authorization.AbstractPolicyRepresentation;
-import jakarta.persistence.LockModeType;
+
+import org.hibernate.Session;
 
 import static org.keycloak.models.jpa.PaginationUtils.paginateQuery;
 import static org.keycloak.utils.StreamsUtil.closing;
@@ -98,7 +104,7 @@ public class JPAPolicyStore implements PolicyStore {
 
         PolicyEntity policyEntity = entityManager.find(PolicyEntity.class, id);
 
-        if (policyEntity == null) {
+        if (policyEntity == null || (resourceServer != null && !policyEntity.getResourceServer().getId().equals(resourceServer.getId()))) {
             return null;
         }
 
@@ -114,7 +120,8 @@ public class JPAPolicyStore implements PolicyStore {
         query.setParameter("name", name);
 
         try {
-            return new PolicyAdapter(query.getSingleResult(), entityManager, provider.getStoreFactory());
+            PolicyEntity policy = query.getSingleResult();
+            return provider.getStoreFactory().getPolicyStore().findById(resourceServer, policy.getId());
         } catch (NoResultException ex) {
             return null;
         }
@@ -176,11 +183,13 @@ public class JPAPolicyStore implements PolicyStore {
                     }
 
                     predicates.add(root.joinMap("config").key().in(value[0]));
-                    predicates.add(builder.like(root.joinMap("config").value().as(String.class), "%" + value[1] + "%"));
+                    String escapedConfigValue = value[1].replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_").replace("*", "%");
+                    predicates.add(builder.like(root.joinMap("config").value().as(String.class), "%" + escapedConfigValue + "%", '\\'));
                     break;
                 case TYPE:
                 case NAME:
-                    predicates.add(builder.like(builder.lower(root.get(filterOption.getName())), "%" + value[0].toLowerCase() + "%"));
+                    String escapedValue = value[0].toLowerCase().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_").replace("*", "%");
+                    predicates.add(builder.like(builder.lower(root.get(filterOption.getName())), "%" + escapedValue + "%", '\\'));
                     break;
                 default:
                     throw new IllegalArgumentException("Unsupported filter [" + filterOption + "]");
@@ -305,7 +314,6 @@ public class JPAPolicyStore implements PolicyStore {
 
     @Override
     public List<Policy> findDependentPolicies(ResourceServer resourceServer, String policyId) {
-
         TypedQuery<String> query = entityManager.createNamedQuery("findPolicyIdByDependentPolices", String.class);
 
         query.setFlushMode(FlushModeType.COMMIT);
@@ -321,5 +329,97 @@ public class JPAPolicyStore implements PolicyStore {
             }
         }
         return list;
+    }
+
+    @Override
+    public Stream<Policy> findDependentPolicies(ResourceServer resourceServer, String resourceType, String groupResourceType, String associatedPolicyType, String configKey, String configValue) {
+        return findDependentPolicies(resourceServer, resourceType, groupResourceType, associatedPolicyType, configKey, List.of(configValue));
+    }
+
+    @Override
+    public Stream<Policy> findDependentPolicies(ResourceServer resourceServer, String resourceType, String groupResourceType, String associatedPolicyType, String configKey, List<String> configValues) {
+        String dbProductName = entityManager.unwrap(Session.class).doReturningWork(connection -> connection.getMetaData().getDatabaseProductName());
+
+        if (dbProductName.equals("Oracle")) {
+            TypedQuery<String> query;
+
+            if (configKey == null) {
+                query = entityManager.createNamedQuery("findDependentPolicyByResourceType", String.class);
+            } else {
+                query = entityManager.createNamedQuery("findDependentPolicyByResourceTypeAndConfig", String.class);
+            }
+
+            query.setParameter("serverId", resourceServer.getId());
+            query.setParameter("resourceType", resourceType);
+            query.setParameter("associatedPolicyType", associatedPolicyType);
+
+            if (AdminPermissionsSchema.GROUPS.getType().equals(groupResourceType)) {
+                query.setParameter("scopeName", AdminPermissionsSchema.VIEW_MEMBERS);
+            } else {
+                query.setParameter("scopeName", AdminPermissionsSchema.VIEW);
+            }
+
+            if (configKey == null) {
+                PolicyStore policyStore = provider.getStoreFactory().getPolicyStore();
+                return query.getResultStream().map((id) -> policyStore.findById(resourceServer, id)).filter(Objects::nonNull);
+            } else {
+                Stream<Policy> result = Stream.empty();
+
+                for (String value : configValues) {
+                    query.setParameter("configKey", configKey);
+                    query.setParameter("configValue", "%" + value + "%");
+
+                    PolicyStore policyStore = provider.getStoreFactory().getPolicyStore();
+
+                    result = Stream.concat(result, query.getResultStream().map((id) -> policyStore.findById(resourceServer, id)).filter(Objects::nonNull));
+                }
+
+                return result;
+            }
+        }
+
+        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+        CriteriaQuery<String> query = cb.createQuery(String.class);
+        Root<PolicyEntity> from = query.from(PolicyEntity.class);
+
+        query.select(from.get("id"));
+
+        Join<Object, Object> scope = from.join("scopes");
+        MapJoin<Object, Object, Object> config = from.joinMap("config");
+        Join<Object, Object> associatedPolicy = from.join("associatedPolicies");
+
+        List<Predicate> predicates = new LinkedList<>();
+
+        predicates.add(cb.equal(from.get("resourceServer").get("id"), resourceServer.getId()));
+
+        if (AdminPermissionsSchema.GROUPS.getType().equals(groupResourceType)) {
+            predicates.add(cb.equal(scope.get("name"), AdminPermissionsSchema.VIEW_MEMBERS));
+        } else {
+            predicates.add(cb.equal(scope.get("name"), AdminPermissionsSchema.VIEW));
+        }
+
+        predicates.add(cb.equal(associatedPolicy.get("type"), associatedPolicyType));
+        predicates.add(cb.equal(config.key(), "defaultResourceType"));
+        predicates.add(cb.equal(config.value(), resourceType));
+
+        if (configKey != null) {
+            MapJoin<Object, Object, Object> associatedPolicyConfig = associatedPolicy.joinMap("config");
+            List<Predicate> configValuePredicates = new LinkedList<>();
+
+            predicates.add(cb.equal(associatedPolicyConfig.key(), configKey));
+
+            for (String value : configValues) {
+                String escapedValue = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_").replace("*", "%");
+                configValuePredicates.add(cb.like(associatedPolicyConfig.value().as(String.class), "%" + escapedValue + "%", '\\'));
+            }
+
+            predicates.add(cb.or(configValuePredicates.toArray(new Predicate[0])));
+        }
+
+        query.where(predicates.toArray(new Predicate[0]));
+
+        PolicyStore policyStore = provider.getStoreFactory().getPolicyStore();
+
+        return entityManager.createQuery(query).getResultStream().map((id) -> policyStore.findById(resourceServer, id)).filter(Objects::nonNull);
     }
 }

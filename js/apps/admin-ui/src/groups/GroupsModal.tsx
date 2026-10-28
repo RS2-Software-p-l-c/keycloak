@@ -1,5 +1,11 @@
 import type GroupRepresentation from "@keycloak/keycloak-admin-client/lib/defs/groupRepresentation";
 import {
+  FormSubmitButton,
+  TextControl,
+  useAlerts,
+  useFetch,
+} from "@keycloak/keycloak-ui-shared";
+import {
   Alert,
   AlertVariant,
   Button,
@@ -8,16 +14,12 @@ import {
   Modal,
   ModalVariant,
 } from "@patternfly/react-core";
+import { useGroupResource } from "../context/group-resource/GroupResourceContext";
+import { useState } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
-import {
-  FormSubmitButton,
-  TextControl,
-  useFetch,
-} from "@keycloak/keycloak-ui-shared";
 import { useAdminClient } from "../admin-client";
-import { useAlerts } from "@keycloak/keycloak-ui-shared";
-import { useState } from "react";
+import useIsFeatureEnabled, { Feature } from "../utils/useIsFeatureEnabled";
 
 type GroupsModalProps = {
   id?: string;
@@ -47,19 +49,24 @@ export const GroupsModal = ({
 }: GroupsModalProps) => {
   const { adminClient } = useAdminClient();
   const { t } = useTranslation();
+  const groups = useGroupResource();
   const { addAlert, addError } = useAlerts();
+  const isFeatureEnabled = useIsFeatureEnabled();
   const [duplicateGroupDetails, setDuplicateGroupDetails] =
     useState<GroupRepresentation | null>(null);
 
   const form = useForm({
-    defaultValues: { name: "" },
+    defaultValues: {
+      name: rename?.name || "",
+      description: rename?.description || "",
+    },
   });
   const { handleSubmit, formState } = form;
 
   useFetch(
     async () => {
       if (duplicateId) {
-        return adminClient.groups.findOne({ id: duplicateId });
+        return groups.findOne({ id: duplicateId });
       }
     },
     (group) => {
@@ -77,7 +84,7 @@ export const GroupsModal = ({
       const clients = await adminClient.clients.find();
 
       for (const client of clients) {
-        const roles = await adminClient.groups.listClientRoleMappings({
+        const roles = await groups.listClientRoleMappings({
           id: groupId,
           clientUniqueId: client.id!,
         });
@@ -103,83 +110,89 @@ export const GroupsModal = ({
 
   const duplicateGroup = async (
     sourceGroup: GroupRepresentation,
+    newName?: string,
     parentId?: string,
-    isSubGroup: boolean = false,
   ) => {
     try {
       const newGroup: GroupRepresentation = {
         ...sourceGroup,
-        name: isSubGroup
-          ? sourceGroup.name
-          : t("copyOf", { name: sourceGroup.name }),
+        name: newName ?? sourceGroup.name!,
         ...(parentId ? {} : { attributes: duplicateGroupDetails?.attributes }),
       };
 
       delete newGroup.id;
 
       const createdGroup = parentId
-        ? await adminClient.groups.createChildGroup({ id: parentId }, newGroup)
-        : await adminClient.groups.create(newGroup);
+        ? await groups.createChildGroup({ id: parentId }, newGroup)
+        : await groups.create(newGroup);
 
-      const members = await adminClient.groups.listMembers({
+      const members = await groups.listMembers({
         id: sourceGroup.id!,
       });
 
       for (const member of members) {
-        await adminClient.users.addToGroup({
-          id: member.id!,
-          groupId: createdGroup.id,
+        if (!groups.isOrgGroups()) {
+          await adminClient.users.addToGroup({
+            id: member.id!,
+            groupId: createdGroup.id,
+          });
+        } else {
+          await groups.addMemberToOrgGroup({
+            groupId: createdGroup.id,
+            userId: member.id!,
+          });
+        }
+      }
+
+      if (
+        !groups.isOrgGroups() &&
+        isFeatureEnabled(Feature.AdminFineGrainedAuthz)
+      ) {
+        const permissions = (await groups.listPermissions({
+          id: sourceGroup.id!,
+        })) as Awaited<ReturnType<typeof groups.listPermissions>> | undefined;
+
+        if (permissions) {
+          await groups.updatePermission({ id: createdGroup.id }, permissions);
+        }
+      }
+
+      if (!groups.isOrgGroups()) {
+        const realmRoles = await groups.listRealmRoleMappings({
+          id: sourceGroup.id!,
         });
-      }
 
-      const permissions = await adminClient.groups.listPermissions({
-        id: sourceGroup.id!,
-      });
-
-      if (permissions) {
-        await adminClient.groups.updatePermission(
-          { id: createdGroup.id },
-          permissions,
-        );
-      }
-
-      const realmRoles = await adminClient.groups.listRealmRoleMappings({
-        id: sourceGroup.id!,
-      });
-
-      const realmRolesPayload: RoleMappingPayload[] = realmRoles.map(
-        (role) => ({ id: role.id!, name: role.name! }),
-      );
-
-      const clientRoleMappings = await fetchClientRoleMappings(sourceGroup.id!);
-
-      const clientRolesPayload: RoleMappingPayload[] =
-        clientRoleMappings?.flatMap((clientRoleMapping) =>
-          clientRoleMapping.roles.map((role) => ({
-            id: role.id!,
-            name: role.name!,
-            clientUniqueId: clientRoleMapping.clientId,
-          })),
+        const realmRolesPayload: RoleMappingPayload[] = realmRoles.map(
+          (role) => ({ id: role.id!, name: role.name! }),
         );
 
-      const rolesToAssign: RoleMappingPayload[] = [
-        ...realmRolesPayload,
-        ...clientRolesPayload,
-      ];
+        const clientRoleMappings = await fetchClientRoleMappings(
+          sourceGroup.id!,
+        );
 
-      await assignRoles(rolesToAssign, createdGroup.id);
+        const clientRolesPayload: RoleMappingPayload[] =
+          clientRoleMappings.flatMap((clientRoleMapping) =>
+            clientRoleMapping.roles.map((role) => ({
+              id: role.id!,
+              name: role.name!,
+              clientUniqueId: clientRoleMapping.clientId,
+            })),
+          );
 
-      const subGroups = await adminClient.groups.listSubGroups({
+        const rolesToAssign: RoleMappingPayload[] = [
+          ...realmRolesPayload,
+          ...clientRolesPayload,
+        ];
+
+        await assignRoles(rolesToAssign, createdGroup.id);
+      }
+
+      const subGroups = await groups.listSubGroups({
         parentId: sourceGroup.id!,
       });
 
       for (const childGroup of subGroups) {
-        const childAttributes = childGroup.attributes;
-        await duplicateGroup(
-          { ...childGroup, attributes: childAttributes },
-          createdGroup.id,
-          true,
-        );
+        await duplicateGroup(childGroup, undefined, createdGroup.id);
       }
 
       return createdGroup;
@@ -198,7 +211,7 @@ export const GroupsModal = ({
         (role) => role.clientUniqueId && role.name,
       );
 
-      await adminClient.groups.addRealmRoleMappings({
+      await groups.addRealmRoleMappings({
         id: groupId,
         roles: realmRoles.map(({ id, name }) => ({ id, name: name! })),
       });
@@ -206,7 +219,7 @@ export const GroupsModal = ({
       await Promise.all(
         clientRoles.map((clientRole) => {
           if (clientRole.clientUniqueId && clientRole.name) {
-            return adminClient.groups.addClientRoleMappings({
+            return groups.addClientRoleMappings({
               id: groupId,
               clientUniqueId: clientRole.clientUniqueId,
               roles: [{ id: clientRole.id, name: clientRole.name }],
@@ -225,19 +238,19 @@ export const GroupsModal = ({
 
     try {
       if (duplicateId && duplicateGroupDetails) {
-        await duplicateGroup(duplicateGroupDetails);
+        await duplicateGroup(duplicateGroupDetails, group.name);
       } else if (!id) {
-        await adminClient.groups.create(group);
+        await groups.create(group);
       } else if (rename) {
-        await adminClient.groups.update(
+        await groups.update(
           { id },
-          { ...rename, name: group.name },
+          { ...rename, name: group.name, description: group.description },
         );
       } else {
-        await adminClient.groups.updateChildGroup({ id }, group);
+        await groups.updateChildGroup({ id }, group);
       }
 
-      refresh(rename ? { ...rename, name: group.name } : undefined);
+      refresh(rename ? { ...rename, ...group } : undefined);
       handleModalToggle();
       addAlert(
         t(
@@ -259,12 +272,12 @@ export const GroupsModal = ({
       variant={ModalVariant.small}
       title={
         rename
-          ? t("renameAGroup")
+          ? t("editGroup")
           : duplicateId
             ? t("duplicateAGroup")
             : t("createAGroup")
       }
-      isOpen={true}
+      isOpen
       onClose={handleModalToggle}
       actions={[
         <FormSubmitButton
@@ -275,7 +288,7 @@ export const GroupsModal = ({
           allowInvalid
           allowNonDirty
         >
-          {t(rename ? "rename" : duplicateId ? "duplicate" : "create")}
+          {t(rename ? "edit" : duplicateId ? "duplicate" : "create")}
         </FormSubmitButton>,
         <Button
           id="modal-cancel"
@@ -304,6 +317,7 @@ export const GroupsModal = ({
             rules={{ required: t("required") }}
             autoFocus
           />
+          <TextControl name="description" label={t("description")} />
         </Form>
       </FormProvider>
     </Modal>

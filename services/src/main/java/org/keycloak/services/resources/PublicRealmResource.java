@@ -16,18 +16,6 @@
  */
 package org.keycloak.services.resources;
 
-import org.jboss.logging.Logger;
-import org.jboss.resteasy.reactive.NoCache;
-import org.keycloak.http.HttpRequest;
-import org.keycloak.http.HttpResponse;
-import org.keycloak.common.util.PemUtils;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
-import org.keycloak.protocol.oidc.OIDCLoginProtocolService;
-import org.keycloak.representations.idm.PublishedRealmRepresentation;
-import org.keycloak.services.cors.Cors;
-import org.keycloak.services.Urls;
-
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.OPTIONS;
 import jakarta.ws.rs.Path;
@@ -35,6 +23,19 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
+
+import org.keycloak.common.util.PemUtils;
+import org.keycloak.http.HttpRequest;
+import org.keycloak.http.HttpResponse;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.protocol.oidc.OIDCLoginProtocolService;
+import org.keycloak.representations.idm.PublishedRealmRepresentation;
+import org.keycloak.services.Urls;
+import org.keycloak.services.cors.Cors;
+
+import org.jboss.logging.Logger;
+import org.jboss.resteasy.reactive.NoCache;
 
 /**
  * Resource class for public realm information
@@ -80,7 +81,7 @@ public class PublicRealmResource {
     @NoCache
     @Produces(MediaType.APPLICATION_JSON)
     public PublishedRealmRepresentation getRealm() {
-        Cors.builder().allowedOrigins(Cors.ACCESS_CONTROL_ALLOW_ORIGIN_WILDCARD).auth().add();
+        Cors.builder().allowAllOrigins().auth().add();
         return realmRep(session, realm, session.getContext().getUri());
     }
 

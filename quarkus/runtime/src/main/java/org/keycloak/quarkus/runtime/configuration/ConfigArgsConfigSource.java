@@ -17,10 +17,6 @@
 
 package org.keycloak.quarkus.runtime.configuration;
 
-import static org.keycloak.quarkus.runtime.cli.Picocli.ARG_SHORT_PREFIX;
-import static org.keycloak.quarkus.runtime.configuration.Configuration.OPTION_PART_SEPARATOR_CHAR;
-import static org.keycloak.quarkus.runtime.configuration.MicroProfileConfigProvider.NS_KEYCLOAK_PREFIX;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -33,12 +29,13 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import io.smallrye.config.ConfigValue;
+import org.keycloak.quarkus.runtime.cli.command.Main;
+import org.keycloak.quarkus.runtime.configuration.mappers.PropertyMappers;
+
 import io.smallrye.config.PropertiesConfigSource;
 
-import org.keycloak.quarkus.runtime.cli.command.Main;
-import org.keycloak.quarkus.runtime.configuration.mappers.PropertyMapper;
-import org.keycloak.quarkus.runtime.configuration.mappers.PropertyMappers;
+import static org.keycloak.quarkus.runtime.cli.Picocli.ARG_PREFIX;
+import static org.keycloak.quarkus.runtime.cli.Picocli.ARG_SHORT_PREFIX;
 
 /**
  * <p>A configuration source for mapping configuration arguments to their corresponding properties so that they can be recognized
@@ -60,6 +57,9 @@ public class ConfigArgsConfigSource extends PropertiesConfigSource {
         super(parseArguments(), NAME, 600);
     }
 
+    /**
+     * Should only be called with sanitized args --property=value
+     */
     public static void setCliArgs(String... args) {
         System.setProperty(CLI_ARGS,
                 Stream.of(args).map(arg -> arg.replaceAll(",", ",,")).collect(Collectors.joining(", ")));
@@ -77,7 +77,7 @@ public class ConfigArgsConfigSource extends PropertiesConfigSource {
         if(args == null) {
             return Collections.emptyList();
         }
-        
+
         List<String> result = new ArrayList<String>();
         boolean escaped = false;
         StringBuilder arg = new StringBuilder();
@@ -101,45 +101,15 @@ public class ConfigArgsConfigSource extends PropertiesConfigSource {
             }
         }
         result.add(arg.toString());
-        
+
         return result;
     }
 
-    @Override
-    public ConfigValue getConfigValue(String propertyName) {
-        ConfigValue value = super.getConfigValue(propertyName);
-
-        if (value != null) {
-            return value;
-        }
-
-        return super.getConfigValue(propertyName.replace(OPTION_PART_SEPARATOR_CHAR, '.'));
-    }
-
     private static Map<String, String> parseArguments() {
-        Map<String, String> properties = new HashMap<>();
+        final Map<String, String> properties = new HashMap<>();
 
-        parseConfigArgs(getAllCliArgs(), new BiConsumer<String, String>() {
-            @Override
-            public void accept(String key, String value) {
-                key = NS_KEYCLOAK_PREFIX + key.substring(2);
-
-                properties.put(key, value);
-
-                PropertyMapper<?> mapper = PropertyMappers.getMapper(key);
-
-                if (mapper != null) {
-                    mapper = mapper.forKey(key);
-
-                    String to = mapper.getTo();
-
-                    if (to != null) {
-                        properties.put(mapper.getTo(), value);
-                    }
-
-                    properties.put(mapper.getFrom(), value);
-                }
-            }
+        parseConfigArgs(getAllCliArgs(), (key, value) -> {
+            PropertyMappers.getKcKeyFromCliKey(key).ifPresent(s -> properties.put(s, value));
         }, ignored -> {});
 
         return properties;
@@ -164,11 +134,7 @@ public class ConfigArgsConfigSource extends PropertiesConfigSource {
                     unaryConsumer.accept(arg);
                     continue;
                 }
-                PropertyMapper<?> mapper = PropertyMappers.getMapper(key);
-                // the weaknesses here:
-                // - needs to know all of the short name options that accept a value
-                // - does not know all of the picocli parsing rules. picocli will accept -cffile, and short option grouping - that's not accounted for
-                if (mapper != null || SHORT_OPTIONS_ACCEPTING_VALUE.contains(key) || arg.startsWith(SPI_OPTION_PREFIX)) {
+                if (arg.startsWith(ARG_PREFIX)) {
                     i++; // consume next as a value to the key
                     value = args.get(i);
                 } else {

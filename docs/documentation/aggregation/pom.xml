@@ -5,11 +5,13 @@
     <parent>
         <groupId>org.keycloak.documentation</groupId>
         <artifactId>documentation-parent</artifactId>
-        <version>26.1.4</version>
+        <version>26.8.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <name>Aggregation</name>
+    <name>Documentation Aggregation</name>
+    <description>Documentation Aggregation</description>
+
     <artifactId>aggregation</artifactId>
     <packaging>pom</packaging>
 

@@ -28,22 +28,21 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ErrorResponse {
 
-    private ErrorType error;
+    private String error;
 
     @JsonProperty("error_description")
     private String errorDescription;
 
-    @JsonProperty("c_nonce")
-    private String cNonce;
-
-    @JsonProperty("c_nonce_expires_in")
-    private long cNonceExpiresIn;
-
-    public ErrorType getError() {
+    public String getError() {
         return error;
     }
 
-    public ErrorResponse setError(ErrorType error) {
+    public ErrorResponse setError(ErrorType errorType) {
+        this.error = errorType == null ? null : errorType.getValue();
+        return this;
+    }
+
+    public ErrorResponse setError(String error) {
         this.error = error;
         return this;
     }
@@ -54,24 +53,6 @@ public class ErrorResponse {
 
     public ErrorResponse setErrorDescription(String errorDescription) {
         this.errorDescription = errorDescription;
-        return this;
-    }
-
-    public String getcNonce() {
-        return cNonce;
-    }
-
-    public ErrorResponse setcNonce(String cNonce) {
-        this.cNonce = cNonce;
-        return this;
-    }
-
-    public long getcNonceExpiresIn() {
-        return cNonceExpiresIn;
-    }
-
-    public ErrorResponse setcNonceExpiresIn(long cNonceExpiresIn) {
-        this.cNonceExpiresIn = cNonceExpiresIn;
         return this;
     }
 }

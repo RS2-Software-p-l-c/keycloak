@@ -126,7 +126,7 @@ export default function ExecutorForm() {
         AlertVariant.success,
       );
 
-      navigate(toClientProfile({ realm, profileName }));
+      void navigate(toClientProfile({ realm, profileName }));
     } catch (error) {
       addError(editMode ? "updateExecutorError" : "addExecutorError", error);
     }
@@ -211,6 +211,7 @@ export default function ExecutorForm() {
                 >
                   {executorTypes?.map((option) => (
                     <SelectOption
+                      data-testid={option.id}
                       selected={option.id === field.value}
                       key={option.id}
                       value={option.id}

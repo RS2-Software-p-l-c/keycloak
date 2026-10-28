@@ -20,6 +20,7 @@ package org.keycloak.connections.infinispan.remote;
 import java.lang.invoke.MethodHandles;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ScheduledFuture;
@@ -27,13 +28,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 
-import org.infinispan.client.hotrod.impl.InternalRemoteCache;
-import org.infinispan.client.hotrod.impl.operations.PingResponse;
-import org.infinispan.commons.util.concurrent.CompletableFutures;
-import org.infinispan.factories.ComponentRegistry;
-import org.infinispan.persistence.manager.PersistenceManager;
-import org.infinispan.util.concurrent.ActionSequencer;
-import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.common.util.MultiSiteUtils;
 import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
@@ -43,8 +37,17 @@ import org.keycloak.infinispan.util.InfinispanUtils;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.provider.EnvironmentDependentProviderFactory;
+import org.keycloak.provider.Provider;
 import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.provider.ProviderConfigurationBuilder;
+
+import org.infinispan.client.hotrod.impl.InternalRemoteCache;
+import org.infinispan.client.hotrod.impl.operations.PingResponse;
+import org.infinispan.commons.util.concurrent.CompletableFutures;
+import org.infinispan.factories.ComponentRegistry;
+import org.infinispan.persistence.manager.PersistenceManager;
+import org.infinispan.util.concurrent.ActionSequencer;
+import org.jboss.logging.Logger;
 
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.CLUSTERED_CACHE_NAMES;
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.LOCAL_CACHE_NAMES;
@@ -121,7 +124,12 @@ public class RemoteLoadBalancerCheckProviderFactory implements LoadBalancerCheck
         return InfinispanUtils.PROVIDER_ORDER;
     }
 
-    @Override
+   @Override
+   public Set<Class<? extends Provider>> dependsOn() {
+      return Set.of(InfinispanConnectionProvider.class);
+   }
+
+   @Override
     public List<ProviderConfigProperty> getConfigMetadata() {
         return ProviderConfigurationBuilder.create()
                 .property()
@@ -197,7 +205,7 @@ public class RemoteLoadBalancerCheckProviderFactory implements LoadBalancerCheck
                 isDown = false;
             } catch (Exception e) {
                 if (!isDown) {
-                    logger.warnf("Remote cache '%' is down.", name);
+                    logger.warnf("Remote cache '%s' is down.", name);
                 }
                 isDown = true;
             }

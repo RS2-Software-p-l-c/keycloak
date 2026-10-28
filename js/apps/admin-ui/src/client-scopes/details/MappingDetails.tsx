@@ -139,7 +139,7 @@ export default function MappingDetails() {
           });
         }
         addAlert(t("mappingDeletedSuccess"), AlertVariant.success);
-        navigate(toDetails());
+        void navigate(toDetails());
       } catch (error) {
         addError("mappingDeletedError", error);
       }
@@ -170,6 +170,9 @@ export default function MappingDetails() {
         }
       }
       addAlert(t(`mapping${key}Success`), AlertVariant.success);
+      if (!isUpdating) {
+        void navigate(toDetails());
+      }
     } catch (error) {
       addError(`mapping${key}Error`, error);
     }
@@ -224,10 +227,11 @@ export default function MappingDetails() {
               stringify
             />
             <ActionGroup>
-              <Button variant="primary" type="submit">
+              <Button variant="primary" type="submit" data-testid="save">
                 {t("save")}
               </Button>
               <Button
+                data-testid="cancel"
                 variant="link"
                 component={(props) => <Link {...props} to={toDetails()} />}
               >

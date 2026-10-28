@@ -5,6 +5,10 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
+import org.keycloak.Config;
+import org.keycloak.connections.infinispan.InfinispanUtil;
+import org.keycloak.marshalling.Marshalling;
+
 import org.infinispan.client.hotrod.RemoteCacheManager;
 import org.infinispan.commons.api.CacheContainerAdmin;
 import org.infinispan.commons.dataconversion.MediaType;
@@ -19,9 +23,6 @@ import org.infinispan.server.hotrod.configuration.HotRodServerConfigurationBuild
 import org.infinispan.transaction.LockingMode;
 import org.infinispan.transaction.TransactionMode;
 import org.junit.rules.ExternalResource;
-import org.keycloak.Config;
-import org.keycloak.connections.infinispan.InfinispanUtil;
-import org.keycloak.marshalling.KeycloakModelSchema;
 
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.ACTION_TOKEN_CACHE;
 import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.AUTHENTICATION_SESSIONS_CACHE_NAME;
@@ -68,14 +69,17 @@ public class HotRodServerRule extends ExternalResource {
         HotRodServerConfiguration build = new HotRodServerConfigurationBuilder().build();
         hotRodServer = new HotRodServer();
         hotRodServer.start(build, hotRodCacheManager);
+        hotRodServer.postStart();
 
         HotRodServerConfiguration build2 = new HotRodServerConfigurationBuilder().port(11333).build();
         hotRodServer2 = new HotRodServer();
         hotRodServer2.start(build2, hotRodCacheManager2);
+        hotRodServer2.postStart();
+
 
         // Create a Hot Rod client
         org.infinispan.client.hotrod.configuration.ConfigurationBuilder remoteBuilder = new org.infinispan.client.hotrod.configuration.ConfigurationBuilder();
-        remoteBuilder.addContextInitializers(KeycloakModelSchema.INSTANCE);
+        Marshalling.configure(remoteBuilder);
         org.infinispan.client.hotrod.configuration.Configuration cfg = remoteBuilder
                 .addServers(hotRodServer.getHost() + ":" + hotRodServer.getPort() + ";"
                         + hotRodServer2.getHost() + ":" + hotRodServer2.getPort()).build();

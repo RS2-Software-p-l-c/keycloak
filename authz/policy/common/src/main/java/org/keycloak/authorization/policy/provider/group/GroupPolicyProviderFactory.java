@@ -22,10 +22,11 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import jakarta.ws.rs.BadRequestException;
 
 import org.keycloak.Config;
 import org.keycloak.authorization.AuthorizationProvider;
@@ -48,11 +49,13 @@ import org.keycloak.util.JsonSerialization;
  */
 public class GroupPolicyProviderFactory implements PolicyProviderFactory<GroupPolicyRepresentation> {
 
+    public static final String ID = "group";
+
     private GroupPolicyProvider provider = new GroupPolicyProvider(this::toRepresentation);
 
     @Override
     public String getId() {
-        return "group";
+        return ID;
     }
 
     @Override
@@ -196,7 +199,14 @@ public class GroupPolicyProviderFactory implements PolicyProviderFactory<GroupPo
         GroupProvider groups = session.groups();
 
         if (definition.getId() != null) {
-            return realm.getGroupById(definition.getId());
+            GroupModel group = realm.getGroupById(definition.getId());
+
+            // Validate that only REALM groups can be used in authorization policies
+            if (group != null && GroupModel.Type.ORGANIZATION.equals(group.getType())) {
+                throw new BadRequestException("Organization groups cannot be used. Only realm groups are allowed.");
+            }
+
+            return group;
         }
 
         GroupModel group = null;

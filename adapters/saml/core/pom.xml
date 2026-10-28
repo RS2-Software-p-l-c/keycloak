@@ -21,14 +21,14 @@
     <parent>
         <artifactId>keycloak-parent</artifactId>
         <groupId>org.keycloak</groupId>
-        <version>26.1.4</version>
+        <version>26.8.0</version>
         <relativePath>../../../pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>keycloak-saml-adapter-core</artifactId>
     <name>Keycloak SAML Client Adapter Core</name>
-    <description/>
+    <description>Keycloak SAML Client Adapter Core</description>
 
     <properties>
         <timestamp>${maven.build.timestamp}</timestamp>

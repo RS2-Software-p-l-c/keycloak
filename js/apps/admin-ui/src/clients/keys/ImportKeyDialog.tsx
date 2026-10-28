@@ -1,17 +1,14 @@
-import { SelectControl } from "@keycloak/keycloak-ui-shared";
+import { SelectControl, FileUploadControl } from "@keycloak/keycloak-ui-shared";
 import {
   Button,
   ButtonVariant,
-  FileUpload,
   Form,
-  FormGroup,
   Modal,
   ModalVariant,
   Text,
   TextContent,
 } from "@patternfly/react-core";
-import { useState } from "react";
-import { Controller, FormProvider, useForm, useWatch } from "react-hook-form";
+import { FormProvider, useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { useServerInfo } from "../../context/server-info/ServerInfoProvider";
 import { StoreSettings } from "./StoreSettings";
@@ -19,22 +16,25 @@ import { StoreSettings } from "./StoreSettings";
 type ImportKeyDialogProps = {
   toggleDialog: () => void;
   save: (importFile: ImportFile) => void;
+  title?: string;
+  description?: string;
 };
 
 export type ImportFile = {
   keystoreFormat: string;
   keyAlias: string;
   storePassword: string;
-  file: { value?: string; filename: string };
+  file: File | string;
 };
 
 export const ImportKeyDialog = ({
   save,
   toggleDialog,
+  title = "generateKeys",
+  description = "importKeysDescription",
 }: ImportKeyDialogProps) => {
   const { t } = useTranslation();
   const form = useForm<ImportFile>();
-  const [file, setFile] = useState<string>("");
   const { control, handleSubmit } = form;
 
   const baseFormats = useServerInfo().cryptoInfo?.supportedKeystoreTypes ?? [];
@@ -54,7 +54,7 @@ export const ImportKeyDialog = ({
   return (
     <Modal
       variant={ModalVariant.medium}
-      title={t("generateKeys")}
+      title={t(title)}
       isOpen
       onClose={toggleDialog}
       actions={[
@@ -62,8 +62,8 @@ export const ImportKeyDialog = ({
           id="modal-confirm"
           data-testid="confirm"
           key="confirm"
-          onClick={() => {
-            handleSubmit((importFile) => {
+          onClick={async () => {
+            await handleSubmit((importFile) => {
               save(importFile);
               toggleDialog();
             })();
@@ -83,7 +83,7 @@ export const ImportKeyDialog = ({
       ]}
     >
       <TextContent>
-        <Text>{t("generateKeysDescription")}</Text>
+        <Text>{t(description)}</Text>
       </TextContent>
       <Form className="pf-v5-u-pt-lg">
         <FormProvider {...form}>
@@ -96,31 +96,15 @@ export const ImportKeyDialog = ({
             }}
             options={formats}
           />
+          <FileUploadControl
+            label={t("importFile")}
+            id="importFile"
+            name="file"
+            rules={{
+              required: t("required"),
+            }}
+          />
           {baseFormats.includes(format) && <StoreSettings hidePassword />}
-          <FormGroup label={t("importFile")} fieldId="importFile">
-            <Controller
-              name="file"
-              control={control}
-              defaultValue={{ value: "", filename: "" }}
-              render={({ field }) => (
-                <FileUpload
-                  id="importFile"
-                  value={field.value.value}
-                  filename={file}
-                  hideDefaultPreview
-                  type="text"
-                  onDataChange={(_, value) => {
-                    field.onChange({
-                      value,
-                    });
-                  }}
-                  onFileInputChange={(_, file) => {
-                    setFile(file.name);
-                  }}
-                />
-              )}
-            />
-          </FormGroup>
         </FormProvider>
       </Form>
     </Modal>

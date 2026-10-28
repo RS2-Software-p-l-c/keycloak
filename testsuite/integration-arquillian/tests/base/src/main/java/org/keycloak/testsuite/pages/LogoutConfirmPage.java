@@ -19,7 +19,9 @@
 package org.keycloak.testsuite.pages;
 
 import org.keycloak.testsuite.util.UIUtils;
+
 import org.openqa.selenium.By;
+import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
@@ -36,18 +38,8 @@ public class LogoutConfirmPage extends LanguageComboboxAwarePage {
     private WebElement backToApplicationLink;
 
     @Override
-    public boolean isCurrent() {
-        return isCurrent(driver);
-    }
-
-    public boolean isCurrent(WebDriver driver1) {
-        return "Logging out".equals(PageUtils.getPageTitle(driver1));
-    }
-
-
-    @Override
-    public void open() throws Exception {
-        throw new UnsupportedOperationException("Not supported  to directly open logout confirmation page");
+    public String getExpectedPageId() {
+        return "login-logout-confirm";
     }
 
     public void confirmLogout() {
@@ -60,5 +52,13 @@ public class LogoutConfirmPage extends LanguageComboboxAwarePage {
 
     public void clickBackToApplicationLink() {
         UIUtils.clickLink(backToApplicationLink);
+    }
+
+    public boolean isBackToApplicationLinkPresent() {
+        try {
+            return backToApplicationLink.isDisplayed();
+        } catch (NoSuchElementException e) {
+            return false;
+        }
     }
 }

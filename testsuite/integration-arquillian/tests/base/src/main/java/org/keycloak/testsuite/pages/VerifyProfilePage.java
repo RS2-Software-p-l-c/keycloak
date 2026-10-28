@@ -17,9 +17,10 @@
 
 package org.keycloak.testsuite.pages;
 
-import org.jboss.arquillian.graphene.page.Page;
 import org.keycloak.testsuite.auth.page.AccountFields;
 import org.keycloak.testsuite.util.UIUtils;
+
+import org.jboss.arquillian.graphene.page.Page;
 import org.openqa.selenium.By;
 import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.WebElement;
@@ -45,8 +46,7 @@ public class VerifyProfilePage extends AbstractPage {
     @FindBy(name = "department")
     private WebElement departmentInput;
 
-
-    @FindBy(css = "input[type=\"submit\"]")
+    @FindBy(css = "[type=\"submit\"]")
     private WebElement submitButton;
 
     @FindBy(css = "div[class^='pf-v5-c-alert'], div[class^='alert-error']")
@@ -64,7 +64,7 @@ public class VerifyProfilePage extends AbstractPage {
             lastNameInput.sendKeys(lastName);
         }
 
-        submitButton.click();
+        UIUtils.clickLink(submitButton);
     }
 
     public void update(String firstName, String lastName, String department) {
@@ -93,7 +93,7 @@ public class VerifyProfilePage extends AbstractPage {
             lastNameInput.sendKeys(lastName);
         }
 
-        submitButton.click();
+        UIUtils.clickLink(submitButton);
     }
 
     public String getAlertError() {
@@ -161,17 +161,13 @@ public class VerifyProfilePage extends AbstractPage {
         return emailInput.getAttribute("value");
     }
 
-    public boolean isCurrent() {
-        return PageUtils.getPageTitle(driver).equals("Update Account Information");
+    @Override
+    public String getExpectedPageId() {
+        return "login-login-update-profile";
     }
 
     public AccountFields.AccountErrors getInputAccountErrors(){
         return accountErrors;
-    }
-
-    @Override
-    public void open() {
-        throw new UnsupportedOperationException();
     }
 
 }

@@ -17,6 +17,16 @@
 
 package org.keycloak.it.cli.dist;
 
+import org.keycloak.it.junit5.extension.CLIResult;
+import org.keycloak.it.junit5.extension.DistributionTest;
+import org.keycloak.it.junit5.extension.KeycloakRunner;
+import org.keycloak.it.junit5.extension.RawDistOnly;
+import org.keycloak.it.junit5.extension.StopServer.Mode;
+import org.keycloak.it.junit5.extension.TestProvider;
+import org.keycloak.it.junit5.extension.WithEnvVars;
+import org.keycloak.it.resource.realm.TestRealmResourceTestProvider;
+import org.keycloak.protocol.oidc.representations.OIDCConfigurationRepresentation;
+
 import io.quarkus.test.junit.main.Launch;
 import io.quarkus.test.junit.main.LaunchResult;
 import io.restassured.RestAssured;
@@ -26,18 +36,12 @@ import org.apache.http.HttpHeaders;
 import org.junit.Assert;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.keycloak.it.junit5.extension.CLIResult;
-import org.keycloak.it.junit5.extension.DistributionTest;
-import org.keycloak.it.junit5.extension.RawDistOnly;
-import org.keycloak.it.junit5.extension.WithEnvVars;
-import org.keycloak.it.utils.KeycloakDistribution;
-import org.keycloak.protocol.oidc.representations.OIDCConfigurationRepresentation;
 
 import static io.restassured.RestAssured.given;
 import static io.restassured.RestAssured.when;
 import static org.hamcrest.Matchers.containsString;
 
-@DistributionTest(keepAlive = true, enableTls = true)
+@DistributionTest(stopServer = Mode.MANUAL, enableTls = true)
 @WithEnvVars({"KC_BOOTSTRAP_ADMIN_USERNAME", "admin123", "KC_BOOTSTRAP_ADMIN_PASSWORD", "admin123"})
 @RawDistOnly(reason = "Containers are immutable")
 public class ProxyHostnameV2DistTest {
@@ -61,24 +65,33 @@ public class ProxyHostnameV2DistTest {
         assertForwardedHeaderIsIgnored();
         assertXForwardedHeadersAreIgnored();
     }
-    
+
     @Test
-    void testTrustedProxiesWithoutProxyHeaders(KeycloakDistribution distribution) {
-        CLIResult result = distribution.run("start-dev", "--proxy-trusted-addresses=1.0.0.0");
+    void testTrustedProxiesWithoutProxyHeaders(KeycloakRunner runner) {
+        CLIResult result = runner.run("start-dev", "--proxy-trusted-addresses=1.0.0.0");
         result.assertError("proxy-trusted-addresses available only when proxy-headers is set");
     }
-    
+
     @Test
-    void testTrustedProxiesWithInvalidAddress(KeycloakDistribution distribution) {
-        CLIResult result = distribution.run("start-dev", "--proxy-headers=xforwarded", "--proxy-trusted-addresses=1.0.0.0:8080");
+    void testTrustedProxiesWithInvalidAddress(KeycloakRunner runner) {
+        CLIResult result = runner.run("start-dev", "--proxy-headers=xforwarded", "--proxy-trusted-addresses=1.0.0.0:8080");
         result.assertError("1.0.0.0:8080 is not a valid IP address (IPv4 or IPv6) nor valid CIDR notation.");
     }
-    
+
     @Test
     @Launch({ "start-dev", "--hostname-strict=false", "--proxy-headers=xforwarded", "--proxy-trusted-addresses=1.0.0.0" })
+    @TestProvider(TestRealmResourceTestProvider.class)
     public void testProxyNotTrusted() {
         assertForwardedHeaderIsIgnored();
         assertForwardedHeaderIsIgnored();
+        given().header("X-Forwarded-Host", "test:123").when().get("http://mykeycloak.org:8080/realms/master/test-resources/trusted").then().statusCode(204);
+    }
+
+    @Test
+    @Launch({ "start-dev", "--hostname-strict=false", "--proxy-headers=xforwarded", "--proxy-trusted-addresses=127.0.0.1,0:0:0:0:0:0:0:1" })
+    @TestProvider(TestRealmResourceTestProvider.class)
+    public void testProxyTrusted() {
+        given().header("X-Forwarded-Host", "test:123").when().get("http://mykeycloak.org:8080/realms/master/test-resources/trusted").then().statusCode(200);
     }
 
     @Test
@@ -86,10 +99,20 @@ public class ProxyHostnameV2DistTest {
     public void testForwardedProxyHeaders(LaunchResult result) {
         assertForwardedHeader();
         assertXForwardedHeadersAreIgnored();
-        
+
         CLIResult cliResult = (CLIResult)result;
-        cliResult.assertNoMessage(NOT_ADDRESS);
+        cliResult.assertMessage(NOT_ADDRESS); // non-ip addresses are still reported as the client ip
         cliResult.assertMessage(ADDRESS);
+    }
+
+    @Test
+    @Launch({ "start-dev", "--hostname=https://mykeycloak.org:8443/path", "--proxy-headers=forwarded", "--hostname-backchannel-dynamic=true" })
+    public void testForwardedProxyHeadersWithPathAndDynamicBackchannel(LaunchResult result) {
+        assertFrontEndUrl("https://mykeycloak.org:8443", "https://mykeycloak.org:8443/path/");
+        // a backend url generated via the frontend protocol/host/port should be a front-end url
+        assertBackEndUrl("https://mykeycloak.org:8443", "https://mykeycloak.org:8443/path/");
+        // any other protocol/host/port will be the backend
+        assertBackEndUrl("http://localhost:8080", "http://localhost:8080/");
     }
 
     @Test
@@ -97,6 +120,14 @@ public class ProxyHostnameV2DistTest {
     public void testXForwardedProxyHeaders() {
         assertForwardedHeaderIsIgnored();
         assertXForwardedHeaders();
+    }
+
+    @Test
+    @Launch({ "start-dev", "--hostname=fixed", "--proxy-headers=xforwarded" })
+    public void testXForwardedProxyHeadersWithHostname() {
+        given().header("X-Forwarded-Prefix", "/prefix").when().get("http://localhost:8080").then().header(HttpHeaders.LOCATION, containsString("http://fixed:8080/prefix/admin"));
+        given().header("X-Forwarded-Host", "test:123").when().get("https://localhost:8443").then().header(HttpHeaders.LOCATION, containsString("https://fixed:123/admin"));
+        given().header("X-Forwarded-Proto", "https").when().get("http://localhost:8080").then().header(HttpHeaders.LOCATION, containsString("https://fixed/admin"));
     }
 
     private void assertForwardedHeader() {
@@ -117,9 +148,10 @@ public class ProxyHostnameV2DistTest {
     }
 
     private void assertXForwardedHeaders() {
-        given().header("X-Forwarded-Host", "test").when().get("http://mykeycloak.org:8080").then().header(HttpHeaders.LOCATION, containsString("http://test:8080/admin"));
-        given().header("X-Forwarded-Host", "test").when().get("http://localhost:8080").then().header(HttpHeaders.LOCATION, containsString("http://test:8080/admin"));
-        given().header("X-Forwarded-Host", "test").when().get("https://localhost:8443").then().header(HttpHeaders.LOCATION, containsString("https://test:8443/admin"));
+        given().header("X-Forwarded-Prefix", "/prefix").when().get("http://localhost:8080").then().header(HttpHeaders.LOCATION, containsString("http://localhost:8080/prefix/admin"));
+        given().header("X-Forwarded-Host", "test:123").when().get("http://mykeycloak.org:8080").then().header(HttpHeaders.LOCATION, containsString("http://test:123/admin"));
+        given().header("X-Forwarded-Host", "test:123").when().get("http://localhost:8080").then().header(HttpHeaders.LOCATION, containsString("http://test:123/admin"));
+        given().header("X-Forwarded-Host", "test:123").when().get("https://localhost:8443").then().header(HttpHeaders.LOCATION, containsString("https://test:123/admin"));
         given().header("X-Forwarded-Proto", "https").when().get("http://localhost:8080").then().header(HttpHeaders.LOCATION, containsString("https://localhost/admin"));
         given().header("X-Forwarded-Proto", "https").header("X-Forwarded-Port", "8443").when().get("http://localhost:8080").then().header(HttpHeaders.LOCATION, containsString("https://localhost:8443/admin"));
     }
@@ -140,4 +172,10 @@ public class ProxyHostnameV2DistTest {
         Assert.assertEquals(expectedBaseUrl + "realms/master/protocol/openid-connect/auth", getServerMetadata(requestBaseUrl)
                 .getAuthorizationEndpoint());
     }
+
+    private void assertBackEndUrl(String requestBaseUrl, String expectedBaseUrl) {
+        Assert.assertEquals(expectedBaseUrl + "realms/master/protocol/openid-connect/token", getServerMetadata(requestBaseUrl)
+                .getTokenEndpoint());
+    }
+
 }

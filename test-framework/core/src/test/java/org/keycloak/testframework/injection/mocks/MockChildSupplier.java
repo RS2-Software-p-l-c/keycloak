@@ -1,5 +1,9 @@
 package org.keycloak.testframework.injection.mocks;
 
+import java.util.List;
+
+import org.keycloak.testframework.injection.DependenciesBuilder;
+import org.keycloak.testframework.injection.Dependency;
 import org.keycloak.testframework.injection.InstanceContext;
 import org.keycloak.testframework.injection.LifeCycle;
 import org.keycloak.testframework.injection.RequestedInstance;
@@ -14,13 +18,8 @@ public class MockChildSupplier implements Supplier<MockChildValue, MockChildAnno
     }
 
     @Override
-    public Class<MockChildAnnotation> getAnnotationClass() {
-        return MockChildAnnotation.class;
-    }
-
-    @Override
-    public Class<MockChildValue> getValueType() {
-        return MockChildValue.class;
+    public List<Dependency> getDependencies(RequestedInstance<MockChildValue, MockChildAnnotation> instanceContext) {
+        return DependenciesBuilder.create(MockParentValue.class, instanceContext.getAnnotation().parentRef()).build();
     }
 
     @Override

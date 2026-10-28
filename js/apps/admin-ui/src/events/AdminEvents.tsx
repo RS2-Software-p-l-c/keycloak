@@ -36,19 +36,19 @@ import {
   Tr,
   cellWidth,
 } from "@patternfly/react-table";
-import CodeEditor from "@uiw/react-textarea-code-editor";
 import { pickBy } from "lodash-es";
 import { PropsWithChildren, useMemo, useState } from "react";
 import { Controller, FormProvider, useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { useAdminClient } from "../admin-client";
+import { EventsBanners } from "../Banners";
 import DropdownPanel from "../components/dropdown-panel/DropdownPanel";
+import CodeEditor from "../components/form/CodeEditor";
 import { useRealm } from "../context/realm-context/RealmContext";
 import { useServerInfo } from "../context/server-info/ServerInfoProvider";
 import { prettyPrintJSON } from "../util";
 import useFormatDate, { FORMAT_DATE_AND_TIME } from "../utils/useFormatDate";
 import { CellResourceLinkRenderer } from "./ResourceLinks";
-import { EventsBanners } from "../Banners";
 
 import "./events.css";
 
@@ -171,7 +171,7 @@ export const AdminEvents = ({ resourcePath }: AdminEventsProps) => {
   useFetch(
     () => adminClient.realms.getConfigEvents({ realm }),
     (events) => {
-      setAdminEventsEnabled(events?.adminEventsEnabled!);
+      setAdminEventsEnabled(events.adminEventsEnabled!);
     },
     [],
   );
@@ -283,9 +283,7 @@ export const AdminEvents = ({ resourcePath }: AdminEventsProps) => {
           data-testid="representation-dialog"
           onClose={() => setRepresentationEvent(undefined)}
         >
-          <div style={{ height: "8rem", overflow: "scroll" }}>
-            <CodeEditor readOnly value={code} language="json" />
-          </div>
+          <CodeEditor readOnly value={code} language="json" />
         </DisplayDialog>
       )}
       {!adminEventsEnabled && <EventsBanners type="adminEvents" />}
@@ -338,7 +336,7 @@ export const AdminEvents = ({ resourcePath }: AdminEventsProps) => {
                               collapsedText: t("showRemaining"),
                             }}
                             variant={SelectVariant.typeaheadMulti}
-                            typeAheadAriaLabel="Select"
+                            typeAheadAriaLabel="select-resourceTypes"
                             onToggle={(isOpen) =>
                               setSelectResourceTypesOpen(isOpen)
                             }
@@ -346,7 +344,9 @@ export const AdminEvents = ({ resourcePath }: AdminEventsProps) => {
                             onSelect={(selectedValue) => {
                               const option = selectedValue.toString();
                               const changedValue = field.value.includes(option)
-                                ? field.value.filter((item) => item !== option)
+                                ? field.value.filter(
+                                    (item: string) => item !== option,
+                                  )
                                 : [...field.value, option];
 
                               field.onChange(changedValue);
@@ -358,14 +358,14 @@ export const AdminEvents = ({ resourcePath }: AdminEventsProps) => {
                             aria-labelledby={"resourceTypes"}
                             chipGroupComponent={
                               <ChipGroup>
-                                {field.value.map((chip) => (
+                                {field.value.map((chip: string) => (
                                   <Chip
                                     key={chip}
                                     onClick={(resource) => {
                                       resource.stopPropagation();
                                       field.onChange(
                                         field.value.filter(
-                                          (val) => val !== chip,
+                                          (val: string) => val !== chip,
                                         ),
                                       );
                                     }}
@@ -403,7 +403,7 @@ export const AdminEvents = ({ resourcePath }: AdminEventsProps) => {
                               collapsedText: t("showRemaining"),
                             }}
                             variant={SelectVariant.typeaheadMulti}
-                            typeAheadAriaLabel="Select"
+                            typeAheadAriaLabel="select-operationTypes"
                             onToggle={(isOpen) =>
                               setSelectOperationTypesOpen(isOpen)
                             }
@@ -411,7 +411,9 @@ export const AdminEvents = ({ resourcePath }: AdminEventsProps) => {
                             onSelect={(selectedValue) => {
                               const option = selectedValue.toString();
                               const changedValue = field.value.includes(option)
-                                ? field.value.filter((item) => item !== option)
+                                ? field.value.filter(
+                                    (item: string) => item !== option,
+                                  )
                                 : [...field.value, option];
 
                               field.onChange(changedValue);
@@ -423,14 +425,14 @@ export const AdminEvents = ({ resourcePath }: AdminEventsProps) => {
                             aria-labelledby={"operationTypes"}
                             chipGroupComponent={
                               <ChipGroup>
-                                {field.value.map((chip) => (
+                                {field.value.map((chip: string) => (
                                   <Chip
                                     key={chip}
                                     onClick={(operation) => {
                                       operation.stopPropagation();
                                       field.onChange(
                                         field.value.filter(
-                                          (val) => val !== chip,
+                                          (val: string) => val !== chip,
                                         ),
                                       );
                                     }}
@@ -442,10 +444,7 @@ export const AdminEvents = ({ resourcePath }: AdminEventsProps) => {
                             }
                           >
                             {operationTypes?.map((option) => (
-                              <SelectOption
-                                key={option.toString()}
-                                value={option}
-                              >
+                              <SelectOption key={option} value={option}>
                                 {option}
                               </SelectOption>
                             ))}

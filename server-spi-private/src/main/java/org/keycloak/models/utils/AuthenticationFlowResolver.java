@@ -16,11 +16,14 @@
  */
 package org.keycloak.models.utils;
 
-import org.jboss.logging.Logger;
 import org.keycloak.models.AuthenticationFlowBindings;
 import org.keycloak.models.AuthenticationFlowModel;
 import org.keycloak.models.ClientModel;
+import org.keycloak.models.Constants;
+import org.keycloak.models.ModelException;
 import org.keycloak.sessions.AuthenticationSessionModel;
+
+import org.jboss.logging.Logger;
 
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
@@ -33,29 +36,58 @@ public class AuthenticationFlowResolver {
     public static AuthenticationFlowModel resolveBrowserFlow(AuthenticationSessionModel authSession) {
         AuthenticationFlowModel flow = null;
         ClientModel client = authSession.getClient();
-        String clientFlow = client.getAuthenticationFlowBindingOverride(AuthenticationFlowBindings.BROWSER_BINDING);
-        if (clientFlow != null) {
-            flow = authSession.getRealm().getAuthenticationFlowById(clientFlow);
-            if (flow != null) {
+
+        // check if specific flow has been requested
+        String requestedFlowAlias = authSession.getAuthNote(Constants.REQUESTED_AUTHENTICATION_FLOW);
+        if (requestedFlowAlias != null){
+            flow = authSession.getRealm().getFlowByAlias(requestedFlowAlias);
+            // validate flow exists
+            if (flow == null){
+                throw new ModelException("Client " + client.getClientId() + " has requested browser flow " + requestedFlowAlias + ", but this flow does not exist.");
+            } else {
                 return flow;
             }
-            logger.warnf("Client %s has browser flow override, but this flow '%s' does not exist, " +
-                    "fallback to browser flow", client.getClientId(), clientFlow);
+        }
+
+        flow = resolveBindingOverrideFlowForClient(client, AuthenticationFlowBindings.BROWSER_BINDING);
+        if (flow != null) {
+            return flow;
         }
         return authSession.getRealm().getBrowserFlow();
     }
     public static AuthenticationFlowModel resolveDirectGrantFlow(AuthenticationSessionModel authSession) {
         AuthenticationFlowModel flow = null;
         ClientModel client = authSession.getClient();
-        String clientFlow = client.getAuthenticationFlowBindingOverride(AuthenticationFlowBindings.DIRECT_GRANT_BINDING);
+
+        // check if specific flow has been requested
+        String requestedFlowAlias = authSession.getAuthNote(Constants.REQUESTED_AUTHENTICATION_FLOW);
+        if (requestedFlowAlias != null){
+            flow = authSession.getRealm().getFlowByAlias(requestedFlowAlias);
+            // validate flow exists
+            if (flow == null){
+                throw new ModelException("Client " + client.getClientId() + " has requested browser flow " + requestedFlowAlias + ", but this flow does not exist.");
+            } else {
+                return flow;
+            }
+        }
+
+        flow = resolveBindingOverrideFlowForClient(client, AuthenticationFlowBindings.DIRECT_GRANT_BINDING);
+        if (flow != null) {
+            return flow;
+        }
+        return authSession.getRealm().getDirectGrantFlow();
+    }
+
+    public static AuthenticationFlowModel resolveBindingOverrideFlowForClient(ClientModel client, String flowBindingType) {
+        String clientFlow = client.getAuthenticationFlowBindingOverride(flowBindingType);
         if (clientFlow != null) {
-            flow = authSession.getRealm().getAuthenticationFlowById(clientFlow);
+            AuthenticationFlowModel flow = client.getRealm().getAuthenticationFlowById(clientFlow);
             if (flow != null) {
                 return flow;
             }
-            logger.warnf("Client %s has direct grant flow override, but this flow '%s' does not exist, " +
-                    "fallback to direct grant flow", client.getClientId(), clientFlow);
+            logger.warnf("Client %s has %s flow override, but configured override flow '%s' does not exist, " +
+                    "fallback to realm %s flow", client.getClientId(), flowBindingType, clientFlow, flowBindingType);
         }
-        return authSession.getRealm().getDirectGrantFlow();
+        return null;
     }
 }

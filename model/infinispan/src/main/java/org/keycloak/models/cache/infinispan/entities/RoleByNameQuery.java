@@ -16,9 +16,9 @@
  */
 package org.keycloak.models.cache.infinispan.entities;
 
-import org.keycloak.models.RealmModel;
-
 import java.util.Set;
+
+import org.keycloak.models.RealmModel;
 
 /**
  * @author Alexander Schwartz
@@ -27,17 +27,15 @@ import java.util.Set;
 public class RoleByNameQuery extends AbstractRevisioned implements RoleQuery, InClient {
     private final String role;
     private final String realm;
-    private final String realmName;
     private String client;
 
-    public RoleByNameQuery(Long revisioned, String id, RealmModel realm, String role) {
+    public RoleByNameQuery(long revisioned, String id, RealmModel realm, String role) {
         super(revisioned, id);
         this.realm = realm.getId();
-        this.realmName = realm.getName();
         this.role = role;
     }
 
-    public RoleByNameQuery(Long revision, String id, RealmModel realm, String role, String client) {
+    public RoleByNameQuery(long revision, String id, RealmModel realm, String role, String client) {
         this(revision, id, realm, role);
         this.client = client;
     }
@@ -65,7 +63,7 @@ public class RoleByNameQuery extends AbstractRevisioned implements RoleQuery, In
     public String toString() {
         return "RoleNameQuery{" +
                 "id='" + getId() + "'" +
-                ", realmName='" + realmName + '\'' +
+                ", realm='" + realm + '\'' +
                 ", clientUuid='" + client + '\'' +
                 '}';
     }

@@ -31,14 +31,22 @@ export interface ConsentRepresentation {
 export interface ConsentScopeRepresentation {
   id: string;
   name: string;
-  displayTest: string;
+  displayText: string;
+}
+
+export interface CredentialMetadataRepresentationMessage {
+  key: string;
+  parameters?: string[];
 }
 
 export interface CredentialMetadataRepresentation {
-  infoMessage: string;
-  warningMessageTitle: string;
-  warningMessageDescription: string;
+  infoMessage?: CredentialMetadataRepresentationMessage;
+  infoProperties?: CredentialMetadataRepresentationMessage[];
+  warningMessageTitle?: CredentialMetadataRepresentationMessage;
+  warningMessageDescription?: CredentialMetadataRepresentationMessage;
   credential: CredentialRepresentation;
+  iconLight?: string;
+  iconDark?: string;
 }
 
 export interface DeviceRepresentation {
@@ -82,6 +90,7 @@ export interface UserProfileAttributeMetadata {
   annotations?: { [index: string]: any };
   validators: { [index: string]: { [index: string]: any } };
   multivalued: boolean;
+  defaultValue: string;
 }
 
 export interface UserProfileMetadata {
@@ -203,17 +212,5 @@ export interface Group {
   path: string;
 }
 
-export interface SupportedCredentialConfiguration {
-  id: string;
-  format: string;
-  scope: string;
-}
-export interface CredentialsIssuer {
-  credential_issuer: string;
-  credential_endpoint: string;
-  authorization_servers: string[];
-  credential_configurations_supported: Record<
-    string,
-    SupportedCredentialConfiguration
-  >;
-}
+export type { default as UserVerifiableCredentialRepresentation } from "@keycloak/keycloak-admin-client/lib/defs/userVerifiableCredentialRepresentation";
+export type { default as IssuedUserVerifiableCredentialRepresentation } from "@keycloak/keycloak-admin-client/lib/defs/issuedUserVerifiableCredentialRepresentation";

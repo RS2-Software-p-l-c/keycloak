@@ -24,8 +24,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticatorUtil;
 import org.keycloak.authentication.CredentialAction;
 import org.keycloak.authentication.RequiredActionProvider;
@@ -39,6 +37,9 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.util.JsonSerialization;
+
+import com.fasterxml.jackson.core.type.TypeReference;
+import org.jboss.logging.Logger;
 
 import static org.keycloak.models.Constants.NO_LOA;
 
@@ -188,6 +189,17 @@ public class AcrStore {
         authSession.setAuthNote(Constants.LEVEL_OF_AUTHENTICATION, String.valueOf(level));
     }
 
+    /**
+     * Set level to the current authentication session if an auth flow loa is present and is higher then the current loa
+     */
+    public void setAuthFlowLevelAuthenticatedToCurrentRequest() {
+        if (authSession.getAuthNote(Constants.AUTHENTICATION_FLOW_LEVEL_OF_AUTHENTICATION) != null) {
+            int authFlowLoa = Integer.parseInt(authSession.getAuthNote(Constants.AUTHENTICATION_FLOW_LEVEL_OF_AUTHENTICATION));
+            if (getLevelOfAuthenticationFromCurrentAuthentication() < authFlowLoa) {
+                setLevelAuthenticatedToCurrentRequest(authFlowLoa);
+            }
+        }
+    }
 
     private void setLevelAuthenticatedToMap(int level) {
         Map<Integer, Integer> levels = getCurrentAuthenticatedLevelsMap();

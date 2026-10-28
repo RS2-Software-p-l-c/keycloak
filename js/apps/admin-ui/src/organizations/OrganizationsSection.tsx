@@ -78,6 +78,7 @@ export default function OrganizationSection() {
           )}
           key={key}
           loader={loader}
+          searchPlaceholderKey="searchOrganization"
           isPaginated
           toolbarItem={
             <ToolbarItem>
@@ -100,7 +101,7 @@ export default function OrganizationSection() {
             message={t("emptyOrganizations")}
             instructions={t("emptyOrganizationsInstructions")}
             primaryActionText={t("createOrganization")}
-            onPrimaryAction={() => navigate(toAddOrganization({ realm }))}
+            onPrimaryAction={() => void navigate(toAddOrganization({ realm }))}
           />
         </OrganizationTable>
       </PageSection>

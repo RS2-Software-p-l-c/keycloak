@@ -1,5 +1,7 @@
 package org.keycloak.testframework.events;
 
+import java.io.IOException;
+
 import org.keycloak.testframework.annotations.InjectSysLogServer;
 import org.keycloak.testframework.injection.InstanceContext;
 import org.keycloak.testframework.injection.LifeCycle;
@@ -9,19 +11,7 @@ import org.keycloak.testframework.injection.SupplierOrder;
 import org.keycloak.testframework.server.KeycloakServerConfigBuilder;
 import org.keycloak.testframework.server.KeycloakServerConfigInterceptor;
 
-import java.io.IOException;
-
 public class SysLogServerSupplier implements Supplier<SysLogServer, InjectSysLogServer>, KeycloakServerConfigInterceptor<SysLogServer, InjectSysLogServer> {
-
-    @Override
-    public Class<InjectSysLogServer> getAnnotationClass() {
-        return InjectSysLogServer.class;
-    }
-
-    @Override
-    public Class<SysLogServer> getValueType() {
-        return SysLogServer.class;
-    }
 
     @Override
     public SysLogServer getValue(InstanceContext<SysLogServer, InjectSysLogServer> instanceContext) {
@@ -58,6 +48,8 @@ public class SysLogServerSupplier implements Supplier<SysLogServer, InjectSysLog
                 .handlers(KeycloakServerConfigBuilder.LogHandlers.SYSLOG)
                 .syslogEndpoint(instanceContext.getValue().getEndpoint())
                 .handlerLevel(KeycloakServerConfigBuilder.LogHandlers.SYSLOG, "INFO");
+
+        serverConfig.option("log-syslog-counting-framing", "false");
 
         serverConfig.option("spi-events-listener-jboss-logging-success-level", "INFO")
                 .log().categoryLevel("org.keycloak.events", "INFO");

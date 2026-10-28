@@ -1,9 +1,8 @@
 package org.keycloak.testsuite.broker;
 
-import org.apache.commons.lang3.StringUtils;
-import org.hamcrest.CoreMatchers;
-import org.jboss.arquillian.graphene.page.Page;
-import org.junit.Test;
+import java.time.Duration;
+import java.util.List;
+
 import org.keycloak.admin.client.resource.IdentityProviderResource;
 import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.models.FederatedIdentityModel;
@@ -15,49 +14,56 @@ import org.keycloak.representations.AccessTokenResponse;
 import org.keycloak.representations.idm.ClientRepresentation;
 import org.keycloak.representations.idm.FederatedIdentityRepresentation;
 import org.keycloak.representations.idm.IdentityProviderRepresentation;
+import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
-import org.keycloak.testsuite.Assert;
+import org.keycloak.testframework.realm.ClientScopeBuilder;
+import org.keycloak.testframework.realm.ManagedRealm;
 import org.keycloak.testsuite.broker.oidc.TestKeycloakOidcIdentityProviderFactory;
 import org.keycloak.testsuite.forms.RegisterWithUserProfileTest;
-import org.keycloak.testsuite.forms.VerifyProfileTest;
 import org.keycloak.testsuite.pages.LoginUpdateProfilePage;
 import org.keycloak.testsuite.pages.RegisterPage;
-import org.keycloak.testsuite.pages.AppPage;
 import org.keycloak.testsuite.util.AccountHelper;
-import org.keycloak.testsuite.util.ClientScopeBuilder;
+import org.keycloak.testsuite.util.MailServerConfiguration;
+import org.keycloak.testsuite.util.userprofile.UserProfileUtil;
 import org.keycloak.util.JsonSerialization;
+
+import org.apache.commons.lang3.StringUtils;
+import org.jboss.arquillian.graphene.page.Page;
+import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
 import org.openqa.selenium.By;
 import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.WebElement;
+
+import static org.keycloak.testsuite.admin.AdminApiUtil.removeUserByUsername;
+import static org.keycloak.testsuite.broker.BrokerTestConstants.IDP_OIDC_ALIAS;
+import static org.keycloak.testsuite.broker.BrokerTestConstants.USER_EMAIL;
+import static org.keycloak.testsuite.broker.BrokerTestTools.createIdentityProvider;
+import static org.keycloak.testsuite.broker.BrokerTestTools.waitForPage;
+import static org.keycloak.testsuite.util.MailAssert.assertEmailAndGetUrl;
+import static org.keycloak.testsuite.util.userprofile.UserProfileUtil.ATTRIBUTE_DEPARTMENT;
+import static org.keycloak.testsuite.util.userprofile.UserProfileUtil.PERMISSIONS_ADMIN_EDITABLE;
+import static org.keycloak.testsuite.util.userprofile.UserProfileUtil.PERMISSIONS_ALL;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.nullValue;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
-import static org.keycloak.testsuite.admin.ApiUtil.removeUserByUsername;
-import static org.keycloak.testsuite.broker.BrokerTestConstants.IDP_OIDC_ALIAS;
-import static org.keycloak.testsuite.broker.BrokerTestTools.createIdentityProvider;
-import static org.keycloak.testsuite.broker.BrokerTestTools.waitForPage;
-import static org.keycloak.testsuite.forms.VerifyProfileTest.ATTRIBUTE_DEPARTMENT;
-import static org.keycloak.testsuite.forms.VerifyProfileTest.PERMISSIONS_ADMIN_EDITABLE;
-import static org.keycloak.testsuite.forms.VerifyProfileTest.PERMISSIONS_ALL;
-
-import java.util.List;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
  */
 public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
 
-    @Page
-    protected LoginUpdateProfilePage loginUpdateProfilePage;
+    protected ManagedRealm managedRealm = new ManagedRealm(this, bc.consumerRealmName());
 
     @Page
-    protected AppPage appPage;
+    protected LoginUpdateProfilePage loginUpdateProfilePage;
 
     @Page
     protected RegisterPage registerPage;
@@ -95,8 +101,9 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
         // create a test user in the provider realm.
         createUser(bc.providerRealmName(), "brucewayne", BrokerTestConstants.USER_PASSWORD, "Bruce", "Wayne", "brucewayne@gotham.com");
 
-        oauth.clientId("broker-app");
-        loginPage.open(bc.consumerRealmName());
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
         logInWithIdp(bc.getIDPAlias(), "brucewayne", BrokerTestConstants.USER_PASSWORD);
 
         // obtain the stored token from the federated identity.
@@ -118,7 +125,8 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
         // logout and then log back in.
         AccountHelper.logout(adminClient.realm(bc.consumerRealmName()), "brucewayne");
 
-        loginPage.open(bc.consumerRealmName());
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
         logInWithIdp(bc.getIDPAlias(), "brucewayne", BrokerTestConstants.USER_PASSWORD);
 
         // fetch the stored token - access token should have been updated, but the refresh token should remain the same.
@@ -152,8 +160,9 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
         String username = "firstandlastname";
         createUser(bc.providerRealmName(), username, BrokerTestConstants.USER_PASSWORD, firstname, lastname, "firstnamelastname@example.org");
 
-        oauth.clientId("broker-app");
-        loginPage.open(bc.consumerRealmName());
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
 
         logInWithIdp(bc.getIDPAlias(), username, BrokerTestConstants.USER_PASSWORD);
 
@@ -180,21 +189,23 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
             adminClient.realm(bc.providerRealmName()).clients().create(samlClient);
             consumerRealm.identityProviders().create(samlBroker);
 
-            oauth.clientId("broker-app");
-            loginPage.open(bc.consumerRealmName());
+            oauth.client("broker-app");
+            oauth.realm(bc.consumerRealmName());
+            oauth.openLoginForm();
 
             logInWithBroker(samlBrokerConfig);
-            Assert.assertTrue(appPage.isCurrent());
+            Assertions.assertTrue(oauth.parseLoginResponse().isSuccess());
             AccountHelper.logout(adminClient.realm(bc.consumerRealmName()), bc.getUserLogin());
             AccountHelper.logout(adminClient.realm(bc.providerRealmName()), bc.getUserLogin());
 
-            oauth.clientId("broker-app");
-            loginPage.open(bc.consumerRealmName());
+            oauth.client("broker-app");
+            oauth.realm(bc.consumerRealmName());
+            oauth.openLoginForm();
 
             logInWithBroker(bc);
 
             waitForPage(driver, "account already exists", false);
-            assertTrue(idpConfirmLinkPage.isCurrent());
+            idpConfirmLinkPage.assertCurrent();
             assertEquals("User with email user@localhost.com already exists. How do you want to continue?", idpConfirmLinkPage.getMessage());
             idpConfirmLinkPage.clickLinkAccount();
 
@@ -202,7 +213,7 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
 
             try {
                 this.loginPage.findSocialButton(bc.getIDPAlias());
-                org.junit.Assert.fail("Not expected to see social button with " + samlBrokerConfig.getIDPAlias());
+                Assertions.fail("Not expected to see social button with " + samlBrokerConfig.getIDPAlias());
             } catch (NoSuchElementException expected) {
             }
 
@@ -237,21 +248,23 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
             consumerRealm.identityProviders().create(samlBroker);
             consumerRealm.identityProviders().create(oidcBroker);
 
-            oauth.clientId("broker-app");
-            loginPage.open(bc.consumerRealmName());
+            oauth.client("broker-app");
+            oauth.realm(bc.consumerRealmName());
+            oauth.openLoginForm();
 
             logInWithBroker(samlBrokerConfig);
-            appPage.assertCurrent();
+            Assertions.assertTrue(oauth.parseLoginResponse().isSuccess());
             AccountHelper.logout(adminClient.realm(bc.consumerRealmName()), bc.getUserLogin());
             AccountHelper.logout(adminClient.realm(bc.providerRealmName()), bc.getUserLogin());
 
-            oauth.clientId("broker-app");
-            loginPage.open(bc.consumerRealmName());
+            oauth.client("broker-app");
+            oauth.realm(bc.consumerRealmName());
+            oauth.openLoginForm();
 
             logInWithBroker(bc);
 
             waitForPage(driver, "account already exists", false);
-            assertTrue(idpConfirmLinkPage.isCurrent());
+            idpConfirmLinkPage.assertCurrent();
             assertEquals("User with email user@localhost.com already exists. How do you want to continue?", idpConfirmLinkPage.getMessage());
             idpConfirmLinkPage.clickLinkAccount();
 
@@ -264,7 +277,7 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
 
             try {
                 this.loginPage.findSocialButton(bc.getIDPAlias());
-                org.junit.Assert.fail("Not expected to see social button with " + bc.getIDPAlias());
+                Assertions.fail("Not expected to see social button with " + bc.getIDPAlias());
             } catch (NoSuchElementException expected) {
             }
 
@@ -294,15 +307,16 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
             adminClient.realm(bc.providerRealmName()).clients().create(samlClient);
             consumerRealm.identityProviders().create(samlBroker);
 
-            oauth.clientId("broker-app");
-            loginPage.open(bc.consumerRealmName());
+            oauth.client("broker-app");
+            oauth.realm(bc.consumerRealmName());
+            oauth.openLoginForm();
 
             createUser(bc.getUserLogin());
 
             logInWithBroker(bc);
 
             waitForPage(driver, "account already exists", false);
-            assertTrue(idpConfirmLinkPage.isCurrent());
+            idpConfirmLinkPage.assertCurrent();
             assertEquals("User with email user@localhost.com already exists. How do you want to continue?", idpConfirmLinkPage.getMessage());
             idpConfirmLinkPage.clickLinkAccount();
 
@@ -310,7 +324,7 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
 
             try {
                 this.loginPage.findSocialButton(bc.getIDPAlias());
-                org.junit.Assert.fail("Not expected to see social button with " + samlBrokerConfig.getIDPAlias());
+                Assertions.fail("Not expected to see social button with " + samlBrokerConfig.getIDPAlias());
             } catch (NoSuchElementException expected) {
             }
 
@@ -340,8 +354,9 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
             adminClient.realm(bc.providerRealmName()).clients().create(samlClient);
             consumerRealm.identityProviders().create(samlBroker);
 
-            oauth.clientId("broker-app");
-            loginPage.open(bc.consumerRealmName());
+            oauth.client("broker-app");
+            oauth.realm(bc.consumerRealmName());
+            oauth.openLoginForm();
 
             logInWithBroker(samlBrokerConfig);
             waitForPage(driver, "update account information", false);
@@ -349,8 +364,9 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
             AccountHelper.logout(adminClient.realm(bc.consumerRealmName()), bc.getUserLogin());
             AccountHelper.logout(adminClient.realm(bc.providerRealmName()), bc.getUserLogin());
 
-            oauth.clientId("broker-app");
-            loginPage.open(bc.consumerRealmName());
+            oauth.client("broker-app");
+            oauth.realm(bc.consumerRealmName());
+            oauth.openLoginForm();
 
             logInWithBroker(bc);
 
@@ -376,14 +392,15 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
         createUser(bc.providerRealmName(), "no-first-name", "password", null,
                 "LastName", "no-first-name@localhost.com");
 
-        oauth.clientId("broker-app");
-        loginPage.open(bc.consumerRealmName());
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
 
         log.debug("Clicking social " + bc.getIDPAlias());
         loginPage.clickSocial(bc.getIDPAlias());
         waitForPage(driver, "sign in to", true);
-        Assert.assertTrue("Driver should be on the provider realm page right now",
-                driver.getCurrentUrl().contains("/auth/realms/" + bc.providerRealmName() + "/"));
+        Assertions.assertTrue(driver.getCurrentUrl().contains("/auth/realms/" + bc.providerRealmName() + "/"),
+                "Driver should be on the provider realm page right now");
         log.debug("Logging in");
         loginPage.login("no-first-name", "password");
 
@@ -398,9 +415,9 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
 
         UserRepresentation userRepresentation = AccountHelper.getUserRepresentation(adminClient.realm(bc.consumerRealmName()), "new-username");
 
-        Assert.assertEquals("First Name", userRepresentation.getFirstName());
-        Assert.assertEquals("Last Name", userRepresentation.getLastName());
-        Assert.assertEquals("no-first-name@localhost.com", userRepresentation.getEmail());
+        Assertions.assertEquals("First Name", userRepresentation.getFirstName());
+        Assertions.assertEquals("Last Name", userRepresentation.getLastName());
+        Assertions.assertEquals("no-first-name@localhost.com", userRepresentation.getEmail());
 
     }
 
@@ -414,8 +431,9 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
 
         createUser(bc.providerRealmName(), "idp-cancel-test", "password", "IDP", "Cancel", "idp-cancel@localhost.com");
 
-        oauth.clientId("broker-app");
-        loginPage.open(bc.consumerRealmName());
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
 
         loginPage.clickRegister();
         registerPage.clickBackToLogin();
@@ -425,8 +443,8 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
         log.debug("Clicking social " + bc.getIDPAlias());
         loginPage.clickSocial(bc.getIDPAlias());
         waitForPage(driver, "sign in to", true);
-        Assert.assertTrue("Driver should be on the provider realm page right now",
-            driver.getCurrentUrl().contains("/auth/realms/" + bc.providerRealmName() + "/"));
+        Assertions.assertTrue(driver.getCurrentUrl().contains("/auth/realms/" + bc.providerRealmName() + "/"),
+            "Driver should be on the provider realm page right now");
         log.debug("Logging in");
         loginPage.login("idp-cancel-test", "password");
 
@@ -439,10 +457,9 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
         assertEquals(urlWhenBackFromRegistrationPage, urlWhenWentBackFromIdpLogin);
 
         log.debug("Should not fail here... We're still not logged in, so the IDP should be shown on the login page.");
-        assertTrue("We should be on the login page.", driver.getPageSource().contains("Sign in to your account"));
+        assertTrue(driver.getPageSource().contains("Sign in to your account"), "We should be on the login page.");
         final var socialButton = this.loginPage.findSocialButton(bc.getIDPAlias());
     }
-
 
     @Test
     public void testDisplayName() {
@@ -455,8 +472,9 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
                 + "{\"name\": \"department\", \"displayName\" : \"Department\", " + PERMISSIONS_ALL + ", \"required\":{}}"
                 + "]}");
 
-        oauth.clientId("broker-app");
-        loginPage.open(bc.consumerRealmName());
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
 
         logInWithBroker(bc);
 
@@ -465,11 +483,11 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
 
         //assert field names
         // i18n replaced
-        org.junit.Assert.assertEquals("First name", updateAccountInformationPage.getLabelForField("firstName"));
+        Assertions.assertEquals("First name", updateAccountInformationPage.getLabelForField("firstName"));
         // attribute name used if no display name set
-        org.junit.Assert.assertEquals("lastName", updateAccountInformationPage.getLabelForField("lastName"));
+        Assertions.assertEquals("lastName", updateAccountInformationPage.getLabelForField("lastName"));
         // direct value in display name
-        org.junit.Assert.assertEquals("Department", updateAccountInformationPage.getLabelForField("department"));
+        Assertions.assertEquals("Department", updateAccountInformationPage.getLabelForField("department"));
     }
 
     @Test
@@ -478,18 +496,19 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
         updateExecutions(AbstractBrokerTest::enableUpdateProfileOnFirstLogin);
 
         setUserProfileConfiguration("{\"attributes\": ["
-                + "{\"name\": \"lastName\"," + VerifyProfileTest.PERMISSIONS_ALL + "},"
-                + "{\"name\": \"username\", " + VerifyProfileTest.PERMISSIONS_ALL + "},"
-                + "{\"name\": \"firstName\"," + VerifyProfileTest.PERMISSIONS_ALL + ", \"required\": {}},"
-                + "{\"name\": \"department\", " + VerifyProfileTest.PERMISSIONS_ALL + ", \"required\":{}, \"group\": \"company\"},"
-                + "{\"name\": \"email\", " + VerifyProfileTest.PERMISSIONS_ALL + ", \"group\": \"contact\"}"
+                + "{\"name\": \"lastName\"," + UserProfileUtil.PERMISSIONS_ALL + "},"
+                + "{\"name\": \"username\", " + UserProfileUtil.PERMISSIONS_ALL + "},"
+                + "{\"name\": \"firstName\"," + UserProfileUtil.PERMISSIONS_ALL + ", \"required\": {}},"
+                + "{\"name\": \"department\", " + UserProfileUtil.PERMISSIONS_ALL + ", \"required\":{}, \"group\": \"company\"},"
+                + "{\"name\": \"email\", " + UserProfileUtil.PERMISSIONS_ALL + ", \"group\": \"contact\"}"
                 + "], \"groups\": ["
                 + "{\"name\": \"company\", \"displayDescription\": \"Company field desc\" },"
                 + "{\"name\": \"contact\" }"
                 + "]}");
 
-        oauth.clientId("broker-app");
-        loginPage.open(bc.consumerRealmName());
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
 
         logInWithBroker(bc);
 
@@ -522,15 +541,16 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
         updateExecutions(AbstractBrokerTest::enableUpdateProfileOnFirstLogin);
 
         setUserProfileConfiguration("{\"attributes\": ["
-                + "{\"name\": \"lastName\"," + VerifyProfileTest.PERMISSIONS_ALL + "},"
-                + "{\"name\": \"department\", " + VerifyProfileTest.PERMISSIONS_ALL + ", \"required\":{}},"
-                + "{\"name\": \"username\", " + VerifyProfileTest.PERMISSIONS_ALL + "},"
-                + "{\"name\": \"firstName\"," + VerifyProfileTest.PERMISSIONS_ALL + ", \"required\": {}},"
-                + "{\"name\": \"email\", " + VerifyProfileTest.PERMISSIONS_ALL + "}"
+                + "{\"name\": \"lastName\"," + UserProfileUtil.PERMISSIONS_ALL + "},"
+                + "{\"name\": \"department\", " + UserProfileUtil.PERMISSIONS_ALL + ", \"required\":{}},"
+                + "{\"name\": \"username\", " + UserProfileUtil.PERMISSIONS_ALL + "},"
+                + "{\"name\": \"firstName\"," + UserProfileUtil.PERMISSIONS_ALL + ", \"required\": {}},"
+                + "{\"name\": \"email\", " + UserProfileUtil.PERMISSIONS_ALL + "}"
                 + "]}");
 
-        oauth.clientId("broker-app");
-        loginPage.open(bc.consumerRealmName());
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
 
         logInWithBroker(bc);
 
@@ -555,8 +575,9 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
                 + RegisterWithUserProfileTest.UP_CONFIG_PART_INPUT_TYPES
                 + "]}");
 
-        oauth.clientId("broker-app");
-        loginPage.open(bc.consumerRealmName());
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
 
         logInWithBroker(bc);
 
@@ -577,8 +598,9 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
                 + "{\"name\": \"department\", " + PERMISSIONS_ADMIN_EDITABLE + ", \"required\":{}}"
                 + "]}");
 
-        oauth.clientId("broker-app");
-        loginPage.open(bc.consumerRealmName());
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
 
         logInWithBroker(bc);
     }
@@ -596,8 +618,9 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
                 + "{\"name\": \"department\", " + PERMISSIONS_ALL + ", \"required\":{}, \"selector\":{\"scopes\":[\"department\"]}}"
                 + "]}");
 
-        oauth.clientId("broker-app");
-        loginPage.open(bc.consumerRealmName());
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
 
         logInWithBroker(bc);
     }
@@ -614,8 +637,9 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
                 + "{\"name\": \"department\", " + PERMISSIONS_ALL + ", \"required\":{}, \"selector\":{\"scopes\":[\"profile\"]}}"
                 + "]}");
 
-        oauth.clientId("broker-app");
-        loginPage.open(bc.consumerRealmName());
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
 
         logInWithBroker(bc);
 
@@ -634,8 +658,9 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
                 + "{\"name\": \"department\", " + PERMISSIONS_ADMIN_EDITABLE + ", \"required\":{}}"
                 + "]}");
 
-        oauth.clientId("broker-app");
-        loginPage.open(bc.consumerRealmName());
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
 
         logInWithBroker(bc);
 
@@ -658,8 +683,9 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
                 + "{\"name\": \"department\"," + PERMISSIONS_ALL + ", \"required\":{}, \"selector\":{\"scopes\":[\"profile\"]}}"
                 + "]}");
 
-        oauth.clientId("broker-app");
-        loginPage.open(bc.consumerRealmName());
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
 
         logInWithBroker(bc);
 
@@ -672,7 +698,7 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
 
         updateAccountInformationPage.updateAccountInformation( "attributeRequiredAndSelectedByScopeMustBeSet", "attributeRequiredAndSelectedByScopeMustBeSet@email", "FirstAA", "LastAA", "DepartmentAA");
 
-        UserRepresentation user = VerifyProfileTest.getUserByUsername(testRealm(),"attributeRequiredAndSelectedByScopeMustBeSet");
+        UserRepresentation user = UserProfileUtil.getUserByUsername(managedRealm.admin(),"attributeRequiredAndSelectedByScopeMustBeSet").orElseThrow();
         assertEquals("FirstAA", user.getFirstName());
         assertEquals("LastAA", user.getLastName());
         assertEquals("DepartmentAA", user.firstAttribute(ATTRIBUTE_DEPARTMENT));
@@ -690,18 +716,19 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
                 + "{\"name\": \"department\"," + PERMISSIONS_ALL + ", \"selector\":{\"scopes\":[\"profile\"]}}"
                 + "]}");
 
-        oauth.clientId("broker-app");
-        loginPage.open(bc.consumerRealmName());
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
 
         logInWithBroker(bc);
 
         waitForPage(driver, "update account information", false);
         updateAccountInformationPage.assertCurrent();
 
-        org.junit.Assert.assertTrue(updateAccountInformationPage.isDepartmentPresent());
+        Assertions.assertTrue(updateAccountInformationPage.isDepartmentPresent());
         updateAccountInformationPage.updateAccountInformation( "attributeNotRequiredAndSelectedByScopeCanBeIgnored", "attributeNotRequiredAndSelectedByScopeCanBeIgnored@email", "FirstAA", "LastAA");
 
-        UserRepresentation user = VerifyProfileTest.getUserByUsername(testRealm(),"attributeNotRequiredAndSelectedByScopeCanBeIgnored");
+        UserRepresentation user = UserProfileUtil.getUserByUsername(managedRealm.admin(),"attributeNotRequiredAndSelectedByScopeCanBeIgnored").orElseThrow();
         assertEquals("FirstAA", user.getFirstName());
         assertEquals("LastAA", user.getLastName());
         assertThat(StringUtils.isEmpty(user.firstAttribute(ATTRIBUTE_DEPARTMENT)), is(true));
@@ -719,18 +746,19 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
                 + "{\"name\": \"department\"," + PERMISSIONS_ALL + ", \"selector\":{\"scopes\":[\"profile\"]}}"
                 + "]}");
 
-        oauth.clientId("broker-app");
-        loginPage.open(bc.consumerRealmName());
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
 
         logInWithBroker(bc);
 
         waitForPage(driver, "update account information", false);
         updateAccountInformationPage.assertCurrent();
 
-        org.junit.Assert.assertTrue(updateAccountInformationPage.isDepartmentPresent());
+        Assertions.assertTrue(updateAccountInformationPage.isDepartmentPresent());
         updateAccountInformationPage.updateAccountInformation( "attributeNotRequiredAndSelectedByScopeCanBeSet", "attributeNotRequiredAndSelectedByScopeCanBeSet@email", "FirstAA", "LastAA","Department AA");
 
-        UserRepresentation user = VerifyProfileTest.getUserByUsername(testRealm(),"attributeNotRequiredAndSelectedByScopeCanBeSet");
+        UserRepresentation user = UserProfileUtil.getUserByUsername(managedRealm.admin(),"attributeNotRequiredAndSelectedByScopeCanBeSet").orElseThrow();
         assertEquals("FirstAA", user.getFirstName());
         assertEquals("LastAA", user.getLastName());
         assertEquals("Department AA", user.firstAttribute(ATTRIBUTE_DEPARTMENT));
@@ -749,8 +777,9 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
                 + "{\"name\": \"department\"," + PERMISSIONS_ALL + ", \"required\":{}, \"selector\":{\"scopes\":[\"department\"]}}"
                 + "]}");
 
-        oauth.clientId("broker-app");
-        loginPage.open(bc.consumerRealmName());
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
 
         logInWithBroker(bc);
 
@@ -760,7 +789,7 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
         assertFalse(updateAccountInformationPage.isDepartmentPresent());
         updateAccountInformationPage.updateAccountInformation( "attributeRequiredButNotSelectedByScopeIsNotRenderedAndNotBlockingRegistration", "attributeRequiredButNotSelectedByScopeIsNotRenderedAndNotBlockingRegistration@email", "FirstAA", "LastAA");
 
-        UserRepresentation user = VerifyProfileTest.getUserByUsername(testRealm(),"attributeRequiredButNotSelectedByScopeIsNotRenderedAndNotBlockingRegistration");
+        UserRepresentation user = UserProfileUtil.getUserByUsername(managedRealm.admin(),"attributeRequiredButNotSelectedByScopeIsNotRenderedAndNotBlockingRegistration").orElseThrow();
         assertEquals("FirstAA", user.getFirstName());
         assertEquals("LastAA", user.getLastName());
         assertEquals(null, user.firstAttribute(ATTRIBUTE_DEPARTMENT));
@@ -776,8 +805,9 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
         idp.update(representation);
         createUser(bc.providerRealmName(), expectedBrokeredUserName, BrokerTestConstants.USER_PASSWORD, "f", "l", "fl@example.org");
 
-        oauth.clientId("broker-app");
-        loginPage.open(bc.consumerRealmName());
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
         // the username is stored as lower-case in the provider realm local database
         logInWithIdp(bc.getIDPAlias(), expectedBrokeredUserName.toLowerCase(), BrokerTestConstants.USER_PASSWORD);
 
@@ -802,8 +832,9 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
         idp.update(representation);
         createUser(bc.providerRealmName(), expectedBrokeredUserName, BrokerTestConstants.USER_PASSWORD, "f", "l", "fl@example.org");
 
-        oauth.clientId("broker-app");
-        loginPage.open(bc.consumerRealmName());
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
         // the username is stored as lower-case in the provider realm local database
         logInWithIdp(bc.getIDPAlias(), expectedBrokeredUserName.toLowerCase(), BrokerTestConstants.USER_PASSWORD);
 
@@ -819,15 +850,148 @@ public class KcOidcFirstBrokerLoginTest extends AbstractFirstBrokerLoginTest {
         assertEquals(expectedBrokeredUserName.toLowerCase(), federatedIdentity.getUserName());
     }
 
+    @Test
+    public void testLinkAccountAndVerifyEmailUsingDifferentBrowser() {
+        RealmResource realm = adminClient.realm(bc.consumerRealmName());
+        RealmRepresentation realmRep = realm.toRepresentation();
+
+        realmRep.setVerifyEmail(true);
+
+        realm.update(realmRep);
+
+        IdentityProviderRepresentation idpRep = identityProviderResource.toRepresentation();
+
+        idpRep.setTrustEmail(false);
+
+        identityProviderResource.update(idpRep);
+
+        configureSMTPServer();
+
+        // to avoid update profile required action
+        RealmResource providerRealm = adminClient.realm(bc.providerRealmName());
+        UserRepresentation brokerUser = providerRealm.users().search(bc.getUserLogin()).get(0);
+        brokerUser.setFirstName("f");
+        brokerUser.setLastName("l");
+        providerRealm.users().get(brokerUser.getId()).update(brokerUser);
+        // creates a user in the consumer realm to link the account
+        brokerUser.setId(null);
+        realm.users().create(brokerUser).close();
+
+        // link the account
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
+        logInWithBroker(bc);
+        idpConfirmLinkPage.clickLinkAccount();
+        String verificationUrl = assertEmailAndGetUrl(mail.getLastReceivedMessage(), MailServerConfiguration.FROM, USER_EMAIL,
+                "Someone wants to link your");
+        assertNotNull(verificationUrl);
+
+        // confirm the email using a different browser
+        driver2.navigate().to(verificationUrl.trim());
+        driver2.findElement(By.linkText("» Click here to proceed")).click();
+
+        // clear cookies to start a fresh browser instance and try to log in again
+        driver.manage().deleteAllCookies();
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
+        waitForPage(driver, "sign in to", true);
+        loginPage.clickSocial(bc.getIDPAlias());
+        waitForPage(driver, "sign in to", true);
+        loginPage.login(bc.getUserPassword());
+        Assertions.assertTrue(oauth.parseLoginResponse().isSuccess());
+    }
+
+    @Test
+    public void testLinkAccountAndVerifyEmailUsingDifferentBrowserDuplicateEmail() {
+        driver.manage().timeouts().pageLoadTimeout(Duration.ofDays(1));
+        driver2.manage().timeouts().pageLoadTimeout(Duration.ofDays(1));
+        RealmResource realm = adminClient.realm(bc.consumerRealmName());
+        RealmRepresentation realmRep = realm.toRepresentation();
+
+        realmRep.setVerifyEmail(true);
+
+        realm.update(realmRep);
+
+        IdentityProviderRepresentation idpRep = identityProviderResource.toRepresentation();
+
+        idpRep.setTrustEmail(false);
+
+        identityProviderResource.update(idpRep);
+
+        configureSMTPServer();
+
+        // to avoid update profile required action
+        RealmResource providerRealm = adminClient.realm(bc.providerRealmName());
+        UserRepresentation brokerUser = providerRealm.users().search(bc.getUserLogin()).get(0);
+        brokerUser.setFirstName("f");
+        brokerUser.setLastName("l");
+        providerRealm.users().get(brokerUser.getId()).update(brokerUser);
+        // creates a user in the consumer realm to link the account
+        brokerUser.setId(null);
+        realm.users().create(brokerUser).close();
+        RealmRepresentation providerRealmRep = providerRealm.toRepresentation();
+        providerRealmRep.setDuplicateEmailsAllowed(true);
+        providerRealm.update(providerRealmRep);
+        createUser(bc.providerRealmName(), "dup-user-email", BrokerTestConstants.USER_PASSWORD, "f", "l", brokerUser.getEmail());
+
+        // link the account
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
+        logInWithBroker(bc);
+        idpConfirmLinkPage.clickLinkAccount();
+        String verificationUrl = assertEmailAndGetUrl(mail.getLastReceivedMessage(), MailServerConfiguration.FROM, USER_EMAIL,
+                "Someone wants to link your");
+        assertNotNull(verificationUrl);
+
+        // confirm the email using a different browser
+        driver2.navigate().to(verificationUrl.trim());
+        driver2.findElement(By.linkText("» Click here to proceed")).click();
+
+        // clear cookies to start a fresh browser instance and try to log in again
+        AccountHelper.logout(adminClient.realm(bc.providerRealmName()), bc.getUserLogin());
+        driver.manage().deleteAllCookies();
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
+        waitForPage(driver, "sign in to", true);
+        loginPage.clickSocial(bc.getIDPAlias());
+        waitForPage(driver, "sign in to", true);
+        loginPage.login("dup-user-email", bc.getUserPassword());
+        idpConfirmLinkPage.assertCurrent();
+    }
+
     public void addDepartmentScopeIntoRealm() {
-        testRealm().clientScopes().create(ClientScopeBuilder.create().name("department").protocol("openid-connect").build());
+        managedRealm.admin().clientScopes().create(ClientScopeBuilder.create().name("department").protocol("openid-connect").build());
     }
 
     protected void setUserProfileConfiguration(String configuration) {
-        VerifyProfileTest.setUserProfileConfiguration(testRealm(), configuration);
+        UserProfileUtil.setUserProfileConfiguration(managedRealm.admin(), configuration);
     }
 
-    private RealmResource testRealm() {
-        return adminClient.realm(bc.consumerRealmName());
+    @Test
+    public void testSsoLoginWithCustomAttributeWithDefaultValue() {
+        updateExecutions(AbstractBrokerTest::enableUpdateProfileOnFirstLogin);
+
+        String userProfileConfig = "{\"attributes\": ["
+                + "{\"name\": \"email\"," + PERMISSIONS_ALL + "},"
+                + "{\"name\": \"firstName\"," + PERMISSIONS_ALL + "},"
+                + "{\"name\": \"lastName\"," + PERMISSIONS_ALL + "},"
+                + "{\"name\": \"usertype\", \"defaultValue\": \"daily\", " + PERMISSIONS_ADMIN_EDITABLE + "}"
+                + "]}";
+        setUserProfileConfiguration(userProfileConfig);
+
+        oauth.client("broker-app");
+        oauth.realm(bc.consumerRealmName());
+        oauth.openLoginForm();
+
+        logInWithBroker(bc);
+
+        waitForPage(driver, "update account information", false);
+        updateAccountInformationPage.assertCurrent();
+
+        updateAccountInformationPage.updateAccountInformation("Test", "User");
+
+        Assertions.assertTrue(oauth.parseLoginResponse().isSuccess());
     }
 }

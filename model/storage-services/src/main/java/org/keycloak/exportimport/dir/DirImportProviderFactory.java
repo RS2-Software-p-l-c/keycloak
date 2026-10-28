@@ -17,6 +17,9 @@
 
 package org.keycloak.exportimport.dir;
 
+import java.util.List;
+import java.util.Map;
+
 import org.keycloak.Config;
 import org.keycloak.exportimport.ExportImportConfig;
 import org.keycloak.exportimport.ImportProvider;
@@ -26,8 +29,6 @@ import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.provider.ProviderConfigurationBuilder;
-
-import java.util.List;
 
 import static org.keycloak.exportimport.ExportImportConfig.DEFAULT_STRATEGY;
 
@@ -45,10 +46,10 @@ public class DirImportProviderFactory implements ImportProviderFactory {
     private Config.Scope config;
 
     @Override
-    public ImportProvider create(KeycloakSession session) {
+    public ImportProvider create(KeycloakSession session, Map<String, String> overrides) {
         Strategy strategy = Enum.valueOf(Strategy.class, System.getProperty(ExportImportConfig.STRATEGY, config.get(STRATEGY, DEFAULT_STRATEGY.toString())));
         String realmName = System.getProperty(ExportImportConfig.REALM_NAME, config.get(REALM_NAME));
-        String dir = System.getProperty(ExportImportConfig.DIR, config.get(DIR));
+        String dir = overrides.getOrDefault(ExportImportConfig.DIR, System.getProperty(ExportImportConfig.DIR, config.get(DIR)));
         return new DirImportProvider(session.getKeycloakSessionFactory(), strategy)
                 .withDir(dir)
                 .withRealmName(realmName);
@@ -73,6 +74,7 @@ public class DirImportProviderFactory implements ImportProviderFactory {
         return PROVIDER_ID;
     }
 
+    @Override
     public List<ProviderConfigProperty> getConfigMetadata() {
         return ProviderConfigurationBuilder.create()
                 .property()

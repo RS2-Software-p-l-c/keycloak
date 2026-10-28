@@ -17,8 +17,12 @@
 
 package org.keycloak.models.session;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
 import org.keycloak.models.AuthenticatedClientSessionModel;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
@@ -27,11 +31,8 @@ import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserSessionModel;
 import org.keycloak.util.JsonSerialization;
 
-import java.io.IOException;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -125,8 +126,11 @@ public class PersistentAuthenticatedClientSessionAdapter implements Authenticate
     // Write updated model with latest serialized data
     public PersistentClientSessionModel getUpdatedModel() {
         try {
-            String updatedData = JsonSerialization.writeValueAsString(getData());
-            this.model.setData(updatedData);
+            if (data != null) {
+                // If data hasn't been initialized, it hasn't been touched and is unchanged. So need to deserialize and serialize it
+                String updatedData = JsonSerialization.writeValueAsString(getData());
+                this.model.setData(updatedData);
+            }
         } catch (IOException ioe) {
             throw new ModelException("Error persisting session", ioe);
         }
@@ -235,27 +239,31 @@ public class PersistentAuthenticatedClientSessionAdapter implements Authenticate
     @Override
     public Map<String, String> getNotes() {
         PersistentClientSessionData entity = getData();
-        if (entity.getNotes() == null || entity.getNotes().isEmpty()) return Collections.emptyMap();
+        if (entity.getNotes() == null) {
+            entity.setNotes(new HashMap<>());
+        }
         return entity.getNotes();
     }
 
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
-        if (o == null || !(o instanceof AuthenticatedClientSessionModel)) return false;
+        if (!(o instanceof AuthenticatedClientSessionModel that)) return false;
 
-        AuthenticatedClientSessionModel that = (AuthenticatedClientSessionModel) o;
-        return that.getId().equals(getId());
+        return Objects.equals(getId(), that.getId());
     }
 
     @Override
     public int hashCode() {
-        return getId().hashCode();
+        return Objects.hashCode(getId());
     }
 
     @Override
     public String toString() {
-        return getId();
+        return "PersistentAuthenticatedClientSessionAdapter{" +
+                "userSessionId=" + model.getUserSessionId() +
+                "clientId=" + model.getClientId() +
+                "}";
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

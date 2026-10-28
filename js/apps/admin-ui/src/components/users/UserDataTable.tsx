@@ -65,7 +65,7 @@ const UserDetailLink = (user: BruteUser) => {
         {user.username}
         <StatusRow user={user} />
       </Link>
-      {user.attributes?.["is_temporary_admin"][0] === "true" && (
+      {user.attributes?.["is_temporary_admin"]?.[0] === "true" && (
         <Tooltip content={t("temporaryAdmin")}>
           <WarningTriangleIcon
             className="pf-v5-u-ml-sm"
@@ -143,7 +143,7 @@ export function UserDataTable() {
           adminClient.users.getProfile(),
         ]);
       } catch (error) {
-        if (error instanceof NetworkError && error?.response?.status === 403) {
+        if (error instanceof NetworkError && error.response.status === 403) {
           // "User Profile" attributes not available for Users Attribute search, when admin user does not have view- or manage-realm realm-management role
           return [{}, {}] as [UiRealmInfo, UserProfileConfig];
         } else {
@@ -170,9 +170,7 @@ export function UserDataTable() {
       params.search = searchParam;
     }
 
-    if (activeFilters.exact) {
-      params.exact = true;
-    }
+    if (activeFilters.exact) params.exact = true;
 
     if (!listUsers && !(params.search || params.q)) {
       return [];
@@ -230,9 +228,9 @@ export function UserDataTable() {
     },
   });
 
-  const goToCreate = () => navigate(toAddUser({ realm: realmName }));
+  const goToCreate = () => void navigate(toAddUser({ realm: realmName }));
 
-  if (!uiRealmInfo || !realm) {
+  if (uiRealmInfo.userProfileProvidersEnabled === undefined) {
     return <KeycloakSpinner />;
   }
 
@@ -384,20 +382,16 @@ export function UserDataTable() {
         }
         toolbarItem={toolbar()}
         subToolbar={subtoolbar()}
-        actionResolver={(rowData: IRowData) => {
-          const user: UserRepresentation = rowData.data;
-          if (!user.access?.manage) return [];
-
-          return [
-            {
-              title: t("delete"),
-              onClick: () => {
-                setSelectedRows([user]);
-                toggleDeleteDialog();
-              },
+        actionResolver={(rowData: IRowData) => [
+          {
+            title: t("delete"),
+            onClick: () => {
+              setSelectedRows([rowData.data]);
+              toggleDeleteDialog();
             },
-          ];
-        }}
+          },
+        ]}
+        isRowDisabled={(user: UserRepresentation) => !user.access?.manage}
         columns={[
           {
             name: "username",

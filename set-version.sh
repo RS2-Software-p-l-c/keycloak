@@ -1,4 +1,5 @@
-#!/bin/bash -e
+#!/usr/bin/env bash
+set -e
 
 NEW_VERSION=$1
 
@@ -26,7 +27,6 @@ sed -i 's/:project_versionDoc: .*/:project_versionDoc: '$NEW_VERSION'/' topics/t
 cd -
 
 # NPM publish
-echo "$(jq '. += {"version": "'$NEW_NPM_VERSION'"}' js/libs/keycloak-js/package.json)" > js/libs/keycloak-js/package.json
 echo "$(jq '. += {"version": "'$NEW_NPM_VERSION'"}' js/libs/keycloak-admin-client/package.json)" > js/libs/keycloak-admin-client/package.json
 echo "$(jq '. += {"version": "'$NEW_NPM_VERSION'"}' js/libs/ui-shared/package.json)" > js/libs/ui-shared/package.json
 echo "$(jq '. += {"version": "'$NEW_NPM_VERSION'"}' js/apps/account-ui/package.json)" > js/apps/account-ui/package.json

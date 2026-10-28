@@ -1,19 +1,23 @@
 package org.keycloak.testframework;
 
+import java.util.logging.Filter;
+import java.util.logging.Handler;
+
+import org.keycloak.testframework.config.Config;
+import org.keycloak.testframework.github.GitHubActionReport;
+
 import io.quarkus.runtime.logging.LoggingSetupRecorder;
+import io.smallrye.config.SmallRyeConfigProviderResolver;
 import org.eclipse.microprofile.config.spi.ConfigProviderResolver;
 import org.jboss.logging.Logger;
 import org.jboss.logmanager.LogManager;
 import org.junit.jupiter.api.extension.ExtensionContext;
-import org.keycloak.testframework.config.Config;
 
-import java.util.logging.Filter;
-import java.util.logging.Handler;
-
-public class LogHandler {
+public class LogHandler implements AutoCloseable {
 
     private static final Logger LOGGER = Logger.getLogger("testinfo");
     private final boolean logFilterEnabled;
+    private final GitHubActionReport gitHubActionReport = new GitHubActionReport();
 
     public LogHandler() {
         logFilterEnabled = Config.get("kc.test.log.filter", false, Boolean.class);
@@ -26,13 +30,21 @@ public class LogHandler {
     }
 
     private static void initializeQuarkusLogging() {
-        ConfigProviderResolver.instance().registerConfig(Config.getConfig(), Thread.currentThread().getContextClassLoader());
+        // We do not care about Config that was created by Quarkus' TestConfigProviderResolver.
+        // Alternatively, a Customizer could be used so we could keep the Config created by Quarkus but this is not Quarkus tests,
+        // relying on Quarkus' Config is not necessary and might be fragile.
+        SmallRyeConfigProviderResolver configProviderResolver = (SmallRyeConfigProviderResolver) ConfigProviderResolver.instance();
+        ClassLoader cl = Thread.currentThread().getContextClassLoader();
+
+        configProviderResolver.releaseConfig(cl);
+        ConfigProviderResolver.instance().registerConfig(Config.getConfig(), cl);
         LoggingSetupRecorder.handleFailedStart();
     }
 
     public void beforeAll(ExtensionContext context) {
         logDivider(Logger.Level.INFO);
         logTestClassStatus(context, Status.RUNNING, Logger.Level.INFO);
+        gitHubActionReport.onClassStart();
     }
 
     public void beforeEachStarting(ExtensionContext context) {
@@ -42,10 +54,17 @@ public class LogHandler {
     public void beforeEachCompleted(ExtensionContext context) {
         logTestMethodStatus(context, Status.RUNNING, Logger.Level.DEBUG);
         initLogFilter();
+        gitHubActionReport.onMethodStart();
     }
 
     public void afterAll(ExtensionContext context) {
-        logTestClassStatus(context, Status.FINISHED, Logger.Level.DEBUG);
+        Status status = context.getExecutionException().isPresent() ? Status.FAILED : Status.SUCCESS;
+        if (status == Status.FAILED) {
+            gitHubActionReport.onClassError(context);
+        } else {
+            gitHubActionReport.onClassSuccess(context);
+        }
+        logTestClassStatus(context, status, Logger.Level.DEBUG);
     }
 
     public void afterEachStarting(ExtensionContext context) {
@@ -56,11 +75,13 @@ public class LogHandler {
     }
 
     public void testSuccessful(ExtensionContext context) {
+        gitHubActionReport.onMethodSuccess(context);
         clearLogFilter(false);
         logTestMethodStatus(context, Status.SUCCESS, Logger.Level.DEBUG);
     }
 
     public void testFailed(ExtensionContext context) {
+        gitHubActionReport.onMethodFailed(context);
         clearLogFilter(true);
         logTestMethodStatus(context, Status.FAILED, Logger.Level.ERROR);
     }
@@ -73,6 +94,10 @@ public class LogHandler {
     public void testDisabled(ExtensionContext context) {
         clearLogFilter(false);
         logTestMethodStatus(context, Status.DISABLED, Logger.Level.DEBUG);
+    }
+
+    public void close() {
+        gitHubActionReport.printSummary();
     }
 
     private void logDivider(Logger.Level level) {

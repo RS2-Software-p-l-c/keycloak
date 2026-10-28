@@ -16,31 +16,35 @@
  */
 package org.keycloak.authentication.actiontoken.idpverifyemail;
 
-import org.keycloak.authentication.actiontoken.AbstractActionTokenHandler;
+import java.util.Map;
+
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriBuilder;
+import jakarta.ws.rs.core.UriInfo;
+
 import org.keycloak.TokenVerifier.Predicate;
 import org.keycloak.authentication.AuthenticationProcessor;
-import org.keycloak.authentication.actiontoken.*;
+import org.keycloak.authentication.actiontoken.AbstractActionTokenHandler;
+import org.keycloak.authentication.actiontoken.ActionTokenContext;
+import org.keycloak.authentication.actiontoken.TokenUtils;
 import org.keycloak.authentication.authenticators.broker.IdpEmailVerificationAuthenticator;
-import org.keycloak.events.*;
+import org.keycloak.events.Details;
+import org.keycloak.events.Errors;
+import org.keycloak.events.EventBuilder;
+import org.keycloak.events.EventType;
 import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.Constants;
+import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.SingleUseObjectProvider;
 import org.keycloak.models.UserModel;
-import org.keycloak.models.UserModel.RequiredAction;
 import org.keycloak.services.Urls;
 import org.keycloak.services.managers.AuthenticationSessionManager;
 import org.keycloak.services.messages.Messages;
 import org.keycloak.sessions.AuthenticationSessionCompoundId;
 import org.keycloak.sessions.AuthenticationSessionModel;
-
-import java.util.Collections;
-import java.util.stream.Stream;
-
-import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.UriBuilder;
-import jakarta.ws.rs.core.UriInfo;
 
 /**
  * Action token handler for verification of e-mail address.
@@ -81,7 +85,7 @@ public class IdpVerifyAccountLinkActionTokenHandler extends AbstractActionTokenH
         AuthenticationSessionModel authSession = tokenContext.getAuthenticationSession();
 
         if (authSession.getAuthNote(IdpEmailVerificationAuthenticator.VERIFY_ACCOUNT_IDP_USERNAME) != null) {
-            return sendEmailAlreadyVerified(session, event, user);
+            return sendLinkConfirmedAlready(session, event, user, token);
         }
 
         AuthenticationSessionManager asm = new AuthenticationSessionManager(session);
@@ -92,7 +96,7 @@ public class IdpVerifyAccountLinkActionTokenHandler extends AbstractActionTokenH
             AuthenticationSessionModel origAuthSession = asm.getAuthenticationSessionByIdAndClient(realm,
                     compoundId.getRootSessionId(), originalClient, compoundId.getTabId());
             if (origAuthSession == null || origAuthSession.getAuthNote(IdpEmailVerificationAuthenticator.VERIFY_ACCOUNT_IDP_USERNAME) != null) {
-                return sendEmailAlreadyVerified(session, event, user);
+                return sendLinkConfirmedAlready(session, event, user, token);
             }
 
             token.setOriginalCompoundAuthenticationSessionId(token.getCompoundAuthenticationSessionId());
@@ -103,15 +107,14 @@ public class IdpVerifyAccountLinkActionTokenHandler extends AbstractActionTokenH
                     authSession.getClient().getClientId(), authSession.getTabId(), AuthenticationProcessor.getClientData(session, authSession));
             String confirmUri = builder.build(realm.getName()).toString();
 
-            return session.getProvider(LoginFormsProvider.class)
-                    .setAuthenticationSession(authSession)
-                    .setSuccess(Messages.CONFIRM_ACCOUNT_LINKING, token.getIdentityProviderUsername(), token.getIdentityProviderAlias())
+            LoginFormsProvider forms = session.getProvider(LoginFormsProvider.class);
+            return forms.setAuthenticationSession(authSession)
+                    .setAttribute("messageHeader", forms.getMessage(Messages.CONFIRM_ACCOUNT_LINKING, token.getIdentityProviderUsername(), token.getIdentityProviderAlias()))
+                    .setSuccess(Messages.CONFIRM_ACCOUNT_LINKING_BODY, token.getIdentityProviderUsername(), token.getIdentityProviderAlias())
                     .setAttribute(Constants.TEMPLATE_ATTR_ACTION_URI, confirmUri)
                     .createInfoPage();
         }
 
-        // verify user email as we know it is valid as this entry point would never have gotten here.
-        user.setEmailVerified(true);
         event.success();
 
         if (token.getOriginalCompoundAuthenticationSessionId() != null) {
@@ -123,16 +126,13 @@ public class IdpVerifyAccountLinkActionTokenHandler extends AbstractActionTokenH
 
             if (authSession != null) {
                 authSession.setAuthNote(IdpEmailVerificationAuthenticator.VERIFY_ACCOUNT_IDP_USERNAME, token.getIdentityProviderUsername());
-            } else {
-
-                session.authenticationSessions().updateNonlocalSessionAuthNotes(
-                        compoundId,
-                  Collections.singletonMap(IdpEmailVerificationAuthenticator.VERIFY_ACCOUNT_IDP_USERNAME, token.getIdentityProviderUsername())
-                );
             }
+
+            setUserVerifiedSingleObject(token, realm, session, user);
 
             return session.getProvider(LoginFormsProvider.class)
                     .setAuthenticationSession(authSession)
+                    .setAttribute("messageHeader", Messages.IDENTITY_PROVIDER_LINK_SUCCESS_HEADER)
                     .setSuccess(Messages.IDENTITY_PROVIDER_LINK_SUCCESS, token.getIdentityProviderAlias(), token.getIdentityProviderUsername())
                     .setAttribute(Constants.SKIP_LINK, true)
                     .createInfoPage();
@@ -143,11 +143,39 @@ public class IdpVerifyAccountLinkActionTokenHandler extends AbstractActionTokenH
         return tokenContext.brokerFlow(null, null, authSession.getAuthNote(AuthenticationProcessor.CURRENT_FLOW_PATH));
     }
 
-    private Response sendEmailAlreadyVerified(KeycloakSession session, EventBuilder event, UserModel user) {
-        event.user(user).error(Errors.EMAIL_ALREADY_VERIFIED);
+    private void setUserVerifiedSingleObject(IdpVerifyAccountLinkActionToken token, RealmModel realm, KeycloakSession session, UserModel user) {
+        int singleObjectLifespan = realm.getActionTokenGeneratedByUserLifespan();
+        String userId = user.getId();
+        String idpAlias = token.getIdentityProviderAlias();
+        session.singleUseObjects().put(getUserVerifiedSingleObjectKey(userId, idpAlias, token.getExternalId()), singleObjectLifespan, Map.of());
+    }
+
+    public static boolean runIfUserVerified(KeycloakSession session, UserModel user, IdentityProviderModel broker, String externalId, Runnable runnable) {
+        if (user == null) {
+            return false;
+        }
+
+        SingleUseObjectProvider singleObjects = session.singleUseObjects();
+        String singleObjectKey = getUserVerifiedSingleObjectKey(user.getId(), broker.getAlias(), externalId);
+        boolean isUserVerified = singleObjects.remove(singleObjectKey) != null;
+
+        if (isUserVerified) {
+            runnable.run();
+        }
+
+        return isUserVerified;
+    }
+
+    private static String getUserVerifiedSingleObjectKey(String userId, String idpAlias, String externalId) {
+        return "kc.brokering.user.verified." + userId  + "." + idpAlias + "." + externalId;
+    }
+
+    private Response sendLinkConfirmedAlready(KeycloakSession session, EventBuilder event, UserModel user, IdpVerifyAccountLinkActionToken token) {
+        event.user(user).error(Errors.IDENTITY_PROVIDER_LINK_CONFIRMED_ALREADY);
         return session.getProvider(LoginFormsProvider.class)
                 .setAuthenticationSession(session.getContext().getAuthenticationSession())
-                .setInfo(Messages.EMAIL_VERIFIED_ALREADY, user.getEmail())
+                .setAttribute("messageHeader", Messages.IDENTITY_PROVIDER_LINK_CONFIRMED_ALREADY_HEADER)
+                .setInfo(Messages.IDENTITY_PROVIDER_LINK_CONFIRMED_ALREADY, token.getIdentityProviderAlias(), token.getIdentityProviderUsername())
                 .createInfoPage();
     }
 }

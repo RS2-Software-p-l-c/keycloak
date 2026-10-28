@@ -25,13 +25,14 @@
     <parent>
         <artifactId>keycloak-parent</artifactId>
         <groupId>org.keycloak</groupId>
-        <version>26.1.4</version>
+        <version>26.8.0</version>
         <relativePath>../../../../pom.xml</relativePath>
     </parent>
 
     <artifactId>keycloak-saml-wildfly-modules</artifactId>
 
     <name>Keycloak SAML Wildfly Modules</name>
+    <description>Keycloak SAML Wildfly Modules</description>
     <packaging>pom</packaging>
     <dependencies>
         <dependency>

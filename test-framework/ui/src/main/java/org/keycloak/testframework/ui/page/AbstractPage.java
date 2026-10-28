@@ -1,15 +1,18 @@
 package org.keycloak.testframework.ui.page;
 
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.support.PageFactory;
+import org.keycloak.testframework.ui.webdriver.ManagedWebDriver;
 
-public class AbstractPage {
+public abstract class AbstractPage {
 
-    protected final WebDriver driver;
+    protected final ManagedWebDriver driver;
 
-    public AbstractPage(WebDriver driver) {
+    public AbstractPage(ManagedWebDriver driver) {
         this.driver = driver;
-        PageFactory.initElements(driver, this);
     }
 
+    public abstract String getExpectedPageId();
+
+    public void assertCurrent() {
+        driver.waiting().waitForPage(this);
+    }
 }

@@ -43,6 +43,10 @@ export {
   KeycloakTextArea,
   type KeycloakTextAreaProps,
 } from "./controls/keycloak-text-area/KeycloakTextArea";
+export {
+  FileUploadControl,
+  type FileUploadControlProps,
+} from "./controls/FileUploadControl";
 export { IconMapper } from "./icons/IconMapper";
 export { FormPanel } from "./scroll-form/FormPanel";
 export { ScrollForm, mainPageContentId } from "./scroll-form/ScrollForm";
@@ -54,6 +58,7 @@ export { UserProfileFields } from "./user-profile/UserProfileFields";
 export {
   beerify,
   debeerify,
+  isBundleKey,
   isUserProfileError,
   label,
   setUserProfileServerError,
@@ -80,6 +85,7 @@ export type {
   Field,
   DetailField,
   LoaderFunction,
+  SignaledLoader,
 } from "./controls/table/KeycloakDataTable";
 export { PaginatingTableToolbar } from "./controls/table/PaginatingTableToolbar";
 export { TableToolbar } from "./controls/table/TableToolbar";

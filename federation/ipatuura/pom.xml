@@ -20,14 +20,14 @@
     <parent>
         <artifactId>keycloak-parent</artifactId>
         <groupId>org.keycloak</groupId>
-        <version>26.1.4</version>
+        <version>26.8.0</version>
         <relativePath>../../pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
     <artifactId>keycloak-ipatuura-federation</artifactId>
     <name>Keycloak Ipatuura Federation</name>
-    <description />
+    <description>Keycloak Ipatuura Federation</description>
 
     <dependencies>
         <dependency>

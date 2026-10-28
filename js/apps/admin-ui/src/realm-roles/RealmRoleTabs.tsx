@@ -35,10 +35,8 @@ import {
   arrayToKeyValue,
   keyValueToArray,
 } from "../components/key-value-form/key-value-convert";
-import { KeycloakSpinner } from "@keycloak/keycloak-ui-shared";
 import { PermissionsTab } from "../components/permission-tab/PermissionTab";
 import { RoleForm } from "../components/role-form/RoleForm";
-import { AddRoleMappingModal } from "../components/role-mapping/AddRoleMappingModal";
 import { RoleMapping } from "../components/role-mapping/RoleMapping";
 import {
   RoutableTabs,
@@ -47,12 +45,12 @@ import {
 import { ViewHeader } from "../components/view-header/ViewHeader";
 import { useAccess } from "../context/access/Access";
 import { useRealm } from "../context/realm-context/RealmContext";
+import { AdminEvents } from "../events/AdminEvents";
 import useIsFeatureEnabled, { Feature } from "../utils/useIsFeatureEnabled";
 import { useParams } from "../utils/useParams";
 import { UsersInRoleTab } from "./UsersInRoleTab";
 import { RealmRoleRoute, RealmRoleTab, toRealmRole } from "./routes/RealmRole";
 import { toRealmRoles } from "./routes/RealmRoles";
-import { AdminEvents } from "../events/AdminEvents";
 
 export default function RealmRoleTabs() {
   const { adminClient } = useAdminClient();
@@ -82,7 +80,6 @@ export default function RealmRoleTabs() {
 
   const [canManageClientRole, setCanManageClientRole] = useState(false);
 
-  const [open, setOpen] = useState(false);
   const convert = (role: RoleRepresentation) => {
     const { attributes, ...rest } = role;
     return {
@@ -190,15 +187,12 @@ export default function RealmRoleTabs() {
     throw new Error("Route could not be determined.");
   };
 
-  const useTab = (tab: RealmRoleTab | ClientRoleTab) =>
-    useRoutableTab(toTab(tab));
-
-  const detailsTab = useTab("details");
-  const associatedRolesTab = useTab("associated-roles");
-  const attributesTab = useTab("attributes");
-  const usersInRoleTab = useTab("users-in-role");
-  const permissionsTab = useTab("permissions");
-  const eventsTab = useTab("events");
+  const detailsTab = useRoutableTab(toTab("details"));
+  const associatedRolesTab = useRoutableTab(toTab("associated-roles"));
+  const attributesTab = useRoutableTab(toTab("attributes"));
+  const usersInRoleTab = useRoutableTab(toTab("users-in-role"));
+  const permissionsTab = useRoutableTab(toTab("permissions"));
+  const eventsTab = useRoutableTab(toTab("events"));
 
   const [toggleDeleteDialog, DeleteConfirm] = useConfirmDialog({
     titleKey: "roleDeleteConfirm",
@@ -218,7 +212,7 @@ export default function RealmRoleTabs() {
           });
         }
         addAlert(t("roleDeletedSuccess"), AlertVariant.success);
-        navigate(toOverview());
+        void navigate(toOverview());
       } catch (error) {
         addError("roleDeleteError", error);
       }
@@ -232,7 +226,7 @@ export default function RealmRoleTabs() {
         composites,
       );
       refresh();
-      navigate(toTab("associated-roles"));
+      void navigate(toTab("associated-roles"));
       addAlert(t("addAssociatedRolesSuccess"), AlertVariant.success);
     } catch (error) {
       addError("addAssociatedRolesError", error);
@@ -240,24 +234,11 @@ export default function RealmRoleTabs() {
   };
 
   const isDefaultRole = (name: string | undefined) =>
-    realm?.defaultRole && realm.defaultRole!.name === name;
-
-  if (!realm) {
-    return <KeycloakSpinner />;
-  }
+    realm.defaultRole && realm.defaultRole!.name === name;
 
   return (
     <>
       <DeleteConfirm />
-      {open && (
-        <AddRoleMappingModal
-          id={id}
-          type="roles"
-          name={roleName}
-          onAssign={(rows) => addComposites(rows.map((r) => r.role))}
-          onClose={() => setOpen(false)}
-        />
-      )}
       <ViewHeader
         titleKey={roleName!}
         badges={[
@@ -332,6 +313,7 @@ export default function RealmRoleTabs() {
             )}
             {!isDefaultRole(roleName) && (
               <Tab
+                data-testid="usersInRoleTab"
                 title={<TabTitleText>{t("usersInRole")}</TabTitleText>}
                 {...usersInRoleTab}
               >

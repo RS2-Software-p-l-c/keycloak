@@ -1,14 +1,19 @@
 package org.keycloak.testframework.injection;
 
 import java.lang.annotation.Annotation;
-import java.util.Collections;
-import java.util.Set;
+import java.util.List;
 
 public interface Supplier<T, S extends Annotation> {
 
-    Class<S> getAnnotationClass();
+    default Class<S> getAnnotationClass() {
+        //noinspection unchecked
+        return (Class<S>) ReflectionUtils.getAnnotationType(this);
+    }
 
-    Class<T> getValueType();
+    default Class<T> getValueType() {
+        //noinspection unchecked
+        return (Class<T>) ReflectionUtils.getValueType(this);
+    }
 
     T getValue(InstanceContext<T, S> instanceContext);
 
@@ -40,8 +45,8 @@ public interface Supplier<T, S extends Annotation> {
         return SupplierOrder.DEFAULT;
     }
 
-    default Set<Class<?>> dependencies() {
-        return Collections.emptySet();
+    default List<Dependency> getDependencies(RequestedInstance<T, S> instanceContext) {
+        return List.of();
     }
 
 }

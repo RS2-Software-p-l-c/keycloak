@@ -16,10 +16,16 @@
  */
 package org.keycloak.authentication.actiontoken.resetcred;
 
+import jakarta.ws.rs.core.Response;
+
 import org.keycloak.TokenVerifier;
 import org.keycloak.TokenVerifier.Predicate;
 import org.keycloak.authentication.AuthenticationProcessor;
-import org.keycloak.authentication.actiontoken.*;
+import org.keycloak.authentication.actiontoken.AbstractActionTokenHandler;
+import org.keycloak.authentication.actiontoken.ActionTokenContext;
+import org.keycloak.authentication.actiontoken.DefaultActionToken;
+import org.keycloak.authentication.actiontoken.ExplainedTokenVerificationException;
+import org.keycloak.authentication.actiontoken.TokenUtils;
 import org.keycloak.authentication.authenticators.broker.AbstractIdpAuthenticator;
 import org.keycloak.authentication.authenticators.broker.util.SerializedBrokeredIdentityContext;
 import org.keycloak.events.Errors;
@@ -30,7 +36,6 @@ import org.keycloak.services.resources.LoginActionsService;
 import org.keycloak.services.resources.LoginActionsServiceChecks.IsActionRequired;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.sessions.CommonClientSessionModel.Action;
-import jakarta.ws.rs.core.Response;
 
 import static org.keycloak.services.resources.LoginActionsService.RESET_CREDENTIALS_PATH;
 import static org.keycloak.services.resources.admin.UserResource.LATEST_RESET_PASSWORD_TOKEN;

@@ -17,9 +17,9 @@
 
 package org.keycloak.testsuite.webauthn.authenticators;
 
-import org.openqa.selenium.virtualauthenticator.VirtualAuthenticatorOptions;
-
 import java.util.function.Supplier;
+
+import org.openqa.selenium.virtualauthenticator.VirtualAuthenticatorOptions;
 
 import static org.openqa.selenium.virtualauthenticator.VirtualAuthenticatorOptions.Protocol.U2F;
 import static org.openqa.selenium.virtualauthenticator.VirtualAuthenticatorOptions.Transport.BLE;
@@ -44,6 +44,7 @@ public enum DefaultVirtualAuthOptions {
             .setHasUserVerification(true)
             .setIsUserVerified(true)
             .setIsUserConsenting(true)),
+    PASSKEYS(() -> DEFAULT_RESIDENT_KEY.getOptions().setTransport(INTERNAL)),
 
     YUBIKEY_4(DefaultVirtualAuthOptions::getYubiKeyGeneralOptions),
     YUBIKEY_5_USB(DefaultVirtualAuthOptions::getYubiKeyGeneralOptions),

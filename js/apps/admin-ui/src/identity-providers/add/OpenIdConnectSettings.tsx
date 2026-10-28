@@ -7,7 +7,13 @@ import { JsonFileUpload } from "../../components/json-file-upload/JsonFileUpload
 import { DiscoveryEndpointField } from "../component/DiscoveryEndpointField";
 import { DiscoverySettings } from "./DiscoverySettings";
 
-export const OpenIdConnectSettings = () => {
+type OpenIdConnectSettingsProps = {
+  isOIDC: boolean;
+};
+
+export const OpenIdConnectSettings = ({
+  isOIDC,
+}: OpenIdConnectSettingsProps) => {
   const { adminClient } = useAdminClient();
 
   const { t } = useTranslation();
@@ -21,7 +27,9 @@ export const OpenIdConnectSettings = () => {
   } = useFormContext();
 
   const setupForm = (result: any) => {
-    Object.keys(result).map((k) => setValue(`config.${k}`, result[k]));
+    Object.keys(result).map((k) =>
+      setValue(`config.${k}`, result[k], { shouldDirty: true }),
+    );
   };
 
   const fileUpload = async (obj?: object) => {
@@ -49,7 +57,7 @@ export const OpenIdConnectSettings = () => {
   return (
     <>
       <Title headingLevel="h2" size="xl" className="kc-form-panel__title">
-        {t("oidcSettings")}
+        {isOIDC ? t("oidcSettings") : t("oAuthSettings")}
       </Title>
 
       <DiscoveryEndpointField
@@ -81,7 +89,9 @@ export const OpenIdConnectSettings = () => {
           </FormGroup>
         }
       >
-        {(readonly) => <DiscoverySettings readOnly={readonly} />}
+        {(readonly) => (
+          <DiscoverySettings readOnly={readonly} isOIDC={isOIDC} />
+        )}
       </DiscoveryEndpointField>
     </>
   );

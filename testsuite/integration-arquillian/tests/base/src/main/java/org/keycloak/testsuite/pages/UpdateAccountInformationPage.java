@@ -96,8 +96,8 @@ public class UpdateAccountInformationPage extends LanguageComboboxAwarePage {
     }
 
     @Override
-    public boolean isCurrent() {
-        return PageUtils.getPageTitle(driver).equalsIgnoreCase("update account information");
+    public String getExpectedPageId() {
+        return "login-idp-review-user-profile";
     }
 
     public String getLabelForField(String fieldId) {
@@ -112,8 +112,4 @@ public class UpdateAccountInformationPage extends LanguageComboboxAwarePage {
         }
     }
 
-    @Override
-    public void open() throws Exception {
-
-    }
 }

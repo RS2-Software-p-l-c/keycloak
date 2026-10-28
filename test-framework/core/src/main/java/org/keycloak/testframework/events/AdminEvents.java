@@ -1,32 +1,50 @@
 package org.keycloak.testframework.events;
 
-import org.keycloak.events.admin.AdminEvent;
+import java.util.List;
 
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
+import org.keycloak.representations.idm.AdminEventRepresentation;
+import org.keycloak.testframework.realm.ManagedRealm;
 
-public class AdminEvents implements SysLogListener{
+import org.jboss.logging.Logger;
 
-    private final BlockingQueue<AdminEvent> adminEvents = new LinkedBlockingQueue<>();
+/**
+ * Poll admin events from the Keycloak server
+ */
+public class AdminEvents extends AbstractEvents<AdminEventRepresentation> {
 
-    public AdminEvent poll() {
-        try {
-            return adminEvents.poll(30, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            return null;
-        }
-    }
+    private static final Logger LOGGER = Logger.getLogger(AdminEvents.class);
 
-    public void clear() {
-        adminEvents.clear();
+    public AdminEvents(ManagedRealm realm) {
+        super(realm);
     }
 
     @Override
-    public void onLog(SysLog sysLog) {
-        AdminEvent adminEvent = AdminEventsParser.parse(sysLog);
-        if (adminEvent != null) {
-            adminEvents.add(adminEvent);
-        }
+    protected List<AdminEventRepresentation> getEvents(long from, long to) {
+        return realm.admin().getAdminEvents(null, null, null, null, null, null, null, from, to, null, null, "asc");
+    }
+
+    @Override
+    protected String getEventId(AdminEventRepresentation rep) {
+        return rep.getId();
+    }
+
+    @Override
+    protected String getRealmId(AdminEventRepresentation rep) {
+        return rep.getRealmId();
+    }
+
+    @Override
+    protected long getTime(AdminEventRepresentation rep) {
+        return rep.getTime();
+    }
+
+    @Override
+    protected void clearServerEvents() {
+        realm.admin().clearAdminEvents();
+    }
+
+    @Override
+    protected Logger getLogger() {
+        return LOGGER;
     }
 }

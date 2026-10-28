@@ -8,12 +8,13 @@ import { ExternalLinkSquareAltIcon } from "@patternfly/react-icons";
 import { useTranslation } from "react-i18next";
 import { useHref } from "react-router-dom";
 
-import { environment } from "../environment";
+import { AccountEnvironment } from "..";
 import { joinPath } from "../utils/joinPath";
 
 import style from "./header.module.css";
 
 const ReferrerLink = () => {
+  const { environment } = useEnvironment<AccountEnvironment>();
   const { t } = useTranslation();
 
   return environment.referrerUrl ? (
@@ -51,9 +52,7 @@ export const Header = () => {
       features={{ hasManageAccount: false }}
       brand={{
         href: indexHref,
-        src: brandImage.startsWith("/")
-          ? joinPath(environment.resourceUrl, brandImage)
-          : brandImage,
+        src: joinPath(environment.resourceUrl, brandImage),
         alt: t("logo"),
         className: style.brand,
       }}

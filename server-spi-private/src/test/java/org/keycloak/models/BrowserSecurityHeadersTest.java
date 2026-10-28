@@ -1,8 +1,10 @@
 package org.keycloak.models;
 
+import java.util.Arrays;
+import java.util.List;
+
 import org.junit.Test;
 
-import static org.junit.Assert.assertEquals;
 import static org.keycloak.models.BrowserSecurityHeaders.CONTENT_SECURITY_POLICY;
 import static org.keycloak.models.BrowserSecurityHeaders.CONTENT_SECURITY_POLICY_REPORT_ONLY;
 import static org.keycloak.models.BrowserSecurityHeaders.REFERRER_POLICY;
@@ -10,11 +12,9 @@ import static org.keycloak.models.BrowserSecurityHeaders.STRICT_TRANSPORT_SECURI
 import static org.keycloak.models.BrowserSecurityHeaders.X_CONTENT_TYPE_OPTIONS;
 import static org.keycloak.models.BrowserSecurityHeaders.X_FRAME_OPTIONS;
 import static org.keycloak.models.BrowserSecurityHeaders.X_ROBOTS_TAG;
-import static org.keycloak.models.BrowserSecurityHeaders.X_XSS_PROTECTION;
 import static org.keycloak.models.BrowserSecurityHeaders.realmDefaultHeaders;
 
-import java.util.Arrays;
-import java.util.List;
+import static org.junit.Assert.assertEquals;
 
 public class BrowserSecurityHeadersTest {
 
@@ -52,7 +52,6 @@ public class BrowserSecurityHeadersTest {
                 CONTENT_SECURITY_POLICY_REPORT_ONLY,
                 X_CONTENT_TYPE_OPTIONS,
                 X_ROBOTS_TAG,
-                X_XSS_PROTECTION,
                 STRICT_TRANSPORT_SECURITY,
                 REFERRER_POLICY
         );

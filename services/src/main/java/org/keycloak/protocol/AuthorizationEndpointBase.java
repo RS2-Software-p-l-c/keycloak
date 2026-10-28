@@ -19,7 +19,7 @@ package org.keycloak.protocol;
 
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.Response;
-import org.jboss.logging.Logger;
+
 import org.keycloak.authentication.AuthenticationProcessor;
 import org.keycloak.common.ClientConnection;
 import org.keycloak.events.Details;
@@ -42,6 +42,8 @@ import org.keycloak.services.messages.Messages;
 import org.keycloak.services.resources.LoginActionsService;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.sessions.RootAuthenticationSessionModel;
+
+import org.jboss.logging.Logger;
 
 /**
  * Common base class for Authorization REST endpoints implementation, which have to be implemented by each protocol.
@@ -197,6 +199,9 @@ public abstract class AuthorizationEndpointBase {
                         rootAuthSession = session.authenticationSessions().createRootAuthenticationSession(realm, userSessionId);
                     }
                     authSession = rootAuthSession.createAuthenticationSession(client);
+                    // set auth session cookies because they can be missing if recovered from identity cookie
+                    manager.setAuthSessionCookie(rootAuthSession.getId());
+                    manager.setAuthSessionIdHashCookie(rootAuthSession.getId());
                     logger.debugf("Sent request to authz endpoint. We don't have root authentication session with ID '%s' but we have userSession." +
                             "Re-created root authentication session with same ID. Client is: %s . New authentication session tab ID: %s", userSessionId, client.getClientId(), authSession.getTabId());
                 }

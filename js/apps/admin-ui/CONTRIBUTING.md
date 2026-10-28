@@ -1,12 +1,12 @@
 # Keycloak Admin UI
 
-This project is the next generation of the Keycloak Administration UI. It is written with React and [PatternFly 4](https://www.patternfly.org/v4/) and uses [Vite](https://vitejs.dev/guide/) and [Cypress](https://docs.cypress.io/guides/overview/why-cypress).
+This project is the next generation of the Keycloak Administration UI. It is written with React and [PatternFly 4](https://www.patternfly.org/v4/) and uses [Vite](https://vitejs.dev/guide/) and [Playwright](hhttps://playwright.dev/).
 
 ## Development
 
 ### Prerequisites
 
-Make sure that you have Node.js version 18 (or later) installed on your system. If you do not have Node.js installed we recommend using [Node Version Manager](https://github.com/nvm-sh/nvm) to install it.
+Make sure that you have Node.js version 24 (or later) [installed on your system](https://nodejs.org/en/download).
 
 You can find out which version of Node.js you are using by running the following command:
 
@@ -34,6 +34,9 @@ Once the process of optimization is done your browser will automatically open yo
 
 You can now start making changes to the source code, and they will be reflected in your browser.
 
+In this mode the messages for translation will come directly from the messages.properties and the realm overrides will be ignored, this makes testing adding messages easier.
+But when you want to see the realm overrides instead, you can add the environment variable `VITE_REALM_OVERRIDES=true` to disable this behavior.
+
 ## Building as a Keycloak theme
 
 If you want to build the application using Maven and produce a JAR that can be installed directly into Keycloak, check out the [Keycloak theme documentation](../../keycloak-theme/README.md).
@@ -46,9 +49,9 @@ Every time you create a commit it should be automatically linted and formatted f
 pnpm lint
 ```
 
-## Integration testing with Cypress
+## Integration testing with Playwright
 
-This repository contains integration tests developed with the [Cypress framework](https://www.cypress.io/).
+This repository contains integration tests developed with the [Playwright framework](https://playwright.dev/).
 
 ### Prerequisites
 
@@ -56,21 +59,53 @@ Ensure the Keycloak and development server are running as [outlined previously](
 
 ### Running the tests
 
-You can run the tests using the interactive graphical user interface using the following command:
-
-```bash
-pnpm cy:open
-```
+You can run the tests using the interactive graphical user [Visual Studio Code plugin](https://marketplace.visualstudio.com/items?itemName=ms-playwright.playwright)
 
 Alternatively the tests can also run headless as follows:
 
 ```
-pnpm cy:run
+pnpm test:integration
 ```
 
-For more information about the Cypress command-line interface consult [the documentation](https://docs.cypress.io/guides/guides/command-line).
+#### Running specific tests
+You can execute specific individual tests as follows:
 
-### Project Structure
+```bash
+# f.e. pnpm test:integration -- test/clients/main.spec.ts
+pnpm test:integration -- <path-to-the-test-or-name>
+```
 
-You can find information about the project structure in the [official Cypress documentation](https://docs.cypress.io/guides/core-concepts/writing-and-organizing-tests#Folder-structure).
-Read more about [how to write tests](./cypress/WRITING_TESTS.md)
+You can specify the full path or just the test file name.
+
+### Running Playwright UI
+
+The Playwright UI provides an interactive environment for developing and debugging UI tests.
+Before proceeding, ensure the following prerequisites are met:
+
+- The Keycloak server is running on `http://localhost:8080`.
+- An admin user with login `admin` and password `admin` exists in the master realm.
+
+Execute the following steps from the repository root.
+
+1. Navigate to the Admin UI directory:
+
+   ```bash
+   cd apps/admin-ui
+   ```
+
+2. Install the Playwright browser binaries. This step is required once per local development environment:
+
+   ```bash
+   pnpm exec playwright install
+   ```
+
+3. Launch the Playwright interactive UI and run tests (Chromium):
+
+   ```bash
+   pnpm run test:integration -- --project=chromium --ui
+   ```
+
+After executing these steps, the Playwright Test Runner UI will open in a new window. You can select and run individual
+tests or test suites interactively. The test runner provides features such as viewing test results, debugging failed
+tests, and inspecting the browser state during test execution.
+

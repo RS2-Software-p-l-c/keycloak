@@ -17,10 +17,10 @@
 
 package org.keycloak.testsuite.webauthn.updaters;
 
+import java.util.List;
+
 import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.testsuite.updaters.RealmAttributeUpdater;
-
-import java.util.List;
 
 /**
  * @author <a href="mailto:mabartos@redhat.com">Martin Bartos</a>
@@ -43,13 +43,21 @@ public abstract class AbstractWebAuthnRealmUpdater<T extends AbstractWebAuthnRea
 
     public abstract T setWebAuthnPolicyAuthenticatorAttachment(String webAuthnPolicyAuthenticatorAttachment);
 
+    /**
+     * @deprecated Use {@link #setWebAuthnPolicyResidentKey(String)} instead.
+     */
+    @Deprecated
     public abstract T setWebAuthnPolicyRequireResidentKey(String webAuthnPolicyRequireResidentKey);
+
+    public abstract T setWebAuthnPolicyResidentKey(String webAuthnPolicyResidentKey);
 
     public abstract T setWebAuthnPolicyRpId(String webAuthnPolicyRpId);
 
     public abstract T setWebAuthnPolicyUserVerificationRequirement(String webAuthnPolicyUserVerificationRequirement);
 
     public abstract T setWebAuthnPolicyAcceptableAaguids(List<String> webAuthnPolicyAcceptableAaguids);
+
+    public abstract T setWebAuthnPolicyPasskeysEnabled(Boolean webAuthnPolicyPasskeysEnabled);
 
     @Override
     @SuppressWarnings("unchecked")

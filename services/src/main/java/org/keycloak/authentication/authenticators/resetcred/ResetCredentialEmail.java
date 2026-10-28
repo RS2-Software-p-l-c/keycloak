@@ -17,13 +17,26 @@
 
 package org.keycloak.authentication.authenticators.resetcred;
 
-import org.keycloak.models.DefaultActionTokenKey;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+
+import jakarta.ws.rs.core.UriBuilder;
+
 import org.keycloak.Config;
-import org.keycloak.authentication.*;
+import org.keycloak.authentication.AuthenticationFlowContext;
+import org.keycloak.authentication.AuthenticationFlowError;
+import org.keycloak.authentication.AuthenticationFlowException;
+import org.keycloak.authentication.Authenticator;
+import org.keycloak.authentication.AuthenticatorFactory;
 import org.keycloak.authentication.actiontoken.resetcred.ResetCredentialsActionToken;
 import org.keycloak.authentication.authenticators.browser.AbstractUsernameFormAuthenticator;
 import org.keycloak.common.util.Time;
-import org.keycloak.credential.*;
+import org.keycloak.credential.CredentialModel;
+import org.keycloak.credential.CredentialProvider;
+import org.keycloak.credential.PasswordCredentialProvider;
+import org.keycloak.credential.PasswordCredentialProviderFactory;
 import org.keycloak.email.EmailException;
 import org.keycloak.email.EmailTemplateProvider;
 import org.keycloak.events.Details;
@@ -32,6 +45,7 @@ import org.keycloak.events.EventBuilder;
 import org.keycloak.events.EventType;
 import org.keycloak.models.AuthenticationExecutionModel;
 import org.keycloak.models.AuthenticatorConfigModel;
+import org.keycloak.models.DefaultActionTokenKey;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.models.RealmModel;
@@ -47,10 +61,6 @@ import org.keycloak.sessions.AuthenticationSessionCompoundId;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.storage.StorageId;
 
-import java.util.*;
-import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.UriBuilder;
-import java.util.concurrent.TimeUnit;
 import org.jboss.logging.Logger;
 
 import static org.keycloak.services.resources.admin.UserResource.LATEST_RESET_PASSWORD_TOKEN;
@@ -128,14 +138,12 @@ public class ResetCredentialEmail implements Authenticator, AuthenticatorFactory
             context.forkWithSuccessMessage(new FormMessage(Messages.EMAIL_SENT));
         } catch (EmailException e) {
             event.clone().event(EventType.SEND_RESET_PASSWORD)
+                    .detail(Details.REASON, e.getMessage())
                     .detail(Details.USERNAME, username)
                     .user(user)
                     .error(Errors.EMAIL_SEND_FAILED);
             ServicesLogger.LOGGER.failedToSendPwdResetEmail(e);
-            Response challenge = context.form()
-                    .setError(Messages.EMAIL_SENT_ERROR)
-                    .createErrorPage(Response.Status.INTERNAL_SERVER_ERROR);
-            context.failure(AuthenticationFlowError.INTERNAL_ERROR, challenge);
+            context.forkWithSuccessMessage(new FormMessage(Messages.EMAIL_SENT));
         }
     }
 
@@ -149,8 +157,14 @@ public class ResetCredentialEmail implements Authenticator, AuthenticatorFactory
 
     @Override
     public void action(AuthenticationFlowContext context) {
-        context.getUser().setEmailVerified(true);
-        context.success();
+        UserModel user = context.getUser();
+        String actionTokenUserId = context.getAuthenticationSession().getAuthNote(DefaultActionTokenKey.ACTION_TOKEN_USER_ID);
+        if (user != null && user.getId().equals(actionTokenUserId)) {
+            context.success();
+        } else {
+            // not called via action token or any other weird situation
+            context.failure(AuthenticationFlowError.INVALID_USER);
+        }
     }
 
     @Override
@@ -265,22 +279,60 @@ public class ResetCredentialEmail implements Authenticator, AuthenticatorFactory
     }
 
     /**
-     * Checks if for this user an older resetPasswordToken exists.
-     * If yes, expire the old token and update with the latest reset password token.
+     * Checks if a previously issued reset password token exists for the user.
+     * If found and still active, invalidates it by adding it to the single-use object store
+     * for its remaining lifespan. Already-expired tokens are safely skipped.
      *
      * @param context The AuthenticationFlowContext.
-     * @param user    The user attempting to reset the password.
-     * @param token   The token used for this reset password flow.
+     * @param user    The user attempting to reset their password.
+     * @param token   The current token being evaluated/issued for the password reset flow.
      */
     private static void handleLatestResetPasswordToken(AuthenticationFlowContext context, UserModel user, ResetCredentialsActionToken token) {
         String resetPasswordTokenToInvalidate = user.getFirstAttribute(LATEST_RESET_PASSWORD_TOKEN);
         if (resetPasswordTokenToInvalidate != null && !resetPasswordTokenToInvalidate.equals(token.serializeKey())) {
             SingleUseObjectProvider singleUseObjectProvider = context.getSession().singleUseObjects();
             Long resetPasswordTokenToInvalidateExp = ResetCredentialsActionToken.from(resetPasswordTokenToInvalidate).getExp();
-            //  Mark the token as invalidated
-            singleUseObjectProvider.put(resetPasswordTokenToInvalidate, resetPasswordTokenToInvalidateExp - Time.currentTime(), null);
+
+            long remainingLifespan = remainingLifespanSeconds(resetPasswordTokenToInvalidateExp, Time.currentTime());
+
+            // Only put into single-use cache if the token has not already expired.
+            // SingleUseObjectProvider.put requires a positive lifespan and throws otherwise, so an
+            // already-expired token (remainingLifespan <= 0) must be skipped rather than invalidated.
+            if (shouldInvalidate(remainingLifespan)) {
+                singleUseObjectProvider.put(resetPasswordTokenToInvalidate, remainingLifespan, null);
+            }
         }
         // Update the user attribute to the latest reset password token
         user.setSingleAttribute(LATEST_RESET_PASSWORD_TOKEN, token.serializeKey());
+    }
+
+    /**
+     * The remaining lifespan, in seconds, of a reset-password token given its expiry.
+     *
+     * <p>Computed in {@code long} space to avoid integer overflow for far-future expiries. The result
+     * is negative or zero once the token has expired.
+     *
+     * @param expirySeconds the token's expiry as an epoch-second timestamp
+     * @param nowSeconds    the current time as an epoch-second timestamp (e.g. {@link Time#currentTime()})
+     * @return the seconds remaining until expiry (&le; 0 if already expired)
+     */
+    static long remainingLifespanSeconds(long expirySeconds, long nowSeconds) {
+        return expirySeconds - nowSeconds;
+    }
+
+    /**
+     * Whether a previously issued reset-password token should still be invalidated via the single-use
+     * object store.
+     *
+     * <p>Only tokens with a positive remaining lifespan may be stored: {@link SingleUseObjectProvider#put}
+     * mandates a positive lifespan and throws {@link IllegalArgumentException} otherwise. An
+     * already-expired token needs no invalidation — it is unusable — so this returns {@code false} for a
+     * non-positive lifespan.
+     *
+     * @param remainingLifespanSeconds the token's remaining lifespan (see {@link #remainingLifespanSeconds})
+     * @return {@code true} iff the token is still active and must be invalidated
+     */
+    static boolean shouldInvalidate(long remainingLifespanSeconds) {
+        return remainingLifespanSeconds > 0;
     }
 }

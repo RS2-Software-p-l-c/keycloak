@@ -16,98 +16,6 @@
  */
 package org.keycloak.services.resources;
 
-import org.jboss.logging.Logger;
-import org.jboss.resteasy.reactive.NoCache;
-import org.keycloak.authentication.authenticators.broker.IdpConfirmOverrideLinkAuthenticator;
-import org.keycloak.broker.provider.ExchangeTokenToIdentityProviderToken;
-import org.keycloak.http.HttpRequest;
-import org.keycloak.OAuthErrorException;
-import org.keycloak.authentication.AuthenticationProcessor;
-import org.keycloak.authentication.authenticators.broker.AbstractIdpAuthenticator;
-import org.keycloak.authentication.authenticators.broker.util.PostBrokerLoginConstants;
-import org.keycloak.authentication.authenticators.broker.util.SerializedBrokeredIdentityContext;
-import org.keycloak.authentication.authenticators.browser.AbstractUsernameFormAuthenticator;
-import org.keycloak.broker.provider.AuthenticationRequest;
-import org.keycloak.broker.provider.BrokeredIdentityContext;
-import org.keycloak.broker.provider.IdentityBrokerException;
-import org.keycloak.broker.provider.IdentityProvider;
-import org.keycloak.broker.provider.IdentityProviderFactory;
-import org.keycloak.broker.provider.IdentityProviderMapper;
-import org.keycloak.broker.provider.IdentityProviderMapperSyncModeDelegate;
-import org.keycloak.broker.provider.util.IdentityBrokerState;
-import org.keycloak.broker.saml.SAMLEndpoint;
-import org.keycloak.broker.social.SocialIdentityProvider;
-import org.keycloak.common.ClientConnection;
-import org.keycloak.common.util.Base64Url;
-import org.keycloak.common.util.ObjectUtil;
-import org.keycloak.common.util.Time;
-import org.keycloak.dom.saml.v2.protocol.StatusResponseType;
-import org.keycloak.events.Details;
-import org.keycloak.events.Errors;
-import org.keycloak.events.EventBuilder;
-import org.keycloak.events.EventType;
-import org.keycloak.locale.LocaleSelectorProvider;
-import org.keycloak.models.AccountRoles;
-import org.keycloak.models.AuthenticatedClientSessionModel;
-import org.keycloak.models.AuthenticationFlowModel;
-import org.keycloak.models.ClientModel;
-import org.keycloak.models.ClientSessionContext;
-import org.keycloak.models.Constants;
-import org.keycloak.models.FederatedIdentityModel;
-import org.keycloak.models.IdentityProviderModel;
-import org.keycloak.models.IdentityProviderSyncMode;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.KeycloakSessionFactory;
-import org.keycloak.models.RealmModel;
-import org.keycloak.models.RoleModel;
-import org.keycloak.models.UserModel;
-import org.keycloak.models.UserSessionModel;
-import org.keycloak.models.light.LightweightUserAdapter;
-import org.keycloak.models.utils.AuthenticationFlowResolver;
-import org.keycloak.models.utils.FormMessage;
-import org.keycloak.models.utils.KeycloakModelUtils;
-import org.keycloak.protocol.LoginProtocol;
-import org.keycloak.protocol.oidc.OIDCLoginProtocol;
-import org.keycloak.protocol.oidc.TokenManager;
-import org.keycloak.protocol.oidc.utils.RedirectUtils;
-import org.keycloak.protocol.saml.SamlSessionUtils;
-import org.keycloak.protocol.saml.preprocessor.SamlAuthenticationPreprocessor;
-import org.keycloak.representations.AccessToken;
-import org.keycloak.representations.AccessTokenResponse;
-import org.keycloak.services.ErrorPage;
-import org.keycloak.services.ErrorPageException;
-import org.keycloak.services.ErrorResponse;
-import org.keycloak.services.ServicesLogger;
-import org.keycloak.services.Urls;
-import org.keycloak.services.managers.AppAuthManager;
-import org.keycloak.services.managers.AuthenticationManager;
-import org.keycloak.services.managers.AuthenticationSessionManager;
-import org.keycloak.services.managers.BruteForceProtector;
-import org.keycloak.services.managers.ClientSessionCode;
-import org.keycloak.services.messages.Messages;
-import org.keycloak.services.cors.Cors;
-import org.keycloak.services.resources.account.AccountConsole;
-import org.keycloak.services.util.AuthenticationFlowURLHelper;
-import org.keycloak.services.util.BrowserHistoryHelper;
-import org.keycloak.services.util.CacheControlUtil;
-import org.keycloak.services.util.DefaultClientSessionContext;
-import org.keycloak.services.validation.Validation;
-import org.keycloak.sessions.AuthenticationSessionModel;
-import org.keycloak.sessions.RootAuthenticationSessionModel;
-import org.keycloak.util.JsonSerialization;
-
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.NotFoundException;
-import jakarta.ws.rs.OPTIONS;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.QueryParam;
-import jakarta.ws.rs.WebApplicationException;
-import jakarta.ws.rs.core.HttpHeaders;
-import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.Response.Status;
-import jakarta.ws.rs.core.UriBuilder;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -123,15 +31,122 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-/**
- * <p></p>
- *
- * @author Pedro Igor
- */
-public class IdentityBrokerService implements IdentityProvider.AuthenticationCallback {
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.OPTIONS;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response.Status;
+import jakarta.ws.rs.core.UriBuilder;
+
+import org.keycloak.OAuth2Constants;
+import org.keycloak.OAuthErrorException;
+import org.keycloak.authentication.AuthenticationProcessor;
+import org.keycloak.authentication.RequiredActionContext;
+import org.keycloak.authentication.authenticators.broker.AbstractIdpAuthenticator;
+import org.keycloak.authentication.authenticators.broker.IdpConfirmOverrideLinkAuthenticator;
+import org.keycloak.authentication.authenticators.broker.util.PostBrokerLoginConstants;
+import org.keycloak.authentication.authenticators.broker.util.SerializedBrokeredIdentityContext;
+import org.keycloak.authentication.authenticators.browser.AbstractUsernameFormAuthenticator;
+import org.keycloak.broker.provider.AuthenticationRequest;
+import org.keycloak.broker.provider.BrokeredIdentityContext;
+import org.keycloak.broker.provider.ExchangeTokenToIdentityProviderToken;
+import org.keycloak.broker.provider.IdentityBrokerException;
+import org.keycloak.broker.provider.IdentityProvider;
+import org.keycloak.broker.provider.IdentityProviderFactory;
+import org.keycloak.broker.provider.IdentityProviderMapper;
+import org.keycloak.broker.provider.IdentityProviderMapperSyncModeDelegate;
+import org.keycloak.broker.provider.IdpLinkAction;
+import org.keycloak.broker.provider.UserAuthenticationIdentityProvider;
+import org.keycloak.broker.provider.util.IdentityBrokerState;
+import org.keycloak.broker.saml.SAMLEndpoint;
+import org.keycloak.broker.social.SocialIdentityProvider;
+import org.keycloak.common.ClientConnection;
+import org.keycloak.common.Profile;
+import org.keycloak.common.util.Base64Url;
+import org.keycloak.common.util.ObjectUtil;
+import org.keycloak.common.util.Time;
+import org.keycloak.dom.saml.v2.protocol.StatusResponseType;
+import org.keycloak.events.Details;
+import org.keycloak.events.Errors;
+import org.keycloak.events.EventBuilder;
+import org.keycloak.events.EventType;
+import org.keycloak.http.HttpRequest;
+import org.keycloak.locale.LocaleSelectorProvider;
+import org.keycloak.models.AccountRoles;
+import org.keycloak.models.AuthenticatedClientSessionModel;
+import org.keycloak.models.AuthenticationFlowModel;
+import org.keycloak.models.ClientModel;
+import org.keycloak.models.ClientSessionContext;
+import org.keycloak.models.Constants;
+import org.keycloak.models.FederatedIdentityModel;
+import org.keycloak.models.IdentityProviderModel;
+import org.keycloak.models.IdentityProviderSyncMode;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.KeycloakSessionFactory;
+import org.keycloak.models.ModelDuplicateException;
+import org.keycloak.models.OrganizationModel;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.RoleModel;
+import org.keycloak.models.UserModel;
+import org.keycloak.models.UserSessionModel;
+import org.keycloak.models.light.LightweightUserAdapter;
+import org.keycloak.models.utils.AuthenticationFlowResolver;
+import org.keycloak.models.utils.FormMessage;
+import org.keycloak.models.utils.KeycloakModelUtils;
+import org.keycloak.organization.utils.Organizations;
+import org.keycloak.protocol.LoginProtocol;
+import org.keycloak.protocol.oidc.OIDCAdvancedConfigWrapper;
+import org.keycloak.protocol.oidc.OIDCLoginProtocol;
+import org.keycloak.protocol.oidc.OIDCProviderConfig;
+import org.keycloak.protocol.oidc.TokenManager;
+import org.keycloak.protocol.oidc.utils.AuthorizeClientUtil;
+import org.keycloak.protocol.oidc.utils.RedirectUtils;
+import org.keycloak.protocol.saml.SamlSessionUtils;
+import org.keycloak.protocol.saml.preprocessor.SamlAuthenticationPreprocessor;
+import org.keycloak.representations.AccessToken;
+import org.keycloak.representations.AccessTokenResponse;
+import org.keycloak.services.CorsErrorResponseException;
+import org.keycloak.services.ErrorPage;
+import org.keycloak.services.ErrorPageException;
+import org.keycloak.services.ErrorResponse;
+import org.keycloak.services.ServicesLogger;
+import org.keycloak.services.Urls;
+import org.keycloak.services.clientpolicy.ClientPolicyException;
+import org.keycloak.services.clientpolicy.context.IdentityBrokeringAPIContext;
+import org.keycloak.services.cors.Cors;
+import org.keycloak.services.managers.AppAuthManager;
+import org.keycloak.services.managers.AuthenticationManager;
+import org.keycloak.services.managers.AuthenticationSessionManager;
+import org.keycloak.services.managers.BruteForceProtector;
+import org.keycloak.services.managers.ClientSessionCode;
+import org.keycloak.services.messages.Messages;
+import org.keycloak.services.util.AuthenticationFlowURLHelper;
+import org.keycloak.services.util.BrowserHistoryHelper;
+import org.keycloak.services.util.CacheControlUtil;
+import org.keycloak.services.util.DPoPUtil;
+import org.keycloak.services.util.DefaultClientSessionContext;
+import org.keycloak.services.util.UserSessionUtil;
+import org.keycloak.services.validation.Validation;
+import org.keycloak.sessions.AuthenticationSessionModel;
+import org.keycloak.sessions.RootAuthenticationSessionModel;
+import org.keycloak.util.Booleans;
+import org.keycloak.util.JsonSerialization;
+
+import org.jboss.logging.Logger;
+import org.jboss.resteasy.reactive.NoCache;
+
+import static org.keycloak.broker.provider.AbstractIdentityProvider.BROKER_REGISTERED_NEW_USER;
+
+public class IdentityBrokerService implements UserAuthenticationIdentityProvider.AuthenticationCallback {
 
     // Authentication session note, which references identity provider that is currently linked
-    private static final String LINKING_IDENTITY_PROVIDER = "LINKING_IDENTITY_PROVIDER";
+    public static final String LINKING_IDENTITY_PROVIDER = "LINKING_IDENTITY_PROVIDER";
 
     private static final Logger logger = Logger.getLogger(IdentityBrokerService.class);
 
@@ -208,13 +223,25 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
     @GET
     @NoCache
     @Path("/{provider_alias}/link")
+    @Deprecated
     public Response clientInitiatedAccountLinking(@PathParam("provider_alias") String providerAlias,
                                                   @QueryParam("redirect_uri") String redirectUri,
                                                   @QueryParam("client_id") String clientId,
                                                   @QueryParam("nonce") String nonce,
                                                   @QueryParam("hash") String hash
     ) {
+        OIDCLoginProtocol loginProtocol = (OIDCLoginProtocol) session.getProvider(LoginProtocol.class, OIDCLoginProtocol.LOGIN_PROTOCOL);
+        OIDCProviderConfig oidcConfig = loginProtocol.getConfig();
+        if (!oidcConfig.isAllowClientInitiatedAccountLinking()) {
+            logger.warnf("Calling deprecated endpoint for client-initiated account linking. This endpoint will be removed in the future. Please use application initiated action (AIA) idp_link instead");
+            this.event.event(EventType.CLIENT_INITIATED_ACCOUNT_LINKING);
+            event.error(Errors.NOT_ALLOWED);
+            throw new ErrorPageException(session, Response.Status.BAD_REQUEST, Messages.INVALID_REQUEST);
+        }
+
+        logger.warnf("Calling deprecated endpoint for client-initiated account linking. This endpoint will be removed in the future. Please use application initiated action (AIA) idp_link instead");
         this.event.event(EventType.CLIENT_INITIATED_ACCOUNT_LINKING);
+
         checkRealm();
         ClientModel client = checkClient(clientId);
         redirectUri = RedirectUtils.verifyRedirectUri(session, redirectUri, client);
@@ -242,13 +269,12 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
             return Response.status(302).location(builder.build()).build();
         }
 
-        cookieResult.getSession();
-        event.session(cookieResult.getSession());
-        event.user(cookieResult.getUser());
-        event.detail(Details.USERNAME, cookieResult.getUser().getUsername());
+        event.session(cookieResult.session());
+        event.user(cookieResult.user());
+        event.detail(Details.USERNAME, cookieResult.user().getUsername());
 
         AuthenticatedClientSessionModel clientSession = null;
-        for (AuthenticatedClientSessionModel cs : cookieResult.getSession().getAuthenticatedClientSessions().values()) {
+        for (AuthenticatedClientSessionModel cs : cookieResult.session().getAuthenticatedClientSessions().values()) {
             if (cs.getClient().getClientId().equals(clientId)) {
                 byte[] decoded = Base64Url.decode(hash);
                 MessageDigest md = null;
@@ -257,7 +283,7 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
                 } catch (NoSuchAlgorithmException e) {
                     throw new ErrorPageException(session, Response.Status.INTERNAL_SERVER_ERROR, Messages.UNEXPECTED_ERROR_HANDLING_REQUEST);
                 }
-                String input = nonce + cookieResult.getSession().getId() + clientId + providerAlias;
+                String input = nonce + cookieResult.session().getId() + clientId + providerAlias;
                 byte[] check = md.digest(input.getBytes(StandardCharsets.UTF_8));
                 if (MessageDigest.isEqual(decoded, check)) {
                     clientSession = cs;
@@ -293,7 +319,7 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
         }
 
 
-        IdentityProviderModel identityProviderModel = session.identityProviders().getByAlias(providerAlias);
+        IdentityProviderModel identityProviderModel = getIdentityProviderModel(session, providerAlias);
         if (identityProviderModel == null) {
             event.error(Errors.UNKNOWN_IDENTITY_PROVIDER);
             UriBuilder builder = UriBuilder.fromUri(redirectUri)
@@ -305,7 +331,7 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
 
 
         // Create AuthenticationSessionModel with same ID like userSession and refresh cookie
-        UserSessionModel userSession = cookieResult.getSession();
+        UserSessionModel userSession = cookieResult.session();
 
         // Auth session with ID corresponding to our userSession may already exists in some rare cases (EG. if some client tried to login in another browser tab with "prompt=login")
         RootAuthenticationSessionModel rootAuthSession = session.authenticationSessions().getRootAuthenticationSession(realmModel, userSession.getId());
@@ -314,6 +340,7 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
         }
 
         AuthenticationSessionModel authSession = rootAuthSession.createAuthenticationSession(client);
+        authSession.setAuthenticatedUser(userSession.getUser());
 
         // Refresh the cookie
         new AuthenticationSessionManager(session).setAuthSessionCookie(userSession.getId());
@@ -324,29 +351,43 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
         authSession.setProtocol(client.getProtocol());
         authSession.setRedirectUri(redirectUri);
         authSession.setClientNote(OIDCLoginProtocol.STATE_PARAM, UUID.randomUUID().toString());
-        authSession.setAuthNote(LINKING_IDENTITY_PROVIDER, cookieResult.getSession().getId() + clientId + providerAlias);
+        authSession.setAuthNote(LINKING_IDENTITY_PROVIDER, cookieResult.session().getId() + clientId + providerAlias);
 
         event.detail(Details.CODE_ID, userSession.getId());
         event.success();
 
+        return performClientInitiatedAccountLogin(providerAlias, clientSessionCode);
+    }
+
+    private static IdentityProviderModel getIdentityProviderModel(KeycloakSession session, String providerAlias) {
+        IdentityProviderModel model = session.identityProviders().getByAlias(providerAlias);
+
+        if (model == null || !model.isEnabled()) {
+            throw new IdentityBrokerException("Identity Provider [" + providerAlias + "] not found.");
+        }
+
+        return model;
+    }
+
+    public Response performClientInitiatedAccountLogin(String providerAlias, ClientSessionCode<AuthenticationSessionModel> clientSessionCode) {
         try {
-            IdentityProvider<?> identityProvider = getIdentityProvider(session, providerAlias);
+            UserAuthenticationIdentityProvider<?> identityProvider = getIdentityProvider(session, providerAlias);
             Response response = identityProvider.performLogin(createAuthenticationRequest(identityProvider, providerAlias, clientSessionCode));
 
             if (response != null) {
                 if (isDebugEnabled()) {
                     logger.debugf("Identity provider [%s] is going to send a request [%s].", identityProvider, response);
                 }
+
                 return response;
             }
         } catch (IdentityBrokerException e) {
-            return redirectToErrorPage(authSession, Response.Status.INTERNAL_SERVER_ERROR, Messages.COULD_NOT_SEND_AUTHENTICATION_REQUEST, e, providerAlias);
+            return redirectToErrorPage(clientSessionCode.getClientSession(), Response.Status.INTERNAL_SERVER_ERROR, Messages.COULD_NOT_SEND_AUTHENTICATION_REQUEST, e, providerAlias);
         } catch (Exception e) {
-            return redirectToErrorPage(authSession, Response.Status.INTERNAL_SERVER_ERROR, Messages.UNEXPECTED_ERROR_HANDLING_REQUEST, e, providerAlias);
+            return redirectToErrorPage(clientSessionCode.getClientSession(), Response.Status.INTERNAL_SERVER_ERROR, Messages.UNEXPECTED_ERROR_HANDLING_REQUEST, e, providerAlias);
         }
 
-        return redirectToErrorPage(authSession, Response.Status.INTERNAL_SERVER_ERROR, Messages.COULD_NOT_PROCEED_WITH_AUTHENTICATION_REQUEST);
-
+        return redirectToErrorPage(clientSessionCode.getClientSession(), Response.Status.INTERNAL_SERVER_ERROR, Messages.COULD_NOT_PROCEED_WITH_AUTHENTICATION_REQUEST);
     }
 
 
@@ -381,18 +422,18 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
 
             ClientSessionCode<AuthenticationSessionModel> clientSessionCode = new ClientSessionCode<>(session, realmModel, authSession);
             clientSessionCode.setAction(AuthenticationSessionModel.Action.AUTHENTICATE.name());
-            IdentityProviderModel identityProviderModel = session.identityProviders().getByAlias(providerAlias);
+            IdentityProviderModel identityProviderModel = getIdentityProviderModel(session, providerAlias);
             if (identityProviderModel == null) {
                 throw new IdentityBrokerException("Identity Provider [" + providerAlias + "] not found.");
             }
-            if (identityProviderModel.isLinkOnly()) {
+            if (Booleans.isTrue(identityProviderModel.isLinkOnly())) {
                 throw new IdentityBrokerException("Identity Provider [" + providerAlias + "] is not allowed to perform a login.");
             }
             if (clientSessionCode.getClientSession() != null && loginHint != null) {
                 clientSessionCode.getClientSession().setClientNote(OIDCLoginProtocol.LOGIN_HINT_PARAM, loginHint);
             }
 
-            IdentityProvider<?> identityProvider = getIdentityProvider(session, identityProviderModel.getAlias());
+            UserAuthenticationIdentityProvider<?> identityProvider = getIdentityProvider(session, identityProviderModel.getAlias());
             Response response = identityProvider.performLogin(createAuthenticationRequest(identityProvider, providerAlias, clientSessionCode));
 
             if (response != null) {
@@ -413,7 +454,7 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
     }
 
     @Override
-    public Response retryLogin(IdentityProvider<?> identityProvider, AuthenticationSessionModel authSession) {
+    public Response retryLogin(UserAuthenticationIdentityProvider<?> identityProvider, AuthenticationSessionModel authSession) {
         ClientSessionCode<AuthenticationSessionModel> clientSessionCode = new ClientSessionCode<>(session, realmModel, authSession);
         clientSessionCode.setAction(AuthenticationSessionModel.Action.AUTHENTICATE.name());
         Response response = identityProvider.performLogin(createAuthenticationRequest(identityProvider, identityProvider.getConfig().getAlias(), clientSessionCode));
@@ -433,7 +474,7 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
 
     @Path("{provider_alias}/endpoint")
     public Object getEndpoint(@PathParam("provider_alias") String providerAlias) {
-        IdentityProvider identityProvider;
+        UserAuthenticationIdentityProvider<?> identityProvider;
 
         try {
             identityProvider = getIdentityProvider(session, providerAlias);
@@ -453,8 +494,122 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
     @GET
     @NoCache
     @Path("{provider_alias}/token")
-    public Response retrieveToken(@PathParam("provider_alias") String providerAlias) {
-        return getToken(providerAlias, false);
+    public Response retrieveTokenV1(@PathParam("provider_alias") String providerAlias) {
+        return getTokenV1(providerAlias);
+    }
+
+    @POST
+    @NoCache
+    @Path("{provider_alias}/token")
+    public Response retrieveTokenV2(@PathParam("provider_alias") String providerAlias) {
+        return getTokenV2(providerAlias);
+    }
+
+    private Response getTokenV2(String providerAlias) {
+        this.event.event(EventType.IDENTITY_PROVIDER_RETRIEVE_TOKEN)
+                .detail(Details.IDENTITY_PROVIDER, providerAlias);
+
+        Cors cors = Cors.builder().auth().allowedMethods("POST").auth().exposedHeaders(Cors.ACCESS_CONTROL_ALLOW_METHODS);
+
+        // check profile is enabled
+        if (!Profile.isFeatureEnabled(Profile.Feature.IDENTITY_BROKERING_API_V2)) {
+            event.detail(Details.REASON, "Identity Brokering API feature not enabled");
+            event.error(Errors.IDENTITY_PROVIDER_ERROR);
+            throw new CorsErrorResponseException(cors, OAuthErrorException.INVALID_REQUEST, "Identity Brokering API feature not enabled", Response.Status.BAD_REQUEST);
+        }
+
+        // authenticate client
+        AuthorizeClientUtil.ClientAuthResult clientAuth = AuthorizeClientUtil.authorizeClient(session, event, cors);
+        ClientModel client = clientAuth.getClient();
+        cors.checkAllowedOrigins(session, client);
+        event.client(client);
+        session.getContext().setClient(client);
+        if (client.isPublicClient()) {
+            event.detail(Details.REASON, "public clients not allowed");
+            event.error(Errors.NOT_ALLOWED);
+            throw new CorsErrorResponseException(cors, OAuthErrorException.INVALID_CLIENT, "public clients not allowed", Response.Status.FORBIDDEN);
+        }
+
+        // check the client is allowed to retrieve tokens to this provider
+        OIDCAdvancedConfigWrapper oidcClient = OIDCAdvancedConfigWrapper.fromClientModel(client);
+        if (!oidcClient.getExternalTokenEnabled() || !oidcClient.getExternalAllowedIdentityProviders().contains(providerAlias)) {
+            event.detail(Details.REASON, "Client not allowed to retrieve token for the provider");
+            event.error(Errors.NOT_ALLOWED);
+            throw new CorsErrorResponseException(cors, OAuthErrorException.INVALID_CLIENT, "Client not allowed to retrieve token for the provider", Response.Status.FORBIDDEN);
+        }
+
+        // validate the token
+        String tokenString = session.getContext().getHttpRequest().getDecodedFormParameters().getFirst(OAuth2Constants.TOKEN);
+        AuthenticationManager.AuthResult authResult = AuthenticationManager.verifyIdentityToken(
+                session, realmModel, session.getContext().getUri(), clientConnection, true, true, null, false, tokenString, headers,
+                verifier -> {
+                    DPoPUtil.withDPoPVerifier(verifier, realmModel, new DPoPUtil.Validator(session).request(request).uriInfo(session.getContext().getUri()).accessToken(tokenString));
+                });
+        if (authResult == null) {
+            event.error(Errors.INVALID_TOKEN);
+            throw new CorsErrorResponseException(cors, OAuthErrorException.INVALID_TOKEN, "Invalid token", Response.Status.BAD_REQUEST);
+        }
+        AccessToken token = authResult.token();
+        event.user(authResult.user());
+
+        // check the request client is in the audience
+        if (!client.getClientId().equals(token.getIssuedFor()) && !token.hasAudience(client.getClientId())) {
+            event.detail(Details.REASON, "client is not within the token audience");
+            event.error(Errors.NOT_ALLOWED);
+            throw new CorsErrorResponseException(cors, OAuthErrorException.UNAUTHORIZED_CLIENT, "Client is not within the token audience", Response.Status.FORBIDDEN);
+        }
+
+        // retrieve the provider model
+        IdentityProviderModel model = session.identityProviders().getByAlias(providerAlias);
+        if (model == null || !model.isEnabled()) {
+            event.detail(Details.REASON, "Invalid identity provider");
+            event.error(Errors.IDENTITY_PROVIDER_ERROR);
+            throw new CorsErrorResponseException(cors, OAuthErrorException.INVALID_REQUEST, "Invalid identity provider", Response.Status.BAD_REQUEST);
+        }
+
+        // retrieve the provider
+        UserAuthenticationIdentityProvider<?> identityProvider = getIdentityProvider(session, model, UserAuthenticationIdentityProvider.class);
+        if (identityProvider == null) {
+            event.detail(Details.REASON, "Invalid identity provider");
+            event.error(Errors.IDENTITY_PROVIDER_ERROR);
+            throw new CorsErrorResponseException(cors, OAuthErrorException.INVALID_REQUEST, "Invalid identity provider", Response.Status.BAD_REQUEST);
+        }
+
+        // retrieve the identity associated to the user
+        FederatedIdentityModel identity = this.session.users().getFederatedIdentity(realmModel, authResult.user(), providerAlias);
+        if (identity == null) {
+            event.detail(Details.REASON, "User not associated to identity provider");
+            event.error(Errors.IDENTITY_PROVIDER_ERROR);
+            throw new CorsErrorResponseException(cors, OAuthErrorException.INVALID_REQUEST, "User not associated to identity provider", Response.Status.BAD_REQUEST);
+        }
+
+        // obtain the session from the token
+        UserSessionModel userSession = UserSessionUtil.findValidSessionForAccessToken(
+                session, realmModel, token, authResult.client(), (invalidUserSession -> {}))
+                .getUserSession();
+
+        //client policies
+        try {
+            session.clientPolicy().triggerOnEvent(new IdentityBrokeringAPIContext(session, authResult.token(), client, identityProvider.getConfig().getAlias()));
+        } catch (ClientPolicyException cpe) {
+            event.detail(Details.REASON, Details.CLIENT_POLICY_ERROR);
+            event.detail(Details.CLIENT_POLICY_ERROR, cpe.getError());
+            event.detail(Details.CLIENT_POLICY_ERROR_DETAIL, cpe.getErrorDetail());
+            event.error(cpe.getError());
+            throw new CorsErrorResponseException(cors, cpe.getError(), cpe.getErrorDetail(), cpe.getErrorStatus());
+        }
+
+        // now it is OK to retrieve the token from the session or the database
+        try {
+            Response response = identityProvider.retrieveToken(session, identity, userSession, authResult.user());
+            event.success();
+            return cors.add(Response.fromResponse(response));
+        } catch (Exception e) {
+            logger.errorf(e, "Failed to retrieve token from identity provider");
+            event.detail(Details.REASON, e.getMessage());
+            event.error(Errors.INVALID_REQUEST);
+            throw new CorsErrorResponseException(cors, OAuthErrorException.INVALID_REQUEST, "Failed to retrieve token from identity provider", Response.Status.BAD_REQUEST);
+        }
     }
 
     private boolean canReadBrokerToken(AccessToken token) {
@@ -463,8 +618,15 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
         return brokerRoles != null && brokerRoles.isUserInRole(Constants.READ_TOKEN_ROLE);
     }
 
-    private Response getToken(String providerAlias, boolean forceRetrieval) {
-        this.event.event(EventType.IDENTITY_PROVIDER_RETRIEVE_TOKEN);
+    private Response getTokenV1(String providerAlias) {
+        this.event.event(EventType.IDENTITY_PROVIDER_RETRIEVE_TOKEN)
+                .detail(Details.IDENTITY_PROVIDER, providerAlias);
+
+        if (!Profile.isFeatureEnabled(Profile.Feature.IDENTITY_BROKERING_API_V1)) {
+            event.detail(Details.REASON, "Identity Brokering API feature not enabled");
+            event.error(Errors.IDENTITY_PROVIDER_ERROR);
+            return badRequest("Identity Brokering API feature not enabled");
+        }
 
         try {
             AuthenticationManager.AuthResult authResult = new AppAuthManager.BearerTokenAuthenticator(session)
@@ -473,48 +635,73 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
                     .setHeaders(request.getHttpHeaders())
                     .authenticate();
 
-            if (authResult != null) {
-                AccessToken token = authResult.getToken();
-                ClientModel clientModel = authResult.getClient();
+            if (authResult == null) {
+                return badRequest("Invalid token.");
+            }
 
-                session.getContext().setClient(clientModel);
+            AccessToken token = authResult.token();
+            ClientModel clientModel = authResult.client();
+            UserModel user = authResult.user();
 
-                ClientModel brokerClient = realmModel.getClientByClientId(Constants.BROKER_SERVICE_CLIENT_ID);
-                if (brokerClient == null) {
-                    return corsResponse(forbidden("Realm has not migrated to support the broker token exchange service"), clientModel);
+            this.event.client(clientModel);
+            this.event.user(user);
+            this.session.getContext().setClient(clientModel);
 
-                }
-                if (!canReadBrokerToken(token)) {
-                    return corsResponse(forbidden("Client [" + clientModel.getClientId() + "] not authorized to retrieve tokens from identity provider [" + providerAlias + "]."), clientModel);
+            ClientModel brokerClient = realmModel.getClientByClientId(Constants.BROKER_SERVICE_CLIENT_ID);
+            if (brokerClient == null) {
+                event.detail(Details.REASON, "Realm has not migrated to support the broker token exchange service");
+                event.error(Errors.IDENTITY_PROVIDER_ERROR);
+                return corsResponse(forbidden("Realm has not migrated to support the broker token exchange service"), clientModel);
+            }
 
-                }
+            if (!canReadBrokerToken(token)) {
+                event.detail(Details.REASON, "Client not authorized to retrieve tokens for provider");
+                event.error(Errors.UNAUTHORIZED_CLIENT);
+                return corsResponse(forbidden("Client [" + clientModel.getClientId() + "] not authorized to retrieve tokens from identity provider [" + providerAlias + "]."), clientModel);
+            }
 
-                IdentityProvider identityProvider = getIdentityProvider(session, providerAlias);
-                IdentityProviderModel identityProviderConfig = getIdentityProviderConfig(providerAlias);
-
-                if (identityProviderConfig.isStoreToken()) {
-                    FederatedIdentityModel identity = this.session.users().getFederatedIdentity(this.realmModel, authResult.getUser(), providerAlias);
-
-                    if (identity == null) {
-                        return corsResponse(badRequest("User [" + authResult.getUser().getId() + "] is not associated with identity provider [" + providerAlias + "]."), clientModel);
-                    }
-
-                    if (identity.getToken() == null) {
-                        return corsResponse(notFound("No token stored for user [" + authResult.getUser().getId() + "] with associated identity provider [" + providerAlias + "]."), clientModel);
-                    }
-
-                    this.event.success();
-
-                    return corsResponse(identityProvider.retrieveToken(session, identity), clientModel);
-                }
-
+            UserAuthenticationIdentityProvider<?> identityProvider = getIdentityProvider(session, providerAlias);
+            IdentityProviderModel identityProviderConfig = getIdentityProviderConfig(providerAlias);
+            if (Booleans.isFalse(identityProviderConfig.isStoreToken())) {
+                event.detail(Details.REASON, "Identity Provider does not support this operation");
+                event.error(Errors.IDENTITY_PROVIDER_ERROR);
                 return corsResponse(badRequest("Identity Provider [" + providerAlias + "] does not support this operation."), clientModel);
             }
 
-            return badRequest("Invalid token.");
+            FederatedIdentityModel identity = this.session.users().getFederatedIdentity(this.realmModel, user, providerAlias);
+            if (identity == null) {
+                this.event.detail(Details.REASON, "User not associated to identity provider");
+                this.event.error(Errors.IDENTITY_PROVIDER_ERROR);
+                return corsResponse(badRequest("User [" + user.getId() + "] is not associated with identity provider [" + providerAlias + "]."), clientModel);
+            }
+            if (identity.getToken() == null) {
+                this.event.detail(Details.REASON, "No token stored for user in this provider");
+                this.event.error(Errors.IDENTITY_PROVIDER_ERROR);
+                return corsResponse(notFound("No token stored for user [" + authResult.user().getId() + "] with associated identity provider [" + providerAlias + "]."), clientModel);
+            }
+
+            String oldToken = identity.getToken();
+            try {
+                Response response = corsResponse(identityProvider.retrieveToken(session, identity), clientModel);
+                this.event.success();
+                return response;
+            } catch (WebApplicationException e) {
+                this.event.detail(Details.REASON, e.getMessage());
+                this.event.error(Errors.IDENTITY_PROVIDER_ERROR);
+                return corsResponse(e.getResponse(), clientModel);
+            } finally {
+                if (Booleans.isTrue(identityProviderConfig.isStoreToken()) && !Objects.equals(oldToken, identity.getToken())) {
+                    session.users().updateFederatedIdentity(session.getContext().getRealm(), user, identity);
+                }
+            }
+
+        } catch (WebApplicationException e) {
+            this.event.detail(Details.REASON, e.getMessage());
+            this.event.error(Errors.IDENTITY_PROVIDER_ERROR);
+            return e.getResponse();
         } catch (IdentityBrokerException e) {
             return redirectToErrorPage(Response.Status.BAD_GATEWAY, Messages.COULD_NOT_OBTAIN_TOKEN, e, providerAlias);
-        }  catch (Exception e) {
+        } catch (Exception e) {
             return redirectToErrorPage(Response.Status.BAD_GATEWAY, Messages.UNEXPECTED_ERROR_RETRIEVING_TOKEN, e, providerAlias);
         }
     }
@@ -524,11 +711,17 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
         AuthenticationSessionModel authenticationSession = context.getAuthenticationSession();
 
         String providerAlias = identityProviderConfig.getAlias();
-        if (!identityProviderConfig.isStoreToken()) {
+        if (Booleans.isFalse(identityProviderConfig.isStoreToken())) {
             if (isDebugEnabled()) {
                 logger.debugf("Token will not be stored for identity provider [%s].", providerAlias);
             }
             context.setToken(null);
+        }
+
+        ClientModel client = authenticationSession.getClient();
+
+        if (!client.isEnabled()) {
+            return redirectToErrorPage(Status.BAD_REQUEST, Messages.CLIENT_NOT_FOUND, null, providerAlias);
         }
 
         StatusResponseType loginResponse = (StatusResponseType) context.getContextData().get(SAMLEndpoint.SAML_LOGIN_RESPONSE);
@@ -538,7 +731,7 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
             }
         }
 
-        session.getContext().setClient(authenticationSession.getClient());
+        session.getContext().setClient(client);
 
         context.getIdp().preprocessFederatedIdentity(session, realmModel, context);
         KeycloakSessionFactory sessionFactory = session.getKeycloakSessionFactory();
@@ -554,7 +747,8 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
         this.event.event(EventType.IDENTITY_PROVIDER_LOGIN)
                 .detail(Details.REDIRECT_URI, authenticationSession.getRedirectUri())
                 .detail(Details.IDENTITY_PROVIDER, providerAlias)
-                .detail(Details.IDENTITY_PROVIDER_USERNAME, context.getUsername());
+                .detail(Details.IDENTITY_PROVIDER_USERNAME, context.getUsername())
+                .detail(Details.IDENTITY_PROVIDER_BROKER_SESSION_ID, context.getBrokerSessionId());
 
         UserModel federatedUser = this.session.users().getUserByFederatedIdentity(this.realmModel, federatedIdentityModel);
         boolean shouldMigrateId = false;
@@ -565,10 +759,14 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
             shouldMigrateId = true;
         }
 
-        // Check if federatedUser is already authenticated (this means linking social into existing federatedUser account)
-        UserSessionModel userSession = new AuthenticationSessionManager(session).getUserSession(authenticationSession);
-        if (shouldPerformAccountLinking(authenticationSession, userSession, providerAlias)) {
-            return performAccountLinking(authenticationSession, userSession, context, federatedIdentityModel, federatedUser);
+        // Check if linking was requested (for example by kc_action) or if we're authenticating
+        if (isDoingAccountLinking(authenticationSession, true, providerAlias)) {
+            return performAccountLinking(authenticationSession, context, federatedIdentityModel, federatedUser);
+        }
+
+        if (Booleans.isTrue(identityProviderConfig.isLinkOnly())) {
+            event.error(Errors.NOT_ALLOWED);
+            return redirectToErrorPage(authenticationSession, Response.Status.BAD_REQUEST, Messages.COULD_NOT_SEND_AUTHENTICATION_REQUEST, providerAlias);
         }
 
         if (federatedUser == null) {
@@ -605,10 +803,19 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
             boolean forwardedPassiveLogin = "true".equals(authenticationSession.getAuthNote(AuthenticationProcessor.FORWARDED_PASSIVE_LOGIN));
 
             String userRequestedLocale = authenticationSession.getAuthNote(LocaleSelectorProvider.USER_REQUEST_LOCALE);
+            String organizationId = authenticationSession.getAuthNote(OrganizationModel.ORGANIZATION_ATTRIBUTE);
+            String invitationToken = authenticationSession.getAuthNote(Organizations.INVITATION_TOKEN_NOTE);
             // Redirect to firstBrokerLogin after successful login and ensure that previous authentication state removed
             AuthenticationProcessor.resetFlow(authenticationSession, LoginActionsService.FIRST_BROKER_LOGIN_PATH);
             if (userRequestedLocale != null) {
                 authenticationSession.setAuthNote(LocaleSelectorProvider.USER_REQUEST_LOCALE, userRequestedLocale);
+            }
+            // Restore the invitation being accepted, resolved before the broker round trip.
+            if (organizationId != null) {
+                authenticationSession.setAuthNote(OrganizationModel.ORGANIZATION_ATTRIBUTE, organizationId);
+            }
+            if (invitationToken != null) {
+                authenticationSession.setAuthNote(Organizations.INVITATION_TOKEN_NOTE, invitationToken);
             }
 
             // Set the FORWARDED_PASSIVE_LOGIN note (if needed) after resetting the session so it is not lost.
@@ -620,7 +827,7 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
             ctx.saveToAuthenticationSession(authenticationSession, AbstractIdpAuthenticator.BROKERED_CONTEXT_NOTE);
 
             URI redirect = LoginActionsService.firstBrokerLoginProcessor(session.getContext().getUri())
-                    .queryParam(Constants.CLIENT_ID, authenticationSession.getClient().getClientId())
+                    .queryParam(Constants.CLIENT_ID, client.getClientId())
                     .queryParam(Constants.TAB_ID, authenticationSession.getTabId())
                     .queryParam(Constants.CLIENT_DATA, AuthenticationProcessor.getClientData(session, authenticationSession))
                     .build(realmModel.getName());
@@ -702,13 +909,18 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
             event.user(federatedUser);
             event.detail(Details.USERNAME, federatedUser.getUsername());
 
-            if (context.getIdpConfig().isAddReadTokenRoleOnCreate()) {
+            if (Booleans.isTrue(context.getIdpConfig().isAddReadTokenRoleOnCreate())) {
                 ClientModel brokerClient = realmModel.getClientByClientId(Constants.BROKER_SERVICE_CLIENT_ID);
                 if (brokerClient == null) {
-                    throw new IdentityBrokerException("Client 'broker' not available. Maybe realm has not migrated to support the broker token exchange service");
+                    logger.warnf("Identity provider '%s' has 'Stored tokens readable' enabled, but the broker client does not exist. This option requires the broker client with read-token role, which is only created when identity-broker-api:v1 is enabled.", context.getIdpConfig().getAlias());
+                } else {
+                    RoleModel readTokenRole = brokerClient.getRole(Constants.READ_TOKEN_ROLE);
+                    if (readTokenRole == null) {
+                        logger.warnf("Identity provider '%s' has 'Stored tokens readable' enabled, but the read-token role does not exist in the broker client.", context.getIdpConfig().getAlias());
+                    } else {
+                        federatedUser.grantRole(readTokenRole);
+                    }
                 }
-                RoleModel readTokenRole = brokerClient.getRole(Constants.READ_TOKEN_ROLE);
-                federatedUser.grantRole(readTokenRole);
             }
 
             // Add federated identity link here
@@ -717,16 +929,21 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
 
                 FederatedIdentityModel federatedIdentityModel = new FederatedIdentityModel(context.getIdpConfig().getAlias(), context.getId(),
                         context.getUsername(), context.getToken());
-                session.users().addFederatedIdentity(realmModel, federatedUser, federatedIdentityModel);
+                try {
+                    session.users().addFederatedIdentity(realmModel, federatedUser, federatedIdentityModel);
+                } catch (ModelDuplicateException de) {
+                    String idpDisplayName = KeycloakModelUtils.getIdentityProviderDisplayName(session, context.getIdpConfig());
+                    return redirectToErrorPage(authSession, Status.CONFLICT, Messages.IDENTITY_PROVIDER_ALREADY_LINKED_TO_CURRENT_USER, de, idpDisplayName);
+                }
             }
 
-
-            String isRegisteredNewUser = authSession.getAuthNote(AbstractIdpAuthenticator.BROKER_REGISTERED_NEW_USER);
+            String isRegisteredNewUser = authSession.getAuthNote(BROKER_REGISTERED_NEW_USER);
             if (Boolean.parseBoolean(isRegisteredNewUser)) {
 
                 logger.debugf("Registered new user '%s' after first login with identity provider '%s'. Identity provider username is '%s' . ", federatedUser.getUsername(), providerAlias, context.getUsername());
 
-                context.getIdp().importNewUser(session, realmModel, federatedUser, context);
+                UserAuthenticationIdentityProvider<?> idp = context.getIdp();
+                idp.importNewUser(session, realmModel, federatedUser, context);
                 KeycloakSessionFactory sessionFactory = session.getKeycloakSessionFactory();
                 session.identityProviders().getMappersByAliasStream(providerAlias).forEach(mapper -> {
                     IdentityProviderMapper target = (IdentityProviderMapper) sessionFactory
@@ -734,10 +951,7 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
                     target.importNewUser(session, realmModel, federatedUser, mapper, context);
                 });
 
-                if (context.getIdpConfig().isTrustEmail() && !Validation.isBlank(federatedUser.getEmail()) && !Boolean.parseBoolean(authSession.getAuthNote(AbstractIdpAuthenticator.UPDATE_PROFILE_EMAIL_CHANGED))) {
-                    logger.debugf("Email verified automatically after registration of user '%s' through Identity provider '%s' ", federatedUser.getUsername(), context.getIdpConfig().getAlias());
-                    federatedUser.setEmailVerified(true);
-                }
+                idp.updateBrokeredUser(session, realmModel, federatedUser, context);
 
                 event.clone()
                         .event(EventType.REGISTER)
@@ -748,14 +962,14 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
             } else {
                 logger.debugf("Linked existing keycloak user '%s' with identity provider '%s' . Identity provider username is '%s' .", federatedUser.getUsername(), providerAlias, context.getUsername());
 
-                event.event(EventType.FEDERATED_IDENTITY_LINK)
+                event.clone()
+                        .event(EventType.FEDERATED_IDENTITY_LINK)
                         .success();
 
                 updateFederatedIdentity(context, federatedUser);
             }
 
             return finishOrRedirectToPostBrokerLogin(authSession, context, true);
-
         }  catch (Exception e) {
             return redirectToErrorPage(authSession, Response.Status.INTERNAL_SERVER_ERROR, Messages.IDENTITY_PROVIDER_UNEXPECTED_ERROR, e);
         }
@@ -879,7 +1093,8 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
         authSession.setUserSessionNote(Details.IDENTITY_PROVIDER_USERNAME, context.getUsername());
 
         event.detail(Details.IDENTITY_PROVIDER, providerAlias)
-                .detail(Details.IDENTITY_PROVIDER_USERNAME, context.getUsername());
+                .detail(Details.IDENTITY_PROVIDER_USERNAME, context.getUsername())
+                .detail(Details.IDENTITY_PROVIDER_BROKER_SESSION_ID, context.getBrokerSessionId());
 
         if (isDebugEnabled()) {
             logger.debugf("Performing local authentication for user [%s].", federatedUser);
@@ -904,23 +1119,26 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
     @Override
     public Response cancelled(IdentityProviderModel idpConfig) {
         AuthenticationSessionModel authSession = session.getContext().getAuthenticationSession();
+        event.detail(Details.IDENTITY_PROVIDER, idpConfig.getAlias());
 
-        String idpDisplayName = KeycloakModelUtils.getIdentityProviderDisplayName(session, idpConfig);
-        Response accountManagementFailedLinking = checkAccountManagementFailedLinking(authSession, Messages.ACCESS_DENIED_WHEN_IDP_AUTH, idpDisplayName);
-        if (accountManagementFailedLinking != null) {
-            return accountManagementFailedLinking;
+        // Check if linking was requested (for example by kc_action) or if we're authenticating
+        if (isDoingAccountLinking(authSession, true, idpConfig.getAlias())) {
+            authSession.setAuthNote(IdpLinkAction.IDP_LINK_STATUS, RequiredActionContext.KcActionStatus.CANCELLED.name());
+            return redirectAfterIDPLinking(authSession);
         }
-
+        String idpDisplayName = KeycloakModelUtils.getIdentityProviderDisplayName(session, idpConfig);
         return browserAuthentication(authSession, Messages.ACCESS_DENIED_WHEN_IDP_AUTH, idpDisplayName);
     }
 
     @Override
-    public Response error(String message) {
+    public Response error(IdentityProviderModel idpConfig, String message) {
         AuthenticationSessionModel authSession = session.getContext().getAuthenticationSession();
+        event.detail(Details.IDENTITY_PROVIDER, idpConfig.getAlias());
 
-        Response accountManagementFailedLinking = checkAccountManagementFailedLinking(authSession, message);
-        if (accountManagementFailedLinking != null) {
-            return accountManagementFailedLinking;
+        // Check if linking was requested (for example by kc_action) or if we're authenticating
+        UserSessionModel userSession = new AuthenticationSessionManager(session).getUserSession(authSession);
+        if (isDoingAccountLinking(authSession, true, idpConfig.getAlias())) {
+            return redirectToErrorWhenLinkingFailed(authSession, message);
         }
 
         Response passiveLoginErrorReturned = checkPassiveLoginError(authSession, message);
@@ -932,18 +1150,19 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
     }
 
 
-    private boolean shouldPerformAccountLinking(AuthenticationSessionModel authSession, UserSessionModel userSession, String providerAlias) {
+    private boolean isDoingAccountLinking(AuthenticationSessionModel authSession, boolean checkProviderAlias, String providerAlias) {
         String noteFromSession = authSession.getAuthNote(LINKING_IDENTITY_PROVIDER);
         if (noteFromSession == null) {
             return false;
         }
 
         boolean linkingValid;
-        if (userSession == null) {
-            linkingValid = false;
-        } else {
-            String expectedNote = userSession.getId() + authSession.getClient().getClientId() + providerAlias;
+        if (checkProviderAlias) {
+            String expectedNote = authSession.getParentSession().getId() + authSession.getClient().getClientId() + providerAlias;
             linkingValid = expectedNote.equals(noteFromSession);
+        } else {
+            String expectedNotePrefix = authSession.getParentSession().getId() + authSession.getClient().getClientId();
+            linkingValid = noteFromSession.startsWith(expectedNotePrefix);
         }
 
         if (linkingValid) {
@@ -955,21 +1174,23 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
     }
 
 
-    private Response performAccountLinking(AuthenticationSessionModel authSession, UserSessionModel userSession, BrokeredIdentityContext context, FederatedIdentityModel newModel, UserModel federatedUser) {
-        logger.debugf("Will try to link identity provider [%s] to user [%s]", context.getIdpConfig().getAlias(), userSession.getUser().getUsername());
-
+    private Response performAccountLinking(AuthenticationSessionModel authSession, BrokeredIdentityContext context, FederatedIdentityModel newModel, UserModel federatedUser) {
         this.event.event(EventType.FEDERATED_IDENTITY_LINK);
 
-
-
-        UserModel authenticatedUser = userSession.getUser();
+        UserModel authenticatedUser = authSession.getAuthenticatedUser();
         authSession.setAuthenticatedUser(authenticatedUser);
 
+        logger.debugf("Will try to link identity provider [%s] to user [%s]", context.getIdpConfig().getAlias(), authenticatedUser.getUsername());
+
         if (federatedUser != null && !authenticatedUser.getId().equals(federatedUser.getId())) {
-            return redirectToErrorWhenLinkingFailed(authSession, Messages.IDENTITY_PROVIDER_ALREADY_LINKED, context.getIdpConfig().getAlias());
+            logger.debugf("Cannot link user '%s' to identity provider '%s' . Other user '%s' already linked with the identity provider", authenticatedUser.getUsername(), context.getIdpConfig().getAlias(), federatedUser.getUsername());
+            String idpDisplayName = KeycloakModelUtils.getIdentityProviderDisplayName(session, context.getIdpConfig());
+            return redirectToErrorWhenLinkingFailed(authSession, Messages.IDENTITY_PROVIDER_ALREADY_LINKED, idpDisplayName);
         }
 
-        if (!authenticatedUser.hasRole(this.realmModel.getClientByClientId(Constants.ACCOUNT_MANAGEMENT_CLIENT_ID).getRole(AccountRoles.MANAGE_ACCOUNT))) {
+        RoleModel manageAccountRole = this.realmModel.getClientByClientId(Constants.ACCOUNT_MANAGEMENT_CLIENT_ID).getRole(AccountRoles.MANAGE_ACCOUNT);
+        RoleModel manageAccountLinkRole = this.realmModel.getClientByClientId(Constants.ACCOUNT_MANAGEMENT_CLIENT_ID).getRole(AccountRoles.MANAGE_ACCOUNT_LINKS);
+        if (!authenticatedUser.hasRole(manageAccountRole) && !authenticatedUser.hasRole(manageAccountLinkRole)) {
             return redirectToErrorPage(authSession, Response.Status.FORBIDDEN, Messages.INSUFFICIENT_PERMISSION);
         }
 
@@ -977,10 +1198,12 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
             return redirectToErrorWhenLinkingFailed(authSession, Messages.ACCOUNT_DISABLED);
         }
 
-
+        if (!Organizations.resolveHomeBroker(session, authenticatedUser).isEmpty()) {
+            return redirectToErrorWhenLinkingFailed(authSession, Messages.FEDERATED_IDENTITY_BOUND_ORGANIZATION);
+        }
 
         if (federatedUser != null) {
-            if (context.getIdpConfig().isStoreToken()) {
+            if (Booleans.isTrue(context.getIdpConfig().isStoreToken())) {
                 FederatedIdentityModel oldModel = this.session.users().getFederatedIdentity(this.realmModel, federatedUser, context.getIdpConfig().getAlias());
                 if (!ObjectUtil.isEqualOrBothNull(context.getToken(), oldModel.getToken())) {
                     this.session.users().updateFederatedIdentity(this.realmModel, federatedUser, newModel);
@@ -990,45 +1213,92 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
                 }
             }
         } else {
-            this.session.users().addFederatedIdentity(this.realmModel, authenticatedUser, newModel);
-            federatedUser = authenticatedUser;
+            try {
+                this.session.users().addFederatedIdentity(this.realmModel, authenticatedUser, newModel);
+                federatedUser = authenticatedUser;
+            } catch(ModelDuplicateException e) {
+                logger.warnf(e,"Cannot link user '%s' to identity provider '%s' as the link already exists for this user and identity provider",
+                        authenticatedUser.getUsername(), context.getIdpConfig().getAlias());
+                String idpDisplayName = KeycloakModelUtils.getIdentityProviderDisplayName(session, context.getIdpConfig());
+                return redirectToErrorWhenLinkingFailed(authSession, Messages.IDENTITY_PROVIDER_ALREADY_LINKED_TO_CURRENT_USER, idpDisplayName);
+            }
         }
 
         updateFederatedIdentity(context, federatedUser);
 
         context.getIdp().authenticationFinished(authSession, context);
 
-        AuthenticationManager.setClientScopesInSession(session, authSession);
-        TokenManager.attachAuthenticationSession(session, userSession, authSession);
-
         if (isDebugEnabled()) {
             logger.debugf("Linking account [%s] from identity provider [%s] to user [%s].", newModel, context.getIdpConfig().getAlias(), authenticatedUser);
         }
 
-        this.event.user(authenticatedUser)
-                .detail(Details.USERNAME, authenticatedUser.getUsername())
-                .detail(Details.IDENTITY_PROVIDER, newModel.getIdentityProvider())
-                .detail(Details.IDENTITY_PROVIDER_USERNAME, newModel.getUserName())
-                .success();
-
         // we do this to make sure that the parent IDP is logged out when this user session is complete.
         // But for the case when userSession was previously authenticated with broker1 and now is linked to another broker2, we shouldn't override broker1 notes with the broker2 for sure.
         // Maybe broker logout should be rather always skiped in case of broker-linking
-        if (userSession.getNote(Details.IDENTITY_PROVIDER) == null) {
+        UserSessionModel userSession = new AuthenticationSessionManager(session).getUserSession(authSession);
+        if (userSession != null && userSession.getNote(Details.IDENTITY_PROVIDER) == null) {
             userSession.setNote(Details.IDENTITY_PROVIDER, context.getIdpConfig().getAlias());
             userSession.setNote(Details.IDENTITY_PROVIDER_USERNAME, context.getUsername());
         }
 
-        return Response.status(302).location(UriBuilder.fromUri(authSession.getRedirectUri()).build()).build();
+        authSession.setAuthNote(IdpLinkAction.IDP_LINK_STATUS, RequiredActionContext.KcActionStatus.SUCCESS.name());
+
+        if (!Boolean.parseBoolean(authSession.getAuthNote(IdpLinkAction.KC_ACTION_LINKING_IDENTITY_PROVIDER))) {
+            // Legacy client-initiated account linking
+
+            // In legacy client-initiated account linking, the userSession should exists before linking was started, however it might be expired during the time when user is authenticating to the IDP
+            if (userSession == null) {
+                return redirectToErrorWhenLinkingFailed(authSession, Messages.BROKER_LINKING_SESSION_EXPIRED);
+            }
+
+            AuthenticationManager.setClientScopesInSession(session, authSession);
+            TokenManager.attachAuthenticationSession(session, userSession, authSession);
+
+            this.event.user(authenticatedUser)
+                    .detail(Details.USERNAME, authenticatedUser.getUsername())
+                    .detail(Details.IDENTITY_PROVIDER, newModel.getIdentityProvider())
+                    .detail(Details.IDENTITY_PROVIDER_USERNAME, newModel.getUserName())
+                    .success();
+        }
+        return redirectAfterIDPLinking(authSession);
+    }
+
+    private Response redirectAfterIDPLinking(AuthenticationSessionModel authSession) {
+        URI redirect;
+        if (Boolean.parseBoolean(authSession.getAuthNote(IdpLinkAction.KC_ACTION_LINKING_IDENTITY_PROVIDER))) {
+            // Redirect to idp_link action to finish the flow properly
+            ClientSessionCode<AuthenticationSessionModel> clientSessionCode = new ClientSessionCode<>(session, realmModel, authSession);
+            clientSessionCode.setAction(AuthenticationSessionModel.Action.REQUIRED_ACTIONS.name());
+            String sessionCode = clientSessionCode.getOrGenerateCode();
+
+            authSession.setAction(AuthenticationSessionModel.Action.REQUIRED_ACTIONS.name());
+            return new LoginActionsService(session, event).requiredActionPOST(null,
+                    sessionCode,
+                    authSession.getClientNote(Constants.KC_ACTION),
+                    authSession.getClient().getClientId(),
+                    AuthenticationProcessor.getClientData(session, authSession),
+                    authSession.getTabId()
+                    );
+        } else {
+            // Legacy client-initiated account linking
+            redirect = UriBuilder.fromUri(authSession.getRedirectUri()).build();
+        }
+        return Response.status(302).location(redirect).build();
     }
 
 
-    private Response redirectToErrorWhenLinkingFailed(AuthenticationSessionModel authSession, String message, Object... parameters) {
-        if (authSession.getClient() != null && authSession.getClient().getClientId().equals(Constants.ACCOUNT_MANAGEMENT_CLIENT_ID)) {
-            return redirectToAccountErrorPage(authSession, message, parameters);
-        } else {
-            return redirectToErrorPage(authSession, Response.Status.BAD_REQUEST, message, parameters); // Should rather redirect to app instead and display error here?
+    private Response redirectToErrorWhenLinkingFailed(AuthenticationSessionModel authSession, String error, Object... parameters) {
+        FormMessage errorMessage = new FormMessage(error, parameters);
+        String serializedError;
+        try {
+            serializedError = JsonSerialization.writeValueAsString(errorMessage);
+        } catch (IOException ioe) {
+            throw new RuntimeException(ioe);
         }
+
+        authSession.setAuthNote(IdpLinkAction.IDP_LINK_STATUS, RequiredActionContext.KcActionStatus.ERROR.name());
+        authSession.setAuthNote(IdpLinkAction.IDP_LINK_ERROR, serializedError);
+        return redirectAfterIDPLinking(authSession);
     }
 
 
@@ -1059,7 +1329,6 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
     }
 
     private void setBasicUserAttributes(BrokeredIdentityContext context, UserModel federatedUser) {
-        setDiffAttrToConsumer(federatedUser.getEmail(), context.getEmail(), email -> setEmail(context, federatedUser, email), true);
         setDiffAttrToConsumer(federatedUser.getFirstName(), context.getFirstName(), federatedUser::setFirstName, false);
         setDiffAttrToConsumer(federatedUser.getLastName(), context.getLastName(), federatedUser::setLastName, false);
     }
@@ -1068,18 +1337,6 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
         String actualValueNotNull = Optional.ofNullable(actualValue).orElse("");
         if (newValue != null && !(ignoreCase? newValue.equalsIgnoreCase(actualValueNotNull) : newValue.equals(actualValueNotNull))) {
             consumer.accept(newValue);
-        }
-    }
-
-    private void setEmail(BrokeredIdentityContext context, UserModel federatedUser, String newEmail) {
-        federatedUser.setEmail(newEmail);
-        // change email verified depending on if it is trusted or not
-        if (context.getIdpConfig().isTrustEmail() && !Boolean.parseBoolean(context.getAuthenticationSession().getAuthNote(AbstractIdpAuthenticator.UPDATE_PROFILE_EMAIL_CHANGED))) {
-            logger.tracef("Email verified automatically after updating user '%s' through Identity provider '%s' ", federatedUser.getUsername(), context.getIdpConfig().getAlias());
-            federatedUser.setEmailVerified(true);
-        } else {
-            logger.tracef("Email verified reset to false after updating user '%s' through Identity provider '%s' ", federatedUser.getUsername(), context.getIdpConfig().getAlias());
-            federatedUser.setEmailVerified(false);
         }
     }
 
@@ -1094,7 +1351,7 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
     }
 
     private void updateToken(BrokeredIdentityContext context, UserModel federatedUser, FederatedIdentityModel federatedIdentityModel) {
-        if (context.getIdpConfig().isStoreToken() && !ObjectUtil.isEqualOrBothNull(context.getToken(), federatedIdentityModel.getToken())) {
+        if (Booleans.isTrue(context.getIdpConfig().isStoreToken()) && !ObjectUtil.isEqualOrBothNull(context.getToken(), federatedIdentityModel.getToken())) {
             // like in OIDCIdentityProvider.exchangeStoredToken()
             // we shouldn't override the refresh token if it is null in the context and not null in the DB
             // as for google IDP it will be lost forever
@@ -1148,9 +1405,9 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
 
             AuthenticationSessionModel authSession = checks.getAuthenticationSession();
             if (authSession != null) {
-                // Check if error happened during login or during linking from account management
-                Response accountManagementFailedLinking = checkAccountManagementFailedLinking(authSession, Messages.STALE_CODE_ACCOUNT);
-                if (accountManagementFailedLinking != null) {
+                // Check if error happened during login or during linking from some application like account console
+                if (isDoingAccountLinking(authSession, false, null)) {
+                    Response accountManagementFailedLinking = redirectToErrorWhenLinkingFailed(authSession, Messages.STALE_CODE_ACCOUNT);
                     throw new WebApplicationException(accountManagementFailedLinking);
                 } else {
                     Response errorResponse = checks.getResponse();
@@ -1168,21 +1425,6 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
             }
 
             return checks.getClientCode().getClientSession();
-        }
-    }
-
-    private Response checkAccountManagementFailedLinking(AuthenticationSessionModel authSession, String error, Object... parameters) {
-        UserSessionModel userSession = new AuthenticationSessionManager(session).getUserSession(authSession);
-        if (userSession != null && authSession.getClient() != null) {
-
-            this.event.event(EventType.FEDERATED_IDENTITY_LINK);
-            UserModel user = userSession.getUser();
-            this.event.user(user);
-            this.event.detail(Details.USERNAME, user.getUsername());
-
-            return redirectToAccountErrorPage(authSession, error, parameters);
-        } else {
-            return null;
         }
     }
 
@@ -1209,7 +1451,7 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
         return null;
     }
 
-    private AuthenticationRequest createAuthenticationRequest(IdentityProvider<?> identityProvider, String providerAlias, ClientSessionCode<AuthenticationSessionModel> clientSessionCode) {
+    private AuthenticationRequest createAuthenticationRequest(UserAuthenticationIdentityProvider<?> identityProvider, String providerAlias, ClientSessionCode<AuthenticationSessionModel> clientSessionCode) {
         AuthenticationSessionModel authSession = null;
         IdentityBrokerState encodedState = null;
 
@@ -1254,21 +1496,6 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
         throw new ErrorPageException(this.session, authSession, status, message, parameters);
     }
 
-    private Response redirectToAccountErrorPage(AuthenticationSessionModel authSession, String message, Object ... parameters) {
-        fireErrorEvent(message);
-
-        FormMessage errorMessage = new FormMessage(message, parameters);
-        try {
-            String serializedError = JsonSerialization.writeValueAsString(errorMessage);
-            authSession.setAuthNote(AccountConsole.ACCOUNT_MGMT_FORWARDED_ERROR_NOTE, serializedError);
-        } catch (IOException ioe) {
-            throw new RuntimeException(ioe);
-        }
-
-        URI accountServiceUri = UriBuilder.fromUri(authSession.getRedirectUri()).queryParam(Constants.TAB_ID, authSession.getTabId()).build();
-        return Response.status(302).location(accountServiceUri).build();
-    }
-
 
     protected Response browserAuthentication(AuthenticationSessionModel authSession, String errorMessage, Object... parameters) {
         this.event.event(EventType.LOGIN);
@@ -1311,20 +1538,24 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
         throw ErrorResponse.error(message, Response.Status.NOT_FOUND);
     }
 
-    public static IdentityProvider<?> getIdentityProvider(KeycloakSession session, String alias) {
-        IdentityProviderModel identityProviderModel = session.identityProviders().getByAlias(alias);
+    public static UserAuthenticationIdentityProvider<?> getIdentityProvider(KeycloakSession session, String alias) {
+        IdentityProviderModel identityProviderModel = getIdentityProviderModel(session, alias);
+        UserAuthenticationIdentityProvider<?> identityProvider = getIdentityProvider(session, identityProviderModel, UserAuthenticationIdentityProvider.class);
+        if (identityProvider == null) {
+            throw new IdentityBrokerException("Identity Provider [" + alias + "] not found.");
+        }
+        return identityProvider;
+    }
 
+    public static <T extends IdentityProvider<?>> T getIdentityProvider(KeycloakSession session, IdentityProviderModel identityProviderModel, Class<T> type) {
         if (identityProviderModel != null) {
             IdentityProviderFactory<?> providerFactory = getIdentityProviderFactory(session, identityProviderModel);
-
-            if (providerFactory == null) {
-                throw new IdentityBrokerException("Could not find factory for identity provider [" + alias + "].");
+            if (providerFactory != null) {
+                IdentityProvider<?> idp = providerFactory.create(session, identityProviderModel);
+                return type.isInstance(idp) ? type.cast(idp) : null;
             }
-
-            return providerFactory.create(session, identityProviderModel);
         }
-
-        throw new IdentityBrokerException("Identity Provider [" + alias + "] not found.");
+        return null;
     }
 
     private static IdentityProviderFactory<?> getIdentityProviderFactory(KeycloakSession session, IdentityProviderModel model) {
@@ -1341,7 +1572,7 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
     }
 
     private IdentityProviderModel getIdentityProviderConfig(String providerAlias) {
-        IdentityProviderModel model = session.identityProviders().getByAlias(providerAlias);
+        IdentityProviderModel model = getIdentityProviderModel(session, providerAlias);
         if (model == null) {
             throw new IdentityBrokerException("Configuration for identity provider [" + providerAlias + "] not found.");
         }
@@ -1349,7 +1580,7 @@ public class IdentityBrokerService implements IdentityProvider.AuthenticationCal
     }
 
     private Response corsResponse(Response response, ClientModel clientModel) {
-        return Cors.builder().auth().allowedOrigins(session, clientModel).add(Response.fromResponse(response));
+        return Cors.builder().auth().checkAllowedOrigins(session, clientModel).add(Response.fromResponse(response));
     }
 
     private void fireErrorEvent(String message, Throwable throwable) {

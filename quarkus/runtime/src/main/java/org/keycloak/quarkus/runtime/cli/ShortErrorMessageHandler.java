@@ -1,15 +1,10 @@
 package org.keycloak.quarkus.runtime.cli;
 
-import static java.lang.String.format;
-import static org.keycloak.quarkus.runtime.cli.command.AbstractStartCommand.OPTIMIZED_BUILD_OPTION_LONG;
-
 import java.io.PrintWriter;
 import java.util.Optional;
 import java.util.function.BooleanSupplier;
-import java.util.stream.Stream;
 
 import org.keycloak.quarkus.runtime.cli.command.AbstractCommand;
-import org.keycloak.quarkus.runtime.cli.command.Start;
 import org.keycloak.quarkus.runtime.configuration.KcUnmatchedArgumentException;
 import org.keycloak.quarkus.runtime.configuration.mappers.PropertyMapper;
 import org.keycloak.quarkus.runtime.configuration.mappers.PropertyMappers;
@@ -23,6 +18,8 @@ import picocli.CommandLine.Model.OptionSpec;
 import picocli.CommandLine.ParameterException;
 import picocli.CommandLine.UnmatchedArgumentException;
 
+import static java.lang.String.format;
+
 public class ShortErrorMessageHandler implements IParameterExceptionHandler {
 
     @Override
@@ -32,23 +29,21 @@ public class ShortErrorMessageHandler implements IParameterExceptionHandler {
         String errorMessage = ex.getMessage();
         String additionalSuggestion = null;
 
-        if (ex instanceof UnmatchedArgumentException) {
-            UnmatchedArgumentException uae = (UnmatchedArgumentException) ex;
-
+        if (ex instanceof UnmatchedArgumentException uae) {
             String[] unmatched = getUnmatchedPartsByOptionSeparator(uae, "=");
 
             String cliKey = unmatched[0];
 
-            PropertyMapper<?> mapper = PropertyMappers.getMapper(cliKey);
+            PropertyMapper<?> mapper = PropertyMappers.getMapperByCliKey(cliKey);
 
-            final boolean isDisabledOption = mapper == null && PropertyMappers.isDisabledMapper(cliKey);
+            Optional<PropertyMapper<?>> disabled = PropertyMappers.getKcKeyFromCliKey(cliKey).flatMap(PropertyMappers::getDisabledMapper);
+
             final BooleanSupplier isUnknownOption = () -> mapper == null || !(cmd.getCommand() instanceof AbstractCommand);
 
-            if (isDisabledOption) {
-                var enabledWhen = PropertyMappers.getDisabledMapper(cliKey)
-                        .map(PropertyMapper::getEnabledWhen)
-                        .filter(Optional::isPresent)
-                        .map(desc -> format(". %s", desc.get()))
+            if (mapper == null && disabled.filter(m -> !m.getOption().isHidden()).isPresent()) {
+                var enabledWhen = disabled
+                        .flatMap(PropertyMapper::getEnabledWhen)
+                        .map(desc -> format(". %s", desc))
                         .orElse("");
 
                 errorMessage = format("Disabled option: '%s'%s", cliKey, enabledWhen);
@@ -60,24 +55,13 @@ public class ShortErrorMessageHandler implements IParameterExceptionHandler {
                     errorMessage = "Unknown option: '" + cliKey + "'";
                 }
             } else {
-                AbstractCommand command = cmd.getCommand();
-                if (!command.getOptionCategories().contains(mapper.getCategory())) {
-                    errorMessage = format("Option: '%s' not valid for command %s", cliKey, cmd.getCommandName());
-                } else {
-                    if (Stream.of(args).anyMatch(OPTIMIZED_BUILD_OPTION_LONG::equals) && mapper.isBuildTime() && Start.NAME.equals(cmd.getCommandName())) {
-                        errorMessage = format("Build time option: '%s' not usable with pre-built image and --optimized", cliKey);
-                    } else {
-                        final var optionType = mapper.isRunTime() ? "Run time" : "Build time";
-                        errorMessage = format("%s option: '%s' not usable with %s", optionType, cliKey, cmd.getCommandName());
-                    }
-                }
+                final var optionType = mapper.isRunTime() ? "Run time" : "Build time";
+                errorMessage = format("%s option: '%s' not usable with %s", optionType, cliKey, cmd.getCommandName());
             }
-        } else if (ex instanceof MissingParameterException) {
-            MissingParameterException mpe = (MissingParameterException)ex;
+        } else if (ex instanceof MissingParameterException mpe) {
             if (mpe.getMissing().size() == 1) {
                 ArgSpec spec = mpe.getMissing().get(0);
-                if (spec instanceof OptionSpec) {
-                    OptionSpec option = (OptionSpec)spec;
+                if (spec instanceof OptionSpec option) {
                     errorMessage = getExpectedMessage(option);
                 }
             }
@@ -99,7 +83,7 @@ public class ShortErrorMessageHandler implements IParameterExceptionHandler {
         return getInvalidInputExitCode(ex, cmd);
     }
 
-    static int getInvalidInputExitCode(Exception ex, CommandLine cmd) {
+    static int getInvalidInputExitCode(Throwable ex, CommandLine cmd) {
         return cmd.getExitCodeExceptionMapper() != null
                 ? cmd.getExitCodeExceptionMapper().getExitCode(ex)
                 : cmd.getCommandSpec().exitCodeOnInvalidInput();
@@ -126,8 +110,11 @@ public class ShortErrorMessageHandler implements IParameterExceptionHandler {
     }
 
     public static String getExpectedValuesMessage(Iterable<String> specCandidates, boolean caseInsensitive) {
-        return specCandidates.iterator().hasNext() ? String.format(" Expected values are%s: %s",
-                caseInsensitive ? " (case insensitive)" : "", String.join(", ", specCandidates)) : "";
+        if (specCandidates == null || !specCandidates.iterator().hasNext()) {
+            return "";
+        }
+        return String.format(" Expected values are%s: %s", caseInsensitive ? " (case insensitive)" : "",
+                String.join(", ", specCandidates));
     }
 
 }

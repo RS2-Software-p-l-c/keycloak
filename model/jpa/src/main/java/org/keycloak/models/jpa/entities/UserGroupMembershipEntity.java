@@ -17,6 +17,8 @@
 
 package org.keycloak.models.jpa.entities;
 
+import java.io.Serializable;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -27,7 +29,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.NamedQueries;
 import jakarta.persistence.NamedQuery;
 import jakarta.persistence.Table;
-import java.io.Serializable;
+
 import org.keycloak.representations.idm.MembershipType;
 
 /**
@@ -37,12 +39,6 @@ import org.keycloak.representations.idm.MembershipType;
 @NamedQueries({
         @NamedQuery(name="userMemberOf", query="select m from UserGroupMembershipEntity m where m.user = :user and m.groupId = :groupId"),
         @NamedQuery(name="userGroupMembership", query="select m from UserGroupMembershipEntity m where m.user = :user"),
-        @NamedQuery(name="groupMembership", query="select g.user from UserGroupMembershipEntity g where g.groupId = :groupId order by g.user.username"),
-        @NamedQuery(name="groupMembershipByUser", query="select g.user from UserGroupMembershipEntity g where g.groupId = :groupId and " +
-                "(g.user.username = :search or g.user.email = :search or g.user.firstName = :search or g.user.lastName = :search) order by g.user.username"),
-        @NamedQuery(name="groupMembershipByUserContained", query="select g.user from UserGroupMembershipEntity g where g.groupId = :groupId and " +
-                "(g.user.username like concat('%',:search,'%') or g.user.email like concat('%',:search,'%') or lower(g.user.firstName) like concat('%',:search,'%') or " +
-                "lower(g.user.lastName) like concat('%',:search,'%')) order by g.user.username"),
         @NamedQuery(name="deleteUserGroupMembershipByRealm", query="delete from  UserGroupMembershipEntity mapping where mapping.user IN (select u from UserEntity u where u.realmId=:realmId)"),
         @NamedQuery(name="deleteUserGroupMembershipsByRealmAndLink", query="delete from  UserGroupMembershipEntity mapping where mapping.user IN (select u from UserEntity u where u.realmId=:realmId and u.federationLink=:link)"),
         @NamedQuery(name="deleteUserGroupMembershipsByGroup", query="delete from UserGroupMembershipEntity m where m.groupId = :groupId"),

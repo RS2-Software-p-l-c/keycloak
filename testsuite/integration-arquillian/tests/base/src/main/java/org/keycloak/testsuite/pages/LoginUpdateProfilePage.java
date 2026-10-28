@@ -17,20 +17,21 @@
 
 package org.keycloak.testsuite.pages;
 
-import static org.keycloak.testsuite.util.UIUtils.clickLink;
-import static org.keycloak.testsuite.util.UIUtils.getTextFromElement;
-
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import org.jboss.arquillian.graphene.page.Page;
 import org.keycloak.testsuite.util.UIUtils;
 import org.keycloak.testsuite.util.WaitUtils;
+
+import org.jboss.arquillian.graphene.page.Page;
 import org.openqa.selenium.By;
 import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.FindBy;
+
+import static org.keycloak.testsuite.util.UIUtils.clickLink;
+import static org.keycloak.testsuite.util.UIUtils.getTextFromElement;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
@@ -52,7 +53,7 @@ public class LoginUpdateProfilePage extends AbstractPage {
     @FindBy(name = "department")
     private WebElement departmentInput;
 
-    @FindBy(css = "input[type=\"submit\"]")
+    @FindBy(css = "[type=\"submit\"]")
     private WebElement submitButton;
 
     @FindBy(name = "cancel-aia")
@@ -109,8 +110,9 @@ public class LoginUpdateProfilePage extends AbstractPage {
         return departmentInput.isEnabled();
     }
 
-    public boolean isCurrent() {
-        return PageUtils.getPageTitle(driver).equals("Update Account Information");
+    @Override
+    public String getExpectedPageId() {
+        return "login-login-update-profile";
     }
 
     public UpdateProfileErrors getInputErrors() {
@@ -131,6 +133,15 @@ public class LoginUpdateProfilePage extends AbstractPage {
         }
     }
 
+    public boolean isEmailInputPresent() {
+        try {
+            emailInput.isDisplayed();
+            return true;
+        } catch (NoSuchElementException e) {
+            return false;
+        }
+    }
+
     public boolean isDepartmentPresent() {
         try {
           isDepartmentEnabled();
@@ -138,11 +149,6 @@ public class LoginUpdateProfilePage extends AbstractPage {
         } catch (NoSuchElementException e) {
             return false;
         }
-    }
-
-    @Override
-    public void open() {
-        throw new UnsupportedOperationException();
     }
 
     public boolean isCancelDisplayed() {

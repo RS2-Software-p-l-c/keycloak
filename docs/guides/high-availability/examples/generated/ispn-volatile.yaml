@@ -36,6 +36,13 @@ data:
         metrics:
           namesAsTags: true
           histograms: false
+          legacy: true
+        tracing:
+          enabled: true
+          collector-endpoint: "http://tempo-tempo.monitoring.svc:4318"
+          exporter-protocol: "OTLP"
+          service-name: "infinispan-server"
+          security: false
       server:
         endpoints:
           - securityRealm: default
@@ -184,7 +191,7 @@ spec:
 ---
 # Source: ispn-helm/templates/infinispan.yaml
 # tag::infinispan-cache-actionTokens[]
-apiVersion: infinispan.org/v2alpha1
+apiVersion: infinispan.org/v2beta1
 kind: Cache
 metadata:
   name: actiontokens
@@ -219,7 +226,7 @@ spec:
 ---
 # Source: ispn-helm/templates/infinispan.yaml
 # tag::infinispan-cache-authenticationSessions[]
-apiVersion: infinispan.org/v2alpha1
+apiVersion: infinispan.org/v2beta1
 kind: Cache
 metadata:
   name: authenticationsessions
@@ -246,6 +253,7 @@ spec:
         enabled: true
         indexed-entities:
         - keycloak.RootAuthenticationSessionEntity
+        startupMode: NONE
       backups:
         site-b: # <3>
           backup:
@@ -258,7 +266,7 @@ spec:
 ---
 # Source: ispn-helm/templates/infinispan.yaml
 # tag::infinispan-cache-clientSessions[]
-apiVersion: infinispan.org/v2alpha1
+apiVersion: infinispan.org/v2beta1
 kind: Cache
 metadata:
   name: clientsessions
@@ -285,6 +293,7 @@ spec:
         enabled: true
         indexed-entities:
         - keycloak.RemoteAuthenticatedClientSessionEntity
+        startupMode: NONE
       backups:
         site-b: # <3>
           backup:
@@ -297,7 +306,7 @@ spec:
 ---
 # Source: ispn-helm/templates/infinispan.yaml
 # tag::infinispan-cache-loginFailures[]
-apiVersion: infinispan.org/v2alpha1
+apiVersion: infinispan.org/v2beta1
 kind: Cache
 metadata:
   name: loginfailures
@@ -324,6 +333,7 @@ spec:
         enabled: true
         indexed-entities:
         - keycloak.LoginFailureEntity
+        startupMode: NONE
       backups:
         site-b: # <3>
           backup:
@@ -336,7 +346,7 @@ spec:
 ---
 # Source: ispn-helm/templates/infinispan.yaml
 # tag::infinispan-cache-offlineClientSessions[]
-apiVersion: infinispan.org/v2alpha1
+apiVersion: infinispan.org/v2beta1
 kind: Cache
 metadata:
   name: offlineclientsessions
@@ -363,6 +373,7 @@ spec:
         enabled: true
         indexed-entities:
         - keycloak.RemoteAuthenticatedClientSessionEntity
+        startupMode: NONE
       backups:
         site-b: # <3>
           backup:
@@ -375,7 +386,7 @@ spec:
 ---
 # Source: ispn-helm/templates/infinispan.yaml
 # tag::infinispan-cache-offlineSessions[]
-apiVersion: infinispan.org/v2alpha1
+apiVersion: infinispan.org/v2beta1
 kind: Cache
 metadata:
   name: offlinesessions
@@ -402,6 +413,7 @@ spec:
         enabled: true
         indexed-entities:
         - keycloak.RemoteUserSessionEntity
+        startupMode: NONE
       backups:
         site-b: # <3>
           backup:
@@ -414,7 +426,7 @@ spec:
 ---
 # Source: ispn-helm/templates/infinispan.yaml
 # tag::infinispan-cache-sessions[]
-apiVersion: infinispan.org/v2alpha1
+apiVersion: infinispan.org/v2beta1
 kind: Cache
 metadata:
   name: sessions
@@ -441,6 +453,7 @@ spec:
         enabled: true
         indexed-entities:
         - keycloak.RemoteUserSessionEntity
+        startupMode: NONE
       backups:
         site-b: # <3>
           backup:
@@ -453,7 +466,7 @@ spec:
 ---
 # Source: ispn-helm/templates/infinispan.yaml
 # tag::infinispan-cache-work[]
-apiVersion: infinispan.org/v2alpha1
+apiVersion: infinispan.org/v2beta1
 kind: Cache
 metadata:
   name: work
@@ -507,12 +520,12 @@ spec:
   expose:
     type: Route
   configMapName: "cluster-config"
-  image: quay.io/infinispan/server:15.0.11.Final
-  version: 15.0.4
+  image:
+  version: 16.0.15
   configListener:
     enabled: false
   container:
-    extraJvmOpts: '-Dorg.infinispan.openssl=false -Dinfinispan.cluster.name=ISPN  -Djgroups.xsite.fd.interval=2000 -Djgroups.xsite.fd.timeout=10000'
+    extraJvmOpts: '-Dorg.infinispan.openssl=false -Dorg.infinispan.threads.virtual=true -Dinfinispan.cluster.name=ISPN  -Djgroups.xsite.fd.interval=2000 -Djgroups.xsite.fd.timeout=10000 -Dotel.traces.sampler=parentbased_always_off'
     cpu: 4:2
     memory: 2Gi:1Gi
   logging:
@@ -558,6 +571,8 @@ spec:
           url: openshift://api.site-b # <13>
           secretName: xsite-token-secret # <14>
           
+  upgrades:
+    type: InPlaceRolling
     # end::infinispan-crossdc[]
 ---
 # Source: ispn-helm/templates/infinispan-alerts.yaml

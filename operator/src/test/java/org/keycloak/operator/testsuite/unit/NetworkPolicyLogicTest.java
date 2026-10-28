@@ -19,20 +19,21 @@ package org.keycloak.operator.testsuite.unit;
 
 import java.util.List;
 
+import org.keycloak.operator.Constants;
+import org.keycloak.operator.controllers.KeycloakNetworkPolicyDependentResource;
+import org.keycloak.operator.crds.v2beta1.deployment.Keycloak;
+import org.keycloak.operator.crds.v2beta1.deployment.ValueOrSecret;
+import org.keycloak.operator.crds.v2beta1.deployment.spec.NetworkPolicySpec;
+import org.keycloak.operator.testsuite.utils.CRAssert;
+import org.keycloak.operator.testsuite.utils.K8sUtils;
+import org.keycloak.operator.testsuite.utils.MockController;
+
 import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicy;
 import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicyPeer;
 import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicyPeerBuilder;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.keycloak.operator.Constants;
-import org.keycloak.operator.controllers.KeycloakNetworkPolicyDependentResource;
-import org.keycloak.operator.crds.v2alpha1.deployment.Keycloak;
-import org.keycloak.operator.crds.v2alpha1.deployment.ValueOrSecret;
-import org.keycloak.operator.crds.v2alpha1.deployment.spec.NetworkPolicySpec;
-import org.keycloak.operator.testsuite.utils.CRAssert;
-import org.keycloak.operator.testsuite.utils.K8sUtils;
-import org.keycloak.operator.testsuite.utils.MockController;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -59,6 +60,18 @@ public class NetworkPolicyLogicTest {
     @Test
     public void testDefaults() {
         var keycloak = K8sUtils.getDefaultKeycloakDeployment();
+        var controller = new MockKeycloakNetworkPolicy(keycloak);
+        assertTrue(controller.isEnabled());
+        assertTrue(controller.reconciled());
+        assertFalse(controller.deleted());
+        assertEnabledAndGet(keycloak);
+    }
+
+    @Test
+    public void testNetworkPolicyDisabled() {
+        var keycloak = K8sUtils.getDefaultKeycloakDeployment();
+        K8sUtils.disableNetworkPolicy(keycloak);
+
         var controller = new MockKeycloakNetworkPolicy(keycloak);
         assertFalse(controller.isEnabled());
         assertFalse(controller.reconciled());
@@ -132,7 +145,8 @@ public class NetworkPolicyLogicTest {
                 namespaceSelectorWithMatchLabel("kubernetes.io/name", "keycloak")
         ));
         var networkPolicy = assertEnabledAndGet(kc);
-        CRAssert.assertIngressRules(networkPolicy, kc, -1, Constants.KEYCLOAK_HTTPS_PORT, -1);
+        var mgmtPort = legacyOption ? -1 : Constants.KEYCLOAK_MANAGEMENT_PORT;
+        CRAssert.assertIngressRules(networkPolicy, kc, -1, Constants.KEYCLOAK_HTTPS_PORT, mgmtPort);
     }
 
     @Test
@@ -163,6 +177,17 @@ public class NetworkPolicyLogicTest {
         var networkPolicy = controller.getReconciledResource();
         assertTrue(networkPolicy.isPresent());
         return networkPolicy.get();
+    }
+
+    private static void assertDisabled(Keycloak keycloak) {
+        var controller = new MockKeycloakNetworkPolicy(keycloak);
+
+        assertTrue(controller.isEnabled());
+        assertTrue(controller.reconciled());
+        assertFalse(controller.deleted());
+
+        var networkPolicy = controller.getReconciledResource();
+        assertTrue(networkPolicy.isEmpty());
     }
 
     private static void disableManagement(Keycloak keycloak, boolean legacyOption) {

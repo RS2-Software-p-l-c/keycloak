@@ -17,8 +17,12 @@
 
 package org.keycloak.marshalling;
 
+import java.util.List;
+
 import org.infinispan.client.hotrod.configuration.ConfigurationBuilder;
+import org.infinispan.commons.util.ServiceFinder;
 import org.infinispan.configuration.global.GlobalConfigurationBuilder;
+import org.infinispan.protostream.SerializationContextInitializer;
 
 /**
  * Ids of the protostream type.
@@ -41,23 +45,37 @@ import org.infinispan.configuration.global.GlobalConfigurationBuilder;
  * <p>
  * Docs: <a href="https://protobuf.dev/programming-guides/proto3/">Language Guide (proto 3)</a>
  */
+@SuppressWarnings("unused")
 public final class Marshalling {
 
     public static final String PROTO_SCHEMA_PACKAGE = "keycloak";
+
+    private static List<SerializationContextInitializer> SCHEMAS;
+
+    public static List<SerializationContextInitializer> getSchemas() {
+        if (SCHEMAS == null) {
+            setSchemas(ServiceFinder.load(SerializationContextInitializer.class).stream().toList());
+        }
+        return SCHEMAS;
+    }
+
+    public static void setSchemas(List<SerializationContextInitializer> schemas) {
+        SCHEMAS = List.copyOf(schemas);
+    }
 
     private Marshalling() {
     }
 
     // Model
-    // see org.keycloak.models.UserSessionModel.State
+    /** see {@link org.keycloak.models.UserSessionModel.State} */
     public static final int USER_STATE_ENUM = 65536;
-    // see org.keycloak.sessions.CommonClientSessionModel.ExecutionStatus
+    /** see {@link org.keycloak.sessions.CommonClientSessionModel.ExecutionStatus} */
     public static final int CLIENT_SESSION_EXECUTION_STATUS = 65537;
-    // see org.keycloak.component.ComponentModel.MultiMapEntry
+    /** see {@link org.keycloak.component.ComponentModel.MultiMapEntry} */
     public static final int MULTIMAP_ENTRY = 65538;
-    // see org.keycloak.storage.UserStorageProviderModel
+    /** see {@link org.keycloak.storage.UserStorageProviderModel} */
     public static final int USER_STORAGE_PROVIDER_MODES = 65539;
-    // see org.keycloak.storage.managers.UserStorageSyncManager.UserStorageProviderClusterEvent
+    /** see {@link org.keycloak.storage.UserStorageProviderClusterEvent} */
     public static final int USER_STORAGE_PROVIDER_CLUSTER_EVENT = 65540;
 
     // clustering.infinispan package
@@ -163,13 +181,27 @@ public final class Marshalling {
     public static final int PERMISSION_TICKET_REMOVED_EVENT = 65613;
     public static final int PERMISSION_TICKET_UPDATED_EVENT = 65614;
 
+    public static final int RELOAD_CERTIFICATE_FUNCTION = 65615;
+
+    public static final int EMBEDDED_CLIENT_SESSION_KEY = 65616;
+    public static final int CLIENT_SESSION_USER_FILTER = 65617;
+    public static final int REMOVE_KEY_BI_CONSUMER = 65618;
+    public static final int VALUE_IDENTITY_BI_FUNCTION = 65619;
+    public static final int LOGIN_FAILURES_LIFESPAN_UPDATE = 65620;
+
+    /** see {@link org.keycloak.models.workflow.WorkflowScheduleClusterEvent} */
+    public static final int WORKFLOW_SCHEDULE_CLUSTER_EVENT = 65621;
+    public static final int USER_VERIFIABLE_CREDENTIALS_UPDATED_EVENT = 65622;
+
+
+    public static final int AUTHENTICATED_USER_AUTH_SESSION_PREDICATE = 65623;
+
     public static void configure(GlobalConfigurationBuilder builder) {
-        builder.serialization()
-                .addContextInitializer(KeycloakModelSchema.INSTANCE);
+        getSchemas().forEach(builder.serialization()::addContextInitializer);
     }
 
     public static void configure(ConfigurationBuilder builder) {
-        builder.addContextInitializer(KeycloakModelSchema.INSTANCE);
+        getSchemas().forEach(builder::addContextInitializer);
     }
 
     public static String protoEntity(Class<?> clazz) {

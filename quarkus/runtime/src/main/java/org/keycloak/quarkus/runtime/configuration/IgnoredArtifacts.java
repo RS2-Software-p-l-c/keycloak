@@ -16,9 +16,6 @@
  */
 package org.keycloak.quarkus.runtime.configuration;
 
-import static java.util.Collections.emptySet;
-import static org.keycloak.quarkus.runtime.Environment.getCurrentOrCreateFeatureProfile;
-
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
@@ -28,7 +25,13 @@ import java.util.stream.Stream;
 import org.keycloak.common.Profile;
 import org.keycloak.config.HealthOptions;
 import org.keycloak.config.MetricsOptions;
+import org.keycloak.config.OpenApiOptions;
+import org.keycloak.config.TelemetryOptions;
 import org.keycloak.config.database.Database;
+
+import static java.util.Collections.emptySet;
+
+import static org.keycloak.quarkus.runtime.Environment.getCurrentOrCreateFeatureProfile;
 
 /**
  * Ignore particular artifacts based on build configuration
@@ -40,7 +43,11 @@ public class IgnoredArtifacts {
                         fips(),
                         jdbcDrivers(),
                         health(),
-                        metrics()
+                        metrics(),
+                        otelMetrics(),
+                        openApi(),
+                        openApiSwagger(),
+                        hibernateValidator()
                 )
                 .flatMap(Collection::stream)
                 .collect(Collectors.toUnmodifiableSet());
@@ -73,7 +80,8 @@ public class IgnoredArtifacts {
     public static final Set<String> JDBC_H2 = Set.of(
             "io.quarkus:quarkus-jdbc-h2",
             "io.quarkus:quarkus-jdbc-h2-deployment",
-            "com.h2database:h2"
+            "com.h2database:h2",
+            "org.locationtech.jts:jts-core"
     );
 
     public static final Set<String> JDBC_POSTGRES = Set.of(
@@ -103,7 +111,7 @@ public class IgnoredArtifacts {
     public static final Set<String> JDBC_ORACLE = Set.of(
             "io.quarkus:quarkus-jdbc-oracle",
             "io.quarkus:quarkus-jdbc-oracle-deployment",
-            "com.oracle.database.jdbc:ojdbc11",
+            "com.oracle.database.jdbc:ojdbc17",
             "com.oracle.database.nls:orai18n"
     );
 
@@ -129,15 +137,10 @@ public class IgnoredArtifacts {
             }
         });
 
-        // since the default may not be a known property name, look for it explicitly
-        Configuration.getOptionalValue("quarkus.datasource.db-kind")
-            .flatMap(Database::getVendor)
-            .ifPresent(vendorsOfAllDatasources::add);
-
         final Set<String> jdbcArtifacts = vendorsOfAllDatasources.stream()
                 .map(vendor -> switch (vendor) {
                     case H2 -> JDBC_H2;
-                    case MYSQL -> JDBC_MYSQL;
+                    case MYSQL, TIDB -> JDBC_MYSQL;
                     case MARIADB -> JDBC_MARIADB;
                     case POSTGRES -> JDBC_POSTGRES;
                     case MSSQL -> JDBC_MSSQL;
@@ -173,5 +176,54 @@ public class IgnoredArtifacts {
     private static Set<String> metrics() {
         boolean isMetricsEnabled = Configuration.isTrue(MetricsOptions.METRICS_ENABLED);
         return !isMetricsEnabled ? METRICS : emptySet();
+    }
+
+    // OpenTelemetry Metrics (Micrometer to OTel bridge)
+    public static Set<String> OTEL_METRICS = Set.of(
+            "io.quarkus:quarkus-micrometer-opentelemetry",
+            "io.quarkus:quarkus-micrometer-opentelemetry-deployment",
+            "io.opentelemetry.instrumentation:opentelemetry-micrometer-1.5"
+    );
+
+    private static Set<String> otelMetrics() {
+        boolean isOtelMetricsEnabled = Configuration.isTrue(TelemetryOptions.TELEMETRY_METRICS_ENABLED);
+        return !isOtelMetricsEnabled ? OTEL_METRICS : emptySet();
+    }
+
+    // OpenAPI
+    public static Set<String> OPENAPI = Set.of(
+            "io.quarkus:quarkus-smallrye-openapi",
+            "io.quarkus:quarkus-smallrye-openapi-deployment",
+            "io.smallrye:smallrye-open-api-core"
+    );
+
+    private static Set<String> openApi() {
+        boolean isEnabled = Configuration.isTrue(OpenApiOptions.OPENAPI_ENABLED);
+        return !isEnabled ? OPENAPI : emptySet();
+    }
+
+    // OpenAPI UI (Swagger)
+    public static Set<String> OPENAPI_SWAGGER = Set.of(
+            "io.quarkus:quarkus-swagger-ui",
+            "io.quarkus:quarkus-swagger-ui-deployment",
+            "io.smallrye:smallrye-open-api-ui"
+    );
+
+    private static Set<String> openApiSwagger() {
+        boolean isEnabled = Configuration.isTrue(OpenApiOptions.OPENAPI_UI_ENABLED);
+        return !isEnabled ? OPENAPI_SWAGGER : emptySet();
+    }
+
+    // Hibernate Validator
+    public static Set<String> HIBERNATE_VALIDATOR = Set.of(
+            "io.quarkus:quarkus-hibernate-validator",
+            "io.quarkus:quarkus-hibernate-validator-deployment",
+            "io.quarkus:quarkus-hibernate-validator-spi",
+            "org.hibernate.validator:hibernate-validator"
+    );
+
+    private static Set<String> hibernateValidator() {
+        boolean isEnabled = Profile.isFeatureEnabled(Profile.Feature.CLIENT_ADMIN_API_V2);
+        return !isEnabled ? HIBERNATE_VALIDATOR : emptySet();
     }
 }

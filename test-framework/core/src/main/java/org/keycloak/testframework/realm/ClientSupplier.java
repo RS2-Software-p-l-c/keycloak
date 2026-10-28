@@ -2,11 +2,15 @@ package org.keycloak.testframework.realm;
 
 import java.util.List;
 
+import jakarta.ws.rs.NotFoundException;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.Response.Status;
+
 import org.keycloak.admin.client.resource.ClientResource;
 import org.keycloak.representations.idm.ClientRepresentation;
 import org.keycloak.testframework.annotations.InjectClient;
+import org.keycloak.testframework.injection.DependenciesBuilder;
+import org.keycloak.testframework.injection.Dependency;
 import org.keycloak.testframework.injection.InstanceContext;
 import org.keycloak.testframework.injection.RequestedInstance;
 import org.keycloak.testframework.injection.Supplier;
@@ -16,40 +20,26 @@ import org.keycloak.testframework.util.ApiUtil;
 public class ClientSupplier implements Supplier<ManagedClient, InjectClient> {
 
     @Override
-    public Class<InjectClient> getAnnotationClass() {
-        return InjectClient.class;
-    }
-
-    @Override
-    public Class<ManagedClient> getValueType() {
-        return ManagedClient.class;
+    public List<Dependency> getDependencies(RequestedInstance<ManagedClient, InjectClient> instanceContext) {
+        return DependenciesBuilder.create(ManagedRealm.class, instanceContext.getAnnotation().realmRef()).build();
     }
 
     @Override
     public ManagedClient getValue(InstanceContext<ManagedClient, InjectClient> instanceContext) {
         ManagedRealm realm = instanceContext.getDependency(ManagedRealm.class, instanceContext.getAnnotation().realmRef());
 
-        ClientConfig config = SupplierHelpers.getInstance(instanceContext.getAnnotation().config());
-        ClientRepresentation clientRepresentation = config.configure(ClientConfigBuilder.create()).build();
+        ClientConfig config = SupplierHelpers.getInstanceWithInjectedFields(instanceContext.getAnnotation().config(), instanceContext);
+        ClientRepresentation clientRepresentation = config.configure(ClientBuilder.create()).build();
 
         if (clientRepresentation.getClientId() == null) {
-            String clientId = SupplierHelpers.createName(instanceContext);
-            clientRepresentation.setClientId(clientId);
+            clientRepresentation.setClientId(SupplierHelpers.createName(instanceContext));
         }
 
-        if (instanceContext.getAnnotation().createClient()) {
-            Response response = realm.admin().clients().create(clientRepresentation);
-            if (Status.CONFLICT.equals(Status.fromStatusCode(response.getStatus()))) {
-                throw new IllegalStateException("Client already exist with client id: " + clientRepresentation.getClientId());
-            }
-            clientRepresentation.setId(ApiUtil.handleCreatedResponse(response));
-        } else {
-            List<ClientRepresentation> clients = realm.admin().clients().findByClientId(clientRepresentation.getClientId());
-            if (clients.isEmpty()) {
-                throw new IllegalStateException("No client found with client id: " + clientRepresentation.getClientId());
-            }
-            clientRepresentation = clients.get(0);
+        Response response = realm.admin().clients().create(clientRepresentation);
+        if (Status.CONFLICT.equals(Status.fromStatusCode(response.getStatus()))) {
+            throw new IllegalStateException("Client already exist with client id: " + clientRepresentation.getClientId());
         }
+        clientRepresentation.setId(ApiUtil.getCreatedId(response));
 
         ClientResource clientResource = realm.admin().clients().get(clientRepresentation.getId());
         return new ManagedClient(clientRepresentation, clientResource);
@@ -62,7 +52,9 @@ public class ClientSupplier implements Supplier<ManagedClient, InjectClient> {
 
     @Override
     public void close(InstanceContext<ManagedClient, InjectClient> instanceContext) {
-        instanceContext.getValue().admin().remove();
+        try {
+            instanceContext.getValue().admin().remove();
+        } catch (NotFoundException ex) {}
     }
 
 }

@@ -21,12 +21,13 @@ import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
 
-import org.jboss.logging.Logger;
 import org.keycloak.authorization.attribute.Attributes;
 import org.keycloak.authorization.model.Policy;
 import org.keycloak.authorization.policy.evaluation.Evaluation;
 import org.keycloak.authorization.policy.evaluation.EvaluationContext;
 import org.keycloak.authorization.policy.provider.PolicyProvider;
+
+import org.jboss.logging.Logger;
 
 /**
  * @author <a href="mailto:psilva@redhat.com">Pedro Igor</a>
@@ -58,7 +59,7 @@ public class TimePolicyProvider implements PolicyProvider {
             String notBefore = policy.getConfig().get("nbf");
             if (notBefore != null && !"".equals(notBefore)) {
                 if (actualDate.before(dateFormat.parse(format(notBefore)))) {
-                    logger.debugv("Provided date is before the accepted date: (nbf) ", notBefore);
+                    logger.debugv("Provided date is before the accepted date: (nbf) {0}", notBefore);
                     evaluation.deny();
                     return;
                 }

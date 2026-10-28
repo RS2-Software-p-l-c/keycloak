@@ -17,14 +17,6 @@
 
 package org.keycloak.models.cache.infinispan;
 
-import org.keycloak.models.RealmModel;
-import org.keycloak.models.RoleContainerModel;
-import org.keycloak.models.RoleModel;
-import org.keycloak.models.cache.infinispan.entities.CachedClientRole;
-import org.keycloak.models.cache.infinispan.entities.CachedRealmRole;
-import org.keycloak.models.cache.infinispan.entities.CachedRole;
-import org.keycloak.models.utils.KeycloakModelUtils;
-
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +25,15 @@ import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.RoleContainerModel;
+import org.keycloak.models.RoleModel;
+import org.keycloak.models.cache.infinispan.entities.CachedClientRole;
+import org.keycloak.models.cache.infinispan.entities.CachedRealmRole;
+import org.keycloak.models.cache.infinispan.entities.CachedRole;
+import org.keycloak.models.utils.KeycloakModelUtils;
+
 /**
  * @author <a href="mailto:bill@burkecentral.com">Bill Burke</a>
  * @version $Revision: 1 $
@@ -40,17 +41,19 @@ import java.util.stream.Stream;
 public class RoleAdapter implements RoleModel {
 
     protected RoleModel updated;
+    private final KeycloakSession session;
     protected CachedRole cached;
     protected RealmCacheSession cacheSession;
     protected RealmModel realm;
     protected Set<RoleModel> composites;
     private final Supplier<RoleModel> modelSupplier;
 
-    public RoleAdapter(CachedRole cached, RealmCacheSession session, RealmModel realm) {
+    public RoleAdapter(CachedRole cached, RealmCacheSession cacheSession, RealmModel realm) {
         this.cached = cached;
-        this.cacheSession = session;
+        this.cacheSession = cacheSession;
+        this.session = cacheSession.session;
         this.realm = realm;
-        this.modelSupplier = this::getRoleModel;
+        this.modelSupplier = new LazyModel<>(this::getRoleModel);
     }
 
     protected void getDelegateForUpdate() {
@@ -118,7 +121,7 @@ public class RoleAdapter implements RoleModel {
     @Override
     public boolean isComposite() {
         if (isUpdated()) return updated.isComposite();
-        return cached.isComposite();
+        return cached.isComposite(session, this::getRoleModel);
     }
 
     @Override
@@ -139,7 +142,7 @@ public class RoleAdapter implements RoleModel {
 
         if (composites == null) {
             composites = new HashSet<>();
-            for (String id : cached.getComposites()) {
+            for (String id : cached.getComposites(session, modelSupplier).ids()) {
                 RoleModel role = realm.getRoleById(id);
                 if (role == null) {
                     // chance that composite role was removed, so invalidate this entry and fallback to delegate
@@ -157,7 +160,7 @@ public class RoleAdapter implements RoleModel {
     public Stream<RoleModel> getCompositesStream(String search, Integer first, Integer max) {
         if (isUpdated()) return updated.getCompositesStream(search, first, max);
 
-        return cacheSession.getRoleDelegate().getRolesStream(realm, cached.getComposites().stream(), search, first, max);
+        return cacheSession.getRoleDelegate().getRolesStream(realm, cached.getComposites(session, modelSupplier).ids().stream(), search, first, max);
     }
 
     @Override
@@ -215,7 +218,7 @@ public class RoleAdapter implements RoleModel {
             return updated.getFirstAttribute(name);
         }
 
-        return cached.getAttributes(modelSupplier).getFirst(name);
+        return cached.getAttributes(session, modelSupplier).getFirst(name);
     }
 
     @Override
@@ -224,7 +227,7 @@ public class RoleAdapter implements RoleModel {
             return updated.getAttributeStream(name);
         }
 
-        List<String> result = cached.getAttributes(modelSupplier).get(name);
+        List<String> result = cached.getAttributes(session, modelSupplier).get(name);
         if (result == null) {
             return Stream.empty();
         }
@@ -237,10 +240,10 @@ public class RoleAdapter implements RoleModel {
             return updated.getAttributes();
         }
 
-        return cached.getAttributes(modelSupplier);
+        return cached.getAttributes(session, modelSupplier);
     }
 
-    private RoleModel getRoleModel() {
+    protected RoleModel getRoleModel() {
         return cacheSession.getRoleDelegate().getRoleById(realm, cached.getId());
     }
 

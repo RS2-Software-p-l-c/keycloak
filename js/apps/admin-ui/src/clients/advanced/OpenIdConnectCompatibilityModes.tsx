@@ -3,9 +3,11 @@ import { Controller, useFormContext } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 
 import { FormAccess } from "../../components/form/FormAccess";
-import { HelpItem } from "@keycloak/keycloak-ui-shared";
+import { HelpItem, SelectControl } from "@keycloak/keycloak-ui-shared";
 import { convertAttributeNameToForm } from "../../util";
 import { FormFields } from "../ClientDetails";
+import useIsFeatureEnabled, { Feature } from "../../utils/useIsFeatureEnabled";
+import { MapComponent } from "../../components/dynamic/MapComponent";
 
 type OpenIdConnectCompatibilityModesProps = {
   save: () => void;
@@ -19,7 +21,28 @@ export const OpenIdConnectCompatibilityModes = ({
   hasConfigureAccess,
 }: OpenIdConnectCompatibilityModesProps) => {
   const { t } = useTranslation();
-  const { control } = useFormContext();
+  const { control, watch } = useFormContext();
+  const isFeatureEnabled = useIsFeatureEnabled();
+  const tokenExchangeEnabled = watch(
+    convertAttributeNameToForm<FormFields>(
+      "attributes.standard.token.exchange.enabled",
+    ),
+  );
+  const useRefreshTokens = watch(
+    convertAttributeNameToForm<FormFields>("attributes.use.refresh.tokens"),
+    "true",
+  );
+  const jwtAuthorizationGrantEnabled = watch(
+    convertAttributeNameToForm<FormFields>(
+      "attributes.oauth2.jwt.authorization.grant.enabled",
+    ),
+    false,
+  );
+  const jwtAuthorizationGrantIdP = watch(
+    convertAttributeNameToForm<FormFields>(
+      "attributes.oauth2.jwt.authorization.grant.idp",
+    ),
+  );
   return (
     <FormAccess
       role="manage-clients"
@@ -171,6 +194,97 @@ export const OpenIdConnectCompatibilityModes = ({
           )}
         />
       </FormGroup>
+      <FormGroup
+        label={t("allowTokenIntrospectionWithoutAudienceCheck")}
+        fieldId="allowTokenIntrospectionWithoutAudienceCheck"
+        hasNoPaddingTop
+        labelIcon={
+          <HelpItem
+            helpText={t("allowTokenIntrospectionWithoutAudienceCheckHelp")}
+            fieldLabelId="allowTokenIntrospectionWithoutAudienceCheck"
+          />
+        }
+      >
+        <Controller
+          name={convertAttributeNameToForm<FormFields>(
+            "attributes.allow.token.introspection.without.audience.check",
+          )}
+          defaultValue=""
+          control={control}
+          render={({ field }) => (
+            <Switch
+              id="allowTokenIntrospectionWithoutAudienceCheck"
+              label={t("on")}
+              labelOff={t("off")}
+              isChecked={field.value === "true"}
+              onChange={(_event, value) => field.onChange(value.toString())}
+              aria-label={t("allowTokenIntrospectionWithoutAudienceCheck")}
+            />
+          )}
+        />
+      </FormGroup>
+      <FormGroup
+        label={t("allowUserinfoWithLightweightAccessToken")}
+        fieldId="allowUserinfoWithLightweightAccessToken"
+        hasNoPaddingTop
+        labelIcon={
+          <HelpItem
+            helpText={t("allowUserinfoWithLightweightAccessTokenHelp")}
+            fieldLabelId="allowUserinfoWithLightweightAccessToken"
+          />
+        }
+      >
+        <Controller
+          name={convertAttributeNameToForm<FormFields>(
+            "attributes.allow.userinfo.with.lightweight.access.token",
+          )}
+          defaultValue=""
+          control={control}
+          render={({ field }) => (
+            <Switch
+              id="allowUserinfoWithLightweightAccessToken"
+              label={t("on")}
+              labelOff={t("off")}
+              isChecked={field.value === "true"}
+              onChange={(_event, value) => field.onChange(value.toString())}
+              aria-label={t("allowUserinfoWithLightweightAccessToken")}
+            />
+          )}
+        />
+      </FormGroup>
+
+      {isFeatureEnabled(Feature.StandardTokenExchangeV2) && (
+        <SelectControl
+          name={convertAttributeNameToForm<FormFields>(
+            "attributes.standard.token.exchange.enableRefreshRequestedTokenType",
+          )}
+          label={t("enableRefreshRequestedTokenType")}
+          labelIcon={t("enableRefreshRequestedTokenTypeHelp")}
+          controller={{
+            defaultValue: "",
+          }}
+          isDisabled={
+            tokenExchangeEnabled?.toString() !== "true" ||
+            useRefreshTokens?.toString() !== "true"
+          }
+          options={[
+            { key: "", value: t("choose") },
+            { key: "NO", value: t("no") },
+            { key: "SAME_SESSION", value: t("sameSession") },
+          ]}
+        />
+      )}
+      {isFeatureEnabled(Feature.JWTAuthorizationGrant) &&
+        jwtAuthorizationGrantEnabled.toString() === "true" &&
+        jwtAuthorizationGrantIdP && (
+          <MapComponent
+            name="attributes.oauth2.jwt.authorization.grant.audience"
+            label="jwtAuthorizationGrantAudience"
+            helpText="jwtAuthorizationGrantAudienceHelp"
+            convertToName={convertAttributeNameToForm}
+            options={jwtAuthorizationGrantIdP.split("##")}
+          />
+        )}
       <ActionGroup>
         <Button
           variant="secondary"

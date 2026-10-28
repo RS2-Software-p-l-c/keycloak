@@ -8,7 +8,7 @@
 
     <#if section = "header">
         <#if messageHeader??>
-            ${kcSanitize(msg("${messageHeader}"))?no_esc}
+            ${msg(messageHeader)}
         <#else>
             ${msg("registerTitle")}
         </#if>
@@ -42,7 +42,7 @@
                 </script>
                 <div id="kc-form-buttons" class="${properties.kcFormButtonsClass!}">
                     <button class="${properties.kcButtonClass!} ${properties.kcButtonPrimaryClass!} ${properties.kcButtonBlockClass!} ${properties.kcButtonLargeClass!} g-recaptcha"
-                            data-sitekey="${recaptchaSiteKey}" data-callback="onSubmitRecaptcha" data-action="${recaptchaAction}" type="submit">
+                            data-sitekey="${recaptchaSiteKey}" data-callback="onSubmitRecaptcha" data-action="${recaptchaAction}" type="submit" id="kc-submit">
                         ${msg("doRegister")}
                     </button>
                 </div>
@@ -55,7 +55,7 @@
             <div class="${properties.kcFormGroupClass!} pf-v5-c-login__main-footer-band">
                 <div id="kc-form-options" class="${properties.kcFormOptionsClass!} pf-v5-c-login__main-footer-band-item">
                     <div class="${properties.kcFormOptionsWrapperClass!}">
-                        <span><a href="${url.loginUrl}">${kcSanitize(msg("backToLogin"))?no_esc}</a></span>
+                        <span><a href="${url.loginUrl}">${msg("backToLogin")}</a></span>
                     </div>
                 </div>
             </div>

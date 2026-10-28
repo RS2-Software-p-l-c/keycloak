@@ -1,9 +1,29 @@
 package org.keycloak.services.resources.account;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
+import java.io.IOException;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.ForbiddenException;
-import org.jboss.logging.Logger;
-import org.jboss.resteasy.reactive.NoCache;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.Response;
+
 import org.keycloak.authentication.Authenticator;
 import org.keycloak.authentication.AuthenticatorFactory;
 import org.keycloak.authentication.AuthenticatorUtil;
@@ -22,6 +42,7 @@ import org.keycloak.models.AuthenticationFlowModel;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.SubjectCredentialManager;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.credential.OTPCredentialModel;
 import org.keycloak.models.utils.ModelToRepresentation;
@@ -34,27 +55,9 @@ import org.keycloak.services.messages.Messages;
 import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.MediaType;
 
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.DELETE;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.NotFoundException;
-import jakarta.ws.rs.PUT;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.QueryParam;
-import jakarta.ws.rs.core.Response;
-import java.io.IOException;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.function.Function;
-import java.util.function.Predicate;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import org.jboss.logging.Logger;
+import org.jboss.resteasy.reactive.NoCache;
 
 import static org.keycloak.models.AuthenticationExecutionModel.Requirement.DISABLED;
 import static org.keycloak.utils.CredentialHelper.createUserStorageCredentialRepresentation;
@@ -179,8 +182,9 @@ public class AccountCredentialResource {
 
         Set<String> enabledCredentialTypes = getEnabledCredentialTypes();
 
-        Stream<CredentialModel> modelsStream = includeUserCredentials ? user.credentialManager().getStoredCredentialsStream() : Stream.empty();
-        List<CredentialModel> models = modelsStream.collect(Collectors.toList());
+        SubjectCredentialManager credentialManager = user.credentialManager();
+        Stream<CredentialModel> modelsStream = includeUserCredentials ? credentialManager.getCredentials() : Stream.empty();
+        List<CredentialModel> models = modelsStream.toList();
 
         Function<CredentialProvider, CredentialContainer> toCredentialContainer = (credentialProvider) -> {
             CredentialTypeMetadataContext ctx = CredentialTypeMetadataContext.builder()
@@ -192,8 +196,8 @@ public class AccountCredentialResource {
 
             if (includeUserCredentials) {
                 List<CredentialModel> modelsOfType = models.stream()
-                        .filter(credentialModel -> credentialProvider.getType().equals(credentialModel.getType()))
-                        .collect(Collectors.toList());
+                        .filter(credentialProvider::supportsCredentialType)
+                        .toList();
 
 
                 List<CredentialMetadata> credentialMetadataList = modelsOfType.stream()
@@ -228,7 +232,7 @@ public class AccountCredentialResource {
         };
 
         return AuthenticatorUtil.getCredentialProviders(session)
-                .filter(p -> type == null || Objects.equals(p.getType(), type))
+                .filter(p -> type == null || p.supportsCredentialType(type))
                 .filter(p -> enabledCredentialTypes.contains(p.getType()))
                 .map(toCredentialContainer)
                 .filter(Objects::nonNull)
@@ -246,7 +250,7 @@ public class AccountCredentialResource {
                                 .map(exe -> (AuthenticatorFactory) session.getKeycloakSessionFactory()
                                         .getProviderFactory(Authenticator.class, exe.getAuthenticator()))
                                 .filter(Objects::nonNull)
-                                .map(AuthenticatorFactory::getReferenceCategory)
+                                .flatMap(authFact -> Stream.concat(Stream.of(authFact.getReferenceCategory()), authFact.getOptionalReferenceCategories(session).stream()))
                                 .filter(Objects::nonNull)
                 ).collect(Collectors.toSet());
     }

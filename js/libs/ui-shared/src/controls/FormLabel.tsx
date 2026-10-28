@@ -1,10 +1,11 @@
 import { FormGroup, FormGroupProps } from "@patternfly/react-core";
-import { PropsWithChildren, ReactNode } from "react";
+import { PropsWithChildren, ReactNode, isValidElement } from "react";
 import { FieldError, FieldValues, Merge } from "react-hook-form";
 import { FormErrorText } from "./FormErrorText";
 import { HelpItem } from "./HelpItem";
 
 export type FieldProps<T extends FieldValues = FieldValues> = {
+  id?: string | undefined;
   label?: string;
   name: string;
   labelIcon?: string | ReactNode;
@@ -15,6 +16,7 @@ export type FieldProps<T extends FieldValues = FieldValues> = {
 type FormLabelProps = FieldProps & Omit<FormGroupProps, "label" | "labelIcon">;
 
 export const FormLabel = ({
+  id,
   name,
   label,
   labelIcon,
@@ -24,10 +26,12 @@ export const FormLabel = ({
 }: PropsWithChildren<FormLabelProps>) => (
   <FormGroup
     label={label || name}
-    fieldId={name}
+    fieldId={id || name}
     labelIcon={
-      labelIcon ? (
-        <HelpItem helpText={labelIcon} fieldLabelId={name} />
+      isValidElement(labelIcon) ? (
+        labelIcon
+      ) : labelIcon ? (
+        <HelpItem helpText={labelIcon} fieldLabelId={id || name} />
       ) : undefined
     }
     {...rest}

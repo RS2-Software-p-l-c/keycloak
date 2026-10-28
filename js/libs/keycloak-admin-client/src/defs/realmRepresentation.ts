@@ -24,6 +24,7 @@ export default interface RealmRepresentation {
   actionTokenGeneratedByUserLifespan?: number;
   adminEventsDetailsEnabled?: boolean;
   adminEventsEnabled?: boolean;
+  adminPermissionsClient?: ClientRepresentation;
   adminPermissionsEnabled?: boolean;
   adminTheme?: string;
   attributes?: Record<string, any>;
@@ -62,6 +63,7 @@ export default interface RealmRepresentation {
   eventsExpiration?: number;
   eventsListeners?: string[];
   failureFactor?: number;
+  maxSecondaryAuthFailures?: number;
   federatedUsers?: UserRepresentation[];
   groups?: GroupRepresentation[];
   id?: string;
@@ -119,6 +121,8 @@ export default interface RealmRepresentation {
   ssoSessionMaxLifespanRememberMe?: number;
   clientSessionIdleTimeout?: number;
   clientSessionMaxLifespan?: number;
+  clientOfflineSessionIdleTimeout?: number;
+  clientOfflineSessionMaxLifespan?: number;
   supportedLocales?: string[];
   // UserFederationMapperRepresentation
   userFederationMappers?: any[];
@@ -128,6 +132,8 @@ export default interface RealmRepresentation {
   users?: UserRepresentation[];
   verifyEmail?: boolean;
   waitIncrementSeconds?: number;
+  webAuthnPolicyPasswordlessPasskeysEnabled?: boolean;
+  scimApiEnabled?: boolean;
 }
 
 export type PartialImportRealmRepresentation = RealmRepresentation & {

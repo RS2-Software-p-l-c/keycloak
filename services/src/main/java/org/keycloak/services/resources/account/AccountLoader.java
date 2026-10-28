@@ -16,14 +16,24 @@
  */
 package org.keycloak.services.resources.account;
 
-import jakarta.ws.rs.OPTIONS;
-import jakarta.ws.rs.core.Response;
-import org.eclipse.microprofile.openapi.annotations.Operation;
-import org.jboss.logging.Logger;
-import org.keycloak.http.HttpRequest;
-import org.keycloak.http.HttpResponse;
+import java.io.IOException;
+import java.util.List;
+
+import jakarta.ws.rs.HttpMethod;
+import jakarta.ws.rs.InternalServerErrorException;
+import jakarta.ws.rs.NotAuthorizedException;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.UriInfo;
+
 import org.keycloak.common.enums.AccountRestApiVersion;
 import org.keycloak.events.EventBuilder;
+import org.keycloak.http.HttpRequest;
+import org.keycloak.http.HttpResponse;
 import org.keycloak.models.ClientModel;
 import org.keycloak.models.Constants;
 import org.keycloak.models.KeycloakSession;
@@ -37,21 +47,9 @@ import org.keycloak.services.managers.AppAuthManager;
 import org.keycloak.services.managers.Auth;
 import org.keycloak.services.managers.AuthenticationManager;
 import org.keycloak.services.resource.AccountResourceProvider;
-import org.keycloak.services.util.UserSessionUtil;
 import org.keycloak.theme.Theme;
 
-import jakarta.ws.rs.HttpMethod;
-import jakarta.ws.rs.InternalServerErrorException;
-import jakarta.ws.rs.NotAuthorizedException;
-import jakarta.ws.rs.NotFoundException;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.HttpHeaders;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.UriInfo;
-import java.io.IOException;
-import java.util.List;
+import org.jboss.logging.Logger;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
@@ -99,16 +97,6 @@ public class AccountLoader {
         }
     }
 
-    // Remove once Quarkus is upgraded to 3.15.3, or reconsidered to use this approach
-    // See https://github.com/keycloak/keycloak/issues/36009
-    @OPTIONS
-    @Path("{any:.*}")
-    @Operation(hidden = true)
-    public Response preFlight() {
-        return new CorsPreflightService().preflight();
-    }
-    // remove until here
-
     @Path("{version : v\\d[0-9a-zA-Z_\\-]*}")
     @Produces(MediaType.APPLICATION_JSON)
     public Object getVersionedAccountRestService(final @PathParam("version") String version) {
@@ -127,32 +115,33 @@ public class AccountLoader {
     }
 
     private AccountRestService getAccountRestService(ClientModel client, String versionStr) {
+        AccountRestService.checkAccountApiEnabled();
+
         AuthenticationManager.AuthResult authResult = new AppAuthManager.BearerTokenAuthenticator(session)
                 .authenticate();
         if (authResult == null) {
             throw new NotAuthorizedException("Bearer token required");
         }
 
-        AccessToken accessToken = authResult.getToken();
-
-        UserSessionUtil.checkTokenIssuedAt(client.getRealm(), accessToken, authResult.getSession(), event, authResult.getClient());
+        AccessToken accessToken = authResult.token();
 
         if (accessToken.getAudience() == null || accessToken.getResourceAccess(client.getClientId()) == null) {
             // transform for introspection to get the required claims
             AccessTokenIntrospectionProvider provider = (AccessTokenIntrospectionProvider) session.getProvider(TokenIntrospectionProvider.class,
                     AccessTokenIntrospectionProviderFactory.ACCESS_TOKEN_TYPE);
-            accessToken = provider.transformAccessToken(accessToken, authResult.getSession());
+            accessToken = provider.transformAccessToken(accessToken, authResult.session());
         }
 
         if (!accessToken.hasAudience(client.getClientId())) {
             throw new NotAuthorizedException("Invalid audience for client " + client.getClientId());
         }
 
-        Auth auth = new Auth(session.getContext().getRealm(), accessToken, authResult.getUser(), client, authResult.getSession(), false);
+        event.session(authResult.session());
+        Auth auth = new Auth(session.getContext().getRealm(), accessToken, authResult.user(), client, authResult.session(), false);
 
-        Cors.builder().allowedOrigins(auth.getToken()).allowedMethods("GET", "PUT", "POST", "DELETE").auth().add();
+        Cors.builder().checkAllowedOrigins(auth.getToken()).allowedMethods("GET", "PUT", "POST", "DELETE").auth().add();
 
-        if (authResult.getUser().getServiceAccountClientLink() != null) {
+        if (authResult.user().getServiceAccountClientLink() != null) {
             throw new NotAuthorizedException("Service accounts are not allowed to access this service");
         }
 
@@ -180,11 +169,12 @@ public class AccountLoader {
     }
 
     private AccountResourceProvider getAccountResourceProvider(Theme theme) {
-      try {
-        if (theme.getProperties().containsKey(Theme.ACCOUNT_RESOURCE_PROVIDER_KEY)) {
-          return session.getProvider(AccountResourceProvider.class, theme.getProperties().getProperty(Theme.ACCOUNT_RESOURCE_PROVIDER_KEY));
+        try {
+            if (theme != null && theme.getProperties().containsKey(Theme.ACCOUNT_RESOURCE_PROVIDER_KEY)) {
+                return session.getProvider(AccountResourceProvider.class, theme.getProperties().getProperty(Theme.ACCOUNT_RESOURCE_PROVIDER_KEY));
+            }
+        } catch (IOException ignore) {
         }
-      } catch (IOException ignore) {}
-      return session.getProvider(AccountResourceProvider.class);
+        return session.getProvider(AccountResourceProvider.class);
     }
 }

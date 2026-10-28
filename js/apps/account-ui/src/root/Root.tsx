@@ -1,25 +1,48 @@
-import { ErrorPage, useEnvironment } from "@keycloak/keycloak-ui-shared";
-import { Page, Spinner } from "@patternfly/react-core";
-import { Suspense, useState } from "react";
+import {
+  ErrorPage,
+  useAlerts,
+  useEnvironment,
+  KeycloakContext,
+} from "@keycloak/keycloak-ui-shared";
+import { AlertVariant, Page, Spinner } from "@patternfly/react-core";
+import { Suspense, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   createBrowserRouter,
+  Navigate,
   Outlet,
   RouteObject,
   RouterProvider,
 } from "react-router-dom";
 import fetchContentJson from "../content/fetchContent";
-import { Environment, environment } from "../environment";
+import { type AccountEnvironment } from "..";
 import { usePromise } from "../utils/usePromise";
 import { Header } from "./Header";
 import { MenuItem, PageNav } from "./PageNav";
-import { routes } from "../routes";
+import { ContentRoute, routes } from "../routes";
 
-function mapRoutes(content: MenuItem[]): RouteObject[] {
+function mapRoutes(
+  context: KeycloakContext<AccountEnvironment>,
+  content: MenuItem[],
+): RouteObject[] {
   return content
     .map((item) => {
       if ("children" in item) {
-        return mapRoutes(item.children);
+        return mapRoutes(context, item.children);
       }
+
+      // Do not add route disabled via feature flags
+      if (item.isVisible && !context.environment.features[item.isVisible]) {
+        return null;
+      }
+
+      // Custom content is rendered by ContentRoute. Adding an exact route for
+      // every custom item here would shadow the generic content/:componentId
+      // route with an element that cannot be resolved from the built-in routes.
+      if (item.modulePath) {
+        return null;
+      }
+
       return {
         ...item,
         element:
@@ -28,11 +51,23 @@ function mapRoutes(content: MenuItem[]): RouteObject[] {
             : undefined,
       };
     })
+    .filter((item) => !!item)
     .flat();
 }
 
+function CatchAllRedirect() {
+  const { t } = useTranslation();
+  const { addAlert } = useAlerts();
+
+  useEffect(() => {
+    addAlert(t("pageNotFound"), AlertVariant.warning);
+  }, [addAlert, t]);
+
+  return <Navigate to=".." replace />;
+}
+
 export const Root = () => {
-  const context = useEnvironment<Environment>();
+  const context = useEnvironment<AccountEnvironment>();
   const [content, setContent] = useState<RouteObject[]>();
 
   usePromise(
@@ -40,7 +75,9 @@ export const Root = () => {
     (content) => {
       setContent([
         {
-          path: decodeURIComponent(new URL(environment.baseUrl).pathname),
+          path: decodeURIComponent(
+            new URL(context.environment.baseUrl).pathname,
+          ),
           element: (
             <Page header={<Header />} sidebar={<PageNav />} isManagedSidebar>
               <Suspense fallback={<Spinner />}>
@@ -49,7 +86,11 @@ export const Root = () => {
             </Page>
           ),
           errorElement: <ErrorPage />,
-          children: mapRoutes(content),
+          children: [
+            ...mapRoutes(context, content),
+            ContentRoute,
+            { path: "*", element: <CatchAllRedirect /> },
+          ],
         },
       ]);
     },

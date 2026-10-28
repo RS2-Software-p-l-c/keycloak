@@ -155,7 +155,7 @@ export default function SessionsTable({
       try {
         await adminClient.users.logout({ id: logoutUser! });
         if (isOnUserPage && isLightweightUser(logoutUser)) {
-          navigate(toUsers({ realm: realm }));
+          void navigate(toUsers({ realm: realm }));
         } else {
           refresh();
         }
@@ -184,10 +184,10 @@ export default function SessionsTable({
       isOffline: false,
     });
 
-    if (session.userId === whoAmI.getUserId()) {
+    if (session.userId === whoAmI.userId) {
       await keycloak.logout({ redirectUri: "" });
     } else if (isOnUserPage && isLightweightUser(session.userId)) {
-      navigate(toUsers({ realm: realm }));
+      void navigate(toUsers({ realm: realm }));
     } else {
       refresh();
     }
@@ -238,6 +238,8 @@ export default function SessionsTable({
             hasIcon
             icon={CubesIcon}
             message={t("noSessions")}
+            primaryActionText={t("refresh")}
+            onPrimaryAction={refresh}
             instructions={
               emptyInstructions ? emptyInstructions : t("noSessionsDescription")
             }

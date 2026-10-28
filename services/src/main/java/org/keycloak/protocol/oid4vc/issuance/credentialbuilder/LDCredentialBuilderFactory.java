@@ -17,12 +17,9 @@
 
 package org.keycloak.protocol.oid4vc.issuance.credentialbuilder;
 
-import org.keycloak.component.ComponentModel;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.protocol.oid4vc.model.Format;
-import org.keycloak.provider.ProviderConfigProperty;
 
-import java.util.List;
+import org.keycloak.VCFormat;
+import org.keycloak.models.KeycloakSession;
 
 /**
  * @author <a href="mailto:Ingrid.Kamga@adorsys.com">Ingrid Kamga</a>
@@ -30,25 +27,12 @@ import java.util.List;
 public class LDCredentialBuilderFactory implements CredentialBuilderFactory {
 
     @Override
-    public String getId() {
-        return Format.LDP_VC;
+    public String getSupportedFormat() {
+        return VCFormat.LDP_VC;
     }
 
     @Override
-    public String getHelpText() {
-        return "Builds verifiable credentials on the LDP-VC format (https://www.w3.org/TR/vc-data-model).";
-    }
-
-    @Override
-    public List<ProviderConfigProperty> getConfigProperties() {
-        return null;
-    }
-
-    @Override
-    public CredentialBuilder create(KeycloakSession session, ComponentModel model) {
-        String credentialIssuer = CredentialBuilderUtils.getIssuerDid(session)
-                .orElseThrow(() -> new CredentialBuilderException("No issuerDid configured."));
-
-        return new LDCredentialBuilder(credentialIssuer);
+    public CredentialBuilder create(KeycloakSession session) {
+        return new LDCredentialBuilder();
     }
 }

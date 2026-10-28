@@ -1,30 +1,34 @@
 package org.keycloak.testframework.realm;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.List;
+
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.testframework.annotations.InjectRealm;
+import org.keycloak.testframework.injection.AbstractInterceptorHelper;
+import org.keycloak.testframework.injection.DependenciesBuilder;
+import org.keycloak.testframework.injection.Dependency;
 import org.keycloak.testframework.injection.InstanceContext;
 import org.keycloak.testframework.injection.Registry;
 import org.keycloak.testframework.injection.RequestedInstance;
 import org.keycloak.testframework.injection.Supplier;
 import org.keycloak.testframework.injection.SupplierHelpers;
 import org.keycloak.testframework.injection.SupplierOrder;
-import org.keycloak.testframework.injection.AbstractInterceptorHelper;
 import org.keycloak.testframework.server.KeycloakServer;
+import org.keycloak.testframework.server.KeycloakUrls;
+import org.keycloak.util.JsonSerialization;
+import org.keycloak.util.Strings;
 
 public class RealmSupplier implements Supplier<ManagedRealm, InjectRealm> {
 
-    private static final String REALM_NAME_KEY = "realmName";
-
     @Override
-    public Class<InjectRealm> getAnnotationClass() {
-        return InjectRealm.class;
-    }
-
-    @Override
-    public Class<ManagedRealm> getValueType() {
-        return ManagedRealm.class;
+    public List<Dependency> getDependencies(RequestedInstance<ManagedRealm, InjectRealm> instanceContext) {
+        return DependenciesBuilder.create(KeycloakServer.class)
+                .add(KeycloakUrls.class)
+                .add(Keycloak.class, "bootstrap-client").build();
     }
 
     @Override
@@ -32,51 +36,67 @@ public class RealmSupplier implements Supplier<ManagedRealm, InjectRealm> {
         KeycloakServer server = instanceContext.getDependency(KeycloakServer.class);
         Keycloak adminClient = instanceContext.getDependency(Keycloak.class, "bootstrap-client");
 
-        RealmConfig config = SupplierHelpers.getInstance(instanceContext.getAnnotation().config());
+        String attachTo = instanceContext.getAnnotation().attachTo();
+        boolean managed = attachTo.isEmpty();
 
-        RealmConfigBuilder realmConfigBuilder = config.configure(RealmConfigBuilder.create());
+        RealmRepresentation realmRepresentation;
 
-        RealmConfigInterceptorHelper interceptor = new RealmConfigInterceptorHelper(instanceContext.getRegistry());
-        realmConfigBuilder = interceptor.intercept(realmConfigBuilder, instanceContext);
+        if (managed) {
+            RealmBuilder realmBuilder;
+            if (!Strings.isEmpty(instanceContext.getAnnotation().fromJson())) {
+                try {
+                    InputStream jsonStream = instanceContext.getRegistry().getCurrentContext().getRequiredTestClass().getResourceAsStream(instanceContext.getAnnotation().fromJson());
+                    if (jsonStream == null) {
+                        throw new RuntimeException("Realm JSON representation not found in classpath");
+                    }
+                    realmBuilder = RealmBuilder.update(JsonSerialization.readValue(jsonStream, RealmRepresentation.class));
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            } else {
+                realmBuilder = RealmBuilder.create();
+            }
 
-        RealmRepresentation realmRepresentation = realmConfigBuilder.build();
+            RealmConfig config = SupplierHelpers.getInstanceWithInjectedFields(instanceContext.getAnnotation().config(), instanceContext);
+            realmBuilder = config.configure(realmBuilder);
 
-        if (realmRepresentation.getRealm() == null) {
-            String realmName = SupplierHelpers.createName(instanceContext);
-            realmRepresentation.setRealm(realmName);
-        }
+            RealmConfigInterceptorHelper interceptor = new RealmConfigInterceptorHelper(instanceContext.getRegistry());
+            realmBuilder = interceptor.intercept(realmBuilder, instanceContext);
 
-        if (realmRepresentation.getId() == null) {
-            realmRepresentation.setId(realmRepresentation.getRealm());
-        }
+            realmRepresentation = realmBuilder.build();
 
-        String realmName = realmRepresentation.getRealm();
-        instanceContext.addNote(REALM_NAME_KEY, realmName);
+            if (realmRepresentation.getRealm() == null) {
+                realmRepresentation.setRealm(SupplierHelpers.createName(instanceContext));
+            }
 
-        if (instanceContext.getAnnotation().createRealm()) {
+            if (realmRepresentation.getId() == null) {
+                realmRepresentation.setId(realmRepresentation.getRealm());
+            }
+
             adminClient.realms().create(realmRepresentation);
+
+            // TODO Token needs to be invalidated after creating realm to have roles for new realm in the token. Maybe lightweight access tokens could help.
+            adminClient.tokenManager().invalidate(adminClient.tokenManager().getAccessTokenString());
+        } else {
+            realmRepresentation = adminClient.realm(attachTo).toRepresentation();
         }
 
-        // TODO Token needs to be invalidated after creating realm to have roles for new realm in the token. Maybe lightweight access tokens could help.
-        adminClient.tokenManager().invalidate(adminClient.tokenManager().getAccessTokenString());
+        instanceContext.addNote("managed", managed);
 
         RealmResource realmResource = adminClient.realm(realmRepresentation.getRealm());
-        return new ManagedRealm(server.getBaseUrl() + "/realms/" + realmName, realmRepresentation, realmResource);
+        return new ManagedRealm(server.getBaseUrl() + "/realms/" + realmRepresentation.getRealm(), realmRepresentation, realmResource);
     }
 
     @Override
     public boolean compatible(InstanceContext<ManagedRealm, InjectRealm> a, RequestedInstance<ManagedRealm, InjectRealm> b) {
-        if (!a.getAnnotation().config().equals(b.getAnnotation().config())) {
-            return false;
-        }
-
-        RealmConfigInterceptorHelper interceptor = new RealmConfigInterceptorHelper(a.getRegistry());
-        return interceptor.sameInterceptors(a);
+        InjectRealm aa = a.getAnnotation();
+        InjectRealm ba = b.getAnnotation();
+        return aa.config().equals(ba.config()) && aa.fromJson().equals(ba.fromJson());
     }
 
     @Override
     public void close(InstanceContext<ManagedRealm, InjectRealm> instanceContext) {
-        if (instanceContext.getAnnotation().createRealm()) {
+        if (instanceContext.getNote("managed", Boolean.class)) {
             instanceContext.getValue().admin().remove();
         }
     }
@@ -86,14 +106,14 @@ public class RealmSupplier implements Supplier<ManagedRealm, InjectRealm> {
         return SupplierOrder.REALM;
     }
 
-    private static class RealmConfigInterceptorHelper extends AbstractInterceptorHelper<RealmConfigInterceptor, RealmConfigBuilder> {
+    private static class RealmConfigInterceptorHelper extends AbstractInterceptorHelper<RealmConfigInterceptor, RealmBuilder> {
 
         private RealmConfigInterceptorHelper(Registry registry) {
             super(registry, RealmConfigInterceptor.class);
         }
 
         @Override
-        public RealmConfigBuilder intercept(RealmConfigBuilder value, Supplier<?, ?> supplier, InstanceContext<?, ?> existingInstance) {
+        public RealmBuilder intercept(RealmBuilder value, Supplier<?, ?> supplier, InstanceContext<?, ?> existingInstance) {
             if (supplier instanceof RealmConfigInterceptor interceptor) {
                 value = interceptor.intercept(value, existingInstance);
             }

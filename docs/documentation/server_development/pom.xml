@@ -5,11 +5,13 @@
     <parent>
         <groupId>org.keycloak.documentation</groupId>
         <artifactId>documentation-parent</artifactId>
-        <version>26.1.4</version>
+        <version>26.8.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <name>Server Developer</name>
+    <name>Server Developer Guide</name>
+    <description>Server Developer Guide</description>
+
     <artifactId>server-development</artifactId>
     <packaging>pom</packaging>
 
